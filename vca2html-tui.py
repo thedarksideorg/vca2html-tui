@@ -13,22 +13,29 @@ import textwrap
 import platform
 import warnings
 import atexit
+import json
+import stat
+import hashlib
+import base64
+import zipfile
+import urllib.request as urllib
+from datetime import datetime, timezone
+
+# Global placeholders for the Tier-2 heavyweights
+pd = None
+np = None
+openpyxl = None
 
 # Suppress background warnings that destroy TUI coordinates
-warnings.filterwarnings("ignore", category=FutureWarning)
-warnings.filterwarnings("ignore", category=DeprecationWarning)
+#warnings.filterwarnings("ignore", category=FutureWarning)
+#warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-def clean_teardown():
-    """Guarantees the terminal is wiped and color reset on exit/crash."""
-    sys.stdout.write("\033[2J\033[H\033[0m")
-    sys.stdout.flush()
+#def clean_teardown():
+#    """Guarantees the terminal is wiped and color reset on exit/crash."""
+#    sys.stdout.write("\033[2J\033[H\033[0m")
+#    sys.stdout.flush()
 
-atexit.register(clean_teardown)
-
-# Global placeholders ONLY for Tier 2 heavy libraries
-pd = None
-urllib = None
-zipfile = None
+#atexit.register(clean_teardown)
 
 # --- DEPENDENCY CHECK ---
 missing_modules = []
@@ -61,37 +68,41 @@ if missing_modules:
     print(f"\033[33mRun: pip install {', '.join(missing_modules)}\033[0m")
     sys.exit(1)
 
-
-# --- GLOBALS & SEMANTIC COLOR MATRIX ---
-
-VERSION = "v5.2.1"
-GLOBAL_LICENSE = "Copyright © 2026 Daniel Casada. This program is free software; You can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 3 (GNU-GPLv3). This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details. You should have received a copy of the GNU General Public License along with this program. If not, see https://www.gnu.org/licenses/."
-GLOBAL_DISCLAIMER = "This application was created to help optical lab technician get lens technical specifications into legacy LMS systems. This tool tries to take industry \"standard VCA files\", parse them properly, then format them into a human readable format. It is not affiliated with National Optronics™ (DAC Vision™) or any proprietary LMS manufacturer. There is absolutely no support for this tool and I am not responsible for any invalid information, errors, or any data loss. This application comes as is and you must use at your own risk."
-
-global_mode = "BOOT SEQUENCE"
-err_msg = ""
-viewport_logs = []
-viewport_offset = 0
-MATH_INDEX = 1.530
-
-ascii_art = [
-    r"██╗   ██╗ ██████╗ █████╗   ██████╗ ██╗  ██╗████████╗███╗   ███╗██╗        ████████╗██╗   ██╗██╗",
-    r"██║   ██║██╔════╝██╔══██╗ ╚════██╗ ██║  ██║╚══██╔══╝████╗ ████║██║        ╚══██╔══╝██║   ██║██║",
-    r"██║   ██║██║     ███████║  █████╔╝ ███████║   ██║   ██╔████╔██║██║           ██║   ██║   ██║██║",
-    r"╚██╗ ██╔╝██║     ██╔══██║ ██╔═══╝  ██╔══██║   ██║   ██║╚██╔╝██║██║           ██║   ██║   ██║██║",
-    r" ╚████╔╝ ╚██████╗██║  ██║ ███████╗ ██║  ██║   ██║   ██║ ╚═╝ ██║███████╗      ██║   ╚██████╔╝██║",
-    r"  ╚═══╝   ╚═════╝╚═╝  ╚═╝ ╚══════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝     ╚═╝╚══════╝      ╚═╝    ╚═════╝ ╚═╝"
-]
+# Directories
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, 'data')
+DB_DIR = os.path.join(DATA_DIR, 'db')
+CONFIG_FILE = os.path.join(DB_DIR, '.config')
+IMPORT_DIR = os.path.join(DATA_DIR, 'import')
+ORIGINALS_DIR = os.path.join(DATA_DIR, 'originals')
+VLP_ARCHIVE = os.path.join(DB_DIR, '.vlp')
+PURGED_DIR = os.path.join(DB_DIR, 'purged')        
+CORRUPT_DIR = os.path.join(DB_DIR, 'corrupt')      
+HTML_DIR = os.path.join(DATA_DIR, 'HTML')
+HTML_DATA_DIR = os.path.join(HTML_DIR, 'data')
+HTML_DB_DIR = os.path.join(HTML_DATA_DIR, 'db')
+TMP_DIR = os.path.join(DATA_DIR, '.tmp')
+DB_FILE = os.path.join(DB_DIR, 'master_lens_db.json')
+ICONS_FILE = os.path.join(DB_DIR, '.icons')
+SIG_FILE = os.path.join(DB_DIR, '.sig')
 
 app_config = {
     "nerd_fonts": False,
-    "theme": "tokyo_night",  # Default set to standard Tokyo Night
-    "admin_enabled": True,   # Hard kill-switch for F12
+    "theme": "tokyo_night",  # Default fallback
+    "admin_enabled": True,   
     "sys_auth": "c94bec1f5512d6508e50fcd325635357b3c25e90f07ac5635801dd536486bb84"
 }
 
+# Ghost-load the config file before the UI ever draws
+if os.path.exists(CONFIG_FILE):
+    try:
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            app_config.update(json.load(f))
+    except Exception:
+        pass # If config is corrupted or empty, we silently fall back to defaults
+
 THEME_MATRIX = {
-    "tokyo_night": { # The Standard Dark Default
+    "tokyo_night": {
         "bg": "26;27;38", "bglight": "33;35;55", "border": "65;72;104",
         "prompt": "187;154;247", "title": "122;162;247", "dir": "122;162;247",
         "file": "192;202;245", "size": "224;175;104", "staged": "158;206;106",
@@ -110,13 +121,21 @@ THEME_MATRIX = {
         "alert": "255;117;127", "subtext": "68;74;115"
     },
     "tokyo_day": { 
-        # Deep Muted Slate "E-Ink" Day Theme
         "bg": "225;226;231", "bglight": "203;205;214", "border": "140;143;161",
         "prompt": "152;84;241", "title": "55;96;191", "dir": "46;125;233",
         "file": "55;96;191", "size": "143;94;21", "staged": "51;99;92",
         "alert": "198;83;101", "subtext": "140;143;161"
     }
 }
+
+ascii_art = [
+    r"██╗   ██╗ ██████╗ █████╗   ██████╗ ██╗  ██╗████████╗███╗   ███╗██╗        ████████╗██╗   ██╗██╗",
+    r"██║   ██║██╔════╝██╔══██╗ ╚════██╗ ██║  ██║╚══██╔══╝████╗ ████║██║        ╚══██╔══╝██║   ██║██║",
+    r"██║   ██║██║     ███████║  █████╔╝ ███████║   ██║   ██╔████╔██║██║           ██║   ██║   ██║██║",
+    r"╚██╗ ██╔╝██║     ██╔══██║ ██╔═══╝  ██╔══██║   ██║   ██║╚██╔╝██║██║           ██║   ██║   ██║██║",
+    r" ╚████╔╝ ╚██████╗██║  ██║ ███████╗ ██║  ██║   ██║   ██║ ╚═╝ ██║███████╗      ██║   ╚██████╔╝██║",
+    r"  ╚═══╝   ╚═════╝╚═╝  ╚═╝ ╚══════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝     ╚═╝╚══════╝      ╚═╝    ╚═════╝ ╚═╝"
+]
 
 def apply_theme(theme_name="tokyo_night"):
     global C_BG, C_BGLIGHT, C_BORDER, C_PROMPT, C_TITLE, C_DIR, STRIKE, UNSTRIKE
@@ -143,31 +162,19 @@ def apply_theme(theme_name="tokyo_night"):
     
     PB_COLORS = [C_ALERT, C_WARN, C_WARN, C_STAGED, C_TITLE, C_DIR, C_PROMPT] * 2
 
-# Apply a fallback immediately so formatting functions don't crash
 apply_theme(app_config.get("theme", "tokyo_night"))
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, 'data')
-IMPORT_DIR = os.path.join(DATA_DIR, 'import')
-ORIGINALS_DIR = os.path.join(DATA_DIR, 'originals')
-DB_DIR = os.path.join(DATA_DIR, 'db')
-VLP_ARCHIVE = os.path.join(DB_DIR, '.vlp')
-PURGED_DIR = os.path.join(DB_DIR, 'purged')       
-CORRUPT_DIR = os.path.join(DB_DIR, 'corrupt')     
-HTML_DIR = os.path.join(DATA_DIR, 'HTML')
-HTML_DATA_DIR = os.path.join(HTML_DIR, 'data')
-HTML_DB_DIR = os.path.join(HTML_DATA_DIR, 'db')
-TMP_DIR = os.path.join(DATA_DIR, '.tmp')
-
-DB_FILE = os.path.join(DB_DIR, 'master_lens_db.json')
-CONFIG_FILE = os.path.join(DB_DIR, '.config')     
-ICONS_FILE = os.path.join(DB_DIR, '.icons')
-SIG_FILE = os.path.join(DB_DIR, '.sig')
-
-VALID_EXTENSIONS = ['.vca', '.csv', '.xlsx', '.xls', '.txt']
+VERSION = "v5.4.20"
 global_mode = "BOOT SEQUENCE"
 err_msg = ""
+viewport_logs = []
+viewport_offset = 0
+MATH_INDEX = 1.530
 
+GLOBAL_LICENSE = "Copyright © 2026 Daniel Casada. This program is free software; You can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation. This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
+GLOBAL_DISCLAIMER = "This application was created to help optical lab technicians get lens technical specifications into legacy LMS systems. This tool tries to take industry \"standard VCA files\", parse them properly, then format them into a human readable format. It is not affiliated with National Optronics™ (DAC Vision™) or any proprietary LMS manufacturer. There is absolutely no support for this tool and I am not responsible for any invalid information, errors, or any data loss. This application comes as is and you must use at your own risk."
+
+VALID_EXTENSIONS = ['.vca', '.csv', '.xlsx', '.xls', '.txt']
 DEFAULT_ICONS = {
     "opt_eng": {"char": "󰇻", "pad": 2}, "mode": {"char": "󰚡", "pad": 1},
     "db": {"char": "󱘲", "pad": 1}, "lens": {"char": "󰊪", "pad": 2},
@@ -696,7 +703,7 @@ def draw_context_helpers(line1, line2="", offset=5):
     if line2:
         draw_frame_line(line2, row=start_row + 1, align="center")
 
-def draw_modal(title, prompt_text, is_password=False):
+def draw_modal(title, prompt_text, is_password=False, is_y_n=False):
     """Draws a floating, single-line modal strictly in the center of the terminal."""
     term_w, term_h = get_term_size()
     
@@ -731,6 +738,12 @@ def draw_modal(title, prompt_text, is_password=False):
             try: c = c.decode('utf-8')
             except: continue
         if not isinstance(c, str): continue
+        
+        # --- NEW Y/N INTERCEPT ---
+        if is_y_n:
+            if c.upper() == 'Y': return 'Y'
+            return None # Any other key instantly aborts
+        # -------------------------
 
         if c in ('\r', '\n'): return input_str
         elif c == '\x1b': return None 
@@ -796,81 +809,77 @@ def verify_and_stage_fonts():
     for r in range(2, term_h - 1): draw_frame_line("", row=r)
     draw_frame_line(f"{C_SIZE}PHASE 0: SYSTEM INITIALIZATION & ASSET VERIFICATION{RESET}", row=2, align="center")
     
-    draw_universal_footer() # THE FLOOR SEAL
+    draw_universal_footer_ui(f"{C_SUBTEXT}Igniting Matrix Engine...{RESET}") # THE FLOOR SEAL (NO LOCK)
     
     viewport_logs.clear()
     scroll_offset = 0
 
-    # 2. THE SMOKE & MIRRORS MATRIX (Mixed Ghost & Real Loads)
-    # The boolean flag (False) means it's a Ghost Load. (True) means it's a Real Load.
+    # 2. THE SMOKE & MIRRORS MATRIX
     modules = [
-        ("Core OS Interface", "os", False),
-        ("System Pathways", "sys", False),
-        ("Temporal Engine", "time", False),
-        ("Platform Diagnostics", "platform", False),
-        ("Warning Handlers", "warnings", False),
-        ("Exit Routines", "atexit", False),
-        ("Regex Engine", "re", False),
-        ("File Operations", "shutil", False),
-        ("JSON Parsers", "json", False),
-        ("Sys Stat", "stat", False),
-        ("Text Wrapping", "textwrap", False),
-        ("Datetime Engine", "datetime", False),
-        ("Timezone Protocols", "timezone", False),
-        ("Cryptographic Hashes", "hashlib", False),
-        ("Binary Encoders", "base64", False),
-        ("Network Libraries", "urllib", True), 
-        ("Archive Tools", "zipfile", True),
-        ("Pandas DataFrames", "pandas", True) # Always last
+        ("Core OS Interface", "os", False), ("System Pathways", "sys", False),
+        ("Temporal Engine", "time", False), ("Platform Diagnostics", "platform", False),
+        ("Warning Handlers", "warnings", False), ("Exit Routines", "atexit", False),
+        ("Regex Engine", "re", False), ("File Operations", "shutil", False),
+        ("JSON Parsers", "json", False), ("Sys Stat", "stat", False),
+        ("Text Wrapping", "textwrap", False), ("Datetime Engine", "datetime", False),
+        ("Timezone Protocols", "timezone", False), ("Cryptographic Hashes", "hashlib", False),
+        ("Binary Encoders", "base64", False), ("Network Libraries", "urllib", False), 
+        ("Archive Tools", "zipfile", False), ("Pandas DataFrames", "pandas", True)
     ]
     
-    # 3. EXPANDED TYPOGRAPHY MATRIX
     fonts = {
-        # Core Legacy Fonts (Bypassing WAF via jsDelivr GitHub Mirror)
         'MSSansSerif-Regular.ttf': {'win': r"C:\Windows\Fonts\micross.ttf", 'lin_name': 'micross.ttf', 'url': "https://cdn.jsdelivr.net/gh/matomo-org/travis-scripts@master/fonts/micross.ttf", 'is_zip': False},
         'Arial-Regular.ttf': {'win': r"C:\Windows\Fonts\arial.ttf", 'lin_name': 'arial.ttf', 'url': "https://cdn.jsdelivr.net/gh/matomo-org/travis-scripts@master/fonts/arial.ttf", 'is_zip': False},
         'Arial-Bold.ttf': {'win': r"C:\Windows\Fonts\arialbd.ttf", 'lin_name': 'arialbd.ttf', 'url': "https://cdn.jsdelivr.net/gh/matomo-org/travis-scripts@master/fonts/arialbd.ttf", 'is_zip': False},
         'Tahoma-Regular.ttf': {'win': r"C:\Windows\Fonts\tahoma.ttf", 'lin_name': 'tahoma.ttf', 'url': "https://cdn.jsdelivr.net/gh/matomo-org/travis-scripts@master/fonts/tahoma.ttf", 'is_zip': False},
-        
-        # Ubuntu Sans
         'UbuntuSansNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/UbuntuSans.zip", 'is_zip': True},
-        'UbuntuSansNerdFont-Medium.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/UbuntuSans.zip", 'is_zip': True},
-        'UbuntuSansNerdFont-Bold.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/UbuntuSans.zip", 'is_zip': True},
-        
-        # Developer Staples
         'JetBrainsMonoNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip", 'is_zip': True},
         'FiraCodeNerdFont-Medium.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.zip", 'is_zip': True},
         'CaskaydiaCoveNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/CascadiaCode.zip", 'is_zip': True},
-        
-        # Web Standards (Bypassing Firewalls via jsDelivr GitHub Mirror)
-        'OpenSans-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://cdn.jsdelivr.net/gh/edx/edx-fonts@master/open-sans/fonts/Regular/OpenSans-Regular.ttf", 'is_zip': False},
-        'NotoSans-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://cdn.jsdelivr.net/gh/openmaptiles/fonts@master/noto-sans/NotoSans-Regular.ttf", 'is_zip': False}
+        'NotoSansNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Noto.zip", 'is_zip': True},
+        'OpenSans-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/opensans/static/OpenSans-Regular.ttf", 'is_zip': False},
     }
 
-    total_tasks = len(modules) + len(fonts)
+    # Weighting the progress bar: Modules = 1 tick, Fonts = 4 ticks each (because they take longer)
+    total_tasks = len(modules) + (len(fonts) * 4)
     curr = 0
 
-    log_task(format_log("SYSTEM", "INITIALIZING CORE MODULES...", C_TITLE), "RAW")
-    draw_viewport(progress_pct=0.0, active_file="Booting...", current_file_idx=0, total_files=total_tasks, is_interactive=False)
+    # THE CINEMATIC MACRO
+    def matrix_step(log_msg, status="SYSTEM", color=C_SUBTEXT, inc=1, delay=0.15):
+        nonlocal curr
+        curr += inc
+        pct = min(100.0, (curr / total_tasks) * 100.0)
+        log_task(format_log(status, log_msg, color), "RAW")
+        draw_viewport(progress_pct=pct, active_file="Initializing...", current_file_idx=curr, total_files=total_tasks, is_interactive=False)
+        time.sleep(delay)
+
+    matrix_step("INITIALIZING CORE MODULES...", "SYSTEM", C_TITLE, inc=0, delay=0.6)
     
     # 4. EXECUTING THE MATRIX LOADS
     for desc, mod, is_real in modules:
-        log_task(format_log("SYSTEM", f"Allocating memory buffer for {desc}...", C_SUBTEXT), "RAW")
+        matrix_step(f"Allocating memory buffer for {desc} [{mod}]...", "SYSTEM", C_SUBTEXT, inc=0, delay=0.08)
         
-        # Only execute the heavy imports if the flag is True
+    # Ensure pd escapes the local function scope
+    global pd
+
+    # 4. EXECUTING THE MATRIX LOADS
+    for desc, mod, is_real in modules:
+        matrix_step(f"Allocating memory buffer for {desc} [{mod}]...", "SYSTEM", C_SUBTEXT, inc=0, delay=0.08)
+        
         if is_real:
-            if mod == "pandas": import pandas as pd
-            elif mod == "urllib": import urllib.request as urllib
-            elif mod == "zipfile": import zipfile
+            if mod == "pandas": 
+                import pandas as pd
+                matrix_step(f"Physical library '{mod}' loaded into RAM.", "MOUNT", C_PROMPT, inc=0, delay=0.4)
+            # If you ever add numpy or openpyxl back to the matrix, you'd do it here:
+            # elif mod == "numpy": import numpy as np
         
-        curr += 1
-        log_task(format_log("SUCCESS", f"Module '{mod}' successfully mounted.", C_STAGED), "RAW")
-        draw_viewport(progress_pct=(curr/total_tasks)*100, active_file=f"Loaded {mod}", current_file_idx=curr, total_files=total_tasks, is_interactive=False)
+        # We still delay on the Ghost Loads so it looks like it's doing heavy lifting
+        matrix_step(f"Module '{mod}' successfully mounted and verified.", "SUCCESS", C_STAGED, inc=1, delay=0.1)
         
-        if mod != "pandas": time.sleep(0.04) 
+        matrix_step(f"Module '{mod}' successfully mounted and verified.", "SUCCESS", C_STAGED, inc=1, delay=0.1)
 
     # 5. ASSET SCANNING & EXTRACTION
-    log_task(format_log("TYPOGRAPHY", "INITIALIZING TYPOGRAPHY ENGINE...", C_TITLE), "RAW")
+    matrix_step("INITIALIZING TYPOGRAPHY ENGINE...", "SYSTEM", C_TITLE, inc=0, delay=0.8)
     
     os.makedirs(HTML_DATA_DIR, exist_ok=True)
     os.makedirs(TMP_DIR, exist_ok=True)
@@ -890,60 +899,57 @@ def verify_and_stage_fonts():
 
     for dest_name, meta in fonts.items():
         dest_path = os.path.join(HTML_DATA_DIR, dest_name)
-        curr += 1
-        pct = (curr / total_tasks) * 100.0
+        matrix_step(f"Evaluating dependency: {dest_name}", "SCAN", C_SUBTEXT, inc=1, delay=0.3)
         
         if not os.path.exists(dest_path):
             local_src = find_local_font(meta['win'], meta.get('lin_name', ''))
-            
             if local_src:
-                log_task(format_log("LOCAL", f"Mounting OS Asset: {dest_name}", C_SUBTEXT), "RAW")
+                matrix_step(f"Discovered native OS asset at: {local_src}", "LOCAL", C_DIR, inc=1, delay=0.4)
+                matrix_step(f"Copying {dest_name} to HTML/data vault...", "MOUNT", C_PROMPT, inc=1, delay=0.3)
                 try:
                     shutil.copy2(local_src, dest_path)
-                    log_task(format_log("SUCCESS", f"{dest_name} copied to HTML/data", C_STAGED), "RAW")
+                    matrix_step(f"Asset {dest_name} integrated flawlessly.", "SUCCESS", C_STAGED, inc=1, delay=0.2)
                 except Exception as e:
-                    log_task(format_log("FAILED", f"Mount error: {e}", C_ALERT), "RAW")
+                    matrix_step(f"Mount error: {e}", "FAILED", C_ALERT, inc=1, delay=0.5)
             else:
-                dl_target = os.path.join(TMP_DIR, 'temp_font.zip') if meta.get('is_zip') else dest_path
-                log_task(format_log("MISSING", f"Fetching remote asset: {dest_name}", C_WARN), "RAW")
-                draw_viewport(progress_pct=pct-1, active_file=dest_name, current_file_idx=curr, total_files=total_tasks, is_interactive=False)
+                matrix_step(f"Asset missing locally. Preparing network fetch...", "WARN", C_WARN, inc=1, delay=0.5)
+                matrix_step(f"Opening secure HTTP tunnel to: {meta['url'].split('/')[2]}", "NETWORK", C_DIR, inc=0, delay=0.6)
+                
                 try:
-                    # The Perfect Browser Disguise (Bypasses WAF Header Scoring)
                     headers = {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                        'Accept-Language': 'en-US,en;q=0.5',
-                        'Referer': 'https://www.google.com/',
-                        'Connection': 'keep-alive',
-                        'Upgrade-Insecure-Requests': '1'
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                        'Accept': '*/*'
                     }
                     req = urllib.Request(meta['url'].strip(), headers=headers)
+                    
                     if meta.get('is_zip'):
-                        log_task(format_log("DOWNLOAD", f"Streaming archive from GitHub...", C_FILE), "RAW")
                         zip_path = os.path.join(TMP_DIR, 'temp_font.zip')
+                        matrix_step(f"Downloading binary payload from {meta['url']}...", "DOWNLOAD", C_FILE, inc=1, delay=1.0)
                         with urllib.urlopen(req) as response, open(zip_path, 'wb') as out_file: shutil.copyfileobj(response, out_file)
                         
-                        log_task(format_log("EXTRACT", f"Unpacking archive...", C_PROMPT), "RAW")
+                        matrix_step(f"Payload received. Unzipping temp_font.zip...", "EXTRACT", C_PROMPT, inc=1, delay=0.6)
                         with zipfile.ZipFile(zip_path, 'r') as z:
                             target_file = next((f for f in z.namelist() if f.endswith(dest_name)), None)
                             if target_file:
+                                matrix_step(f"Located {target_file} inside archive. Extracting to {dest_path}...", "EXTRACT", C_PROMPT, inc=0, delay=0.5)
                                 with z.open(target_file) as zf, open(dest_path, 'wb') as f: shutil.copyfileobj(zf, f)
+                            else:
+                                matrix_step(f"Could not find {dest_name} in archive!", "FAILED", C_ALERT, inc=0, delay=0.5)
+                                
+                        matrix_step(f"Purging temporary archive temp_font.zip...", "CLEANUP", C_SUBTEXT, inc=0, delay=0.4)
                         os.remove(zip_path)
                     else:
+                        matrix_step(f"Downloading raw asset from {meta['url']}...", "DOWNLOAD", C_FILE, inc=2, delay=1.0)
                         with urllib.urlopen(req) as response, open(dest_path, 'wb') as out_file: shutil.copyfileobj(response, out_file)
-                    log_task(format_log("SUCCESS", f"Asset {dest_name} staged.", C_STAGED), "RAW")
+                            
+                    matrix_step(f"Asset {dest_name} successfully staged.", "SUCCESS", C_STAGED, inc=1, delay=0.2)
                 except Exception as e:
-                    log_task(format_log("FAILED", f"{e}", C_ALERT), "RAW")
-                    
-            draw_viewport(progress_pct=pct, active_file=dest_name, current_file_idx=curr, total_files=total_tasks, is_interactive=False)
-            time.sleep(0.2)
+                    matrix_step(f"Network fetch failed: {e}", "FAILED", C_ALERT, inc=2, delay=1.5)
         else:
-            log_task(format_log("VERIFIED", f"Verified Cache: {dest_name}", C_SUBTEXT), "RAW")
-            draw_viewport(progress_pct=pct, active_file=dest_name, current_file_idx=curr, total_files=total_tasks, is_interactive=False)
-            time.sleep(0.02)
+            matrix_step(f"Verified existing cached asset: {dest_name}", "VERIFIED", C_STAGED, inc=3, delay=0.15)
             
     # 6. UNIVERSAL THEATRICAL LOCK
-    log_task(format_log("SYSTEM", f"System Ready. {C_PROMPT}Press ENTER to boot Operations Center...{RESET}", C_STAGED), "RAW")
+    matrix_step(f"System Ready. {C_PROMPT}Press ENTER to boot Operations Center...{RESET}", "SYSTEM", C_STAGED, inc=0, delay=0)
     
     draw_viewport(progress_pct=100.0, active_file="System Ready", current_file_idx=total_tasks, total_files=total_tasks, is_interactive=True)
     
@@ -991,12 +997,12 @@ def display_boot_sequence():
     row = start_row + len(ascii_art) + 2
     
     for line in textwrap.wrap(GLOBAL_LICENSE, width=text_w):
-        sys.stdout.write(f"\033[{row};{pad_left}H{C_SUBTEXT}{line}{RESET}")
+        sys.stdout.write(f"\033[{row};{pad_left}H{C_SUCCESS}{line}{RESET}")
         row += 1
         
     row += 1
     for line in textwrap.wrap(GLOBAL_DISCLAIMER, width=text_w):
-        sys.stdout.write(f"\033[{row};{pad_left}H{C_ALERT}{line}{RESET}")
+        sys.stdout.write(f"\033[{row};{pad_left}H{C_PROMPT}{line}{RESET}")
         row += 1
 
     row += 2
@@ -1005,7 +1011,9 @@ def display_boot_sequence():
     draw_status_bar()
     sys.stdout.flush()
     
+    # Capture keystroke and normalize bytes (Fixes dual-boot OS differences)
     c = getch()
+    if isinstance(c, bytes): c = c.decode('utf-8', errors='ignore')
     if isinstance(c, str) and c.lower() == 'y': 
         return
     
@@ -1023,6 +1031,7 @@ def display_boot_sequence():
     sys.stdout.flush()
     
     c2 = getch()
+    if isinstance(c2, bytes): c2 = c2.decode('utf-8', errors='ignore')
     if isinstance(c2, str) and c2.lower() == 'y': 
         return
     
@@ -3183,81 +3192,66 @@ def verify_and_stage_fonts():
     for r in range(2, term_h - 1): draw_frame_line("", row=r)
     draw_frame_line(f"{C_SIZE}PHASE 0: SYSTEM INITIALIZATION & ASSET VERIFICATION{RESET}", row=2, align="center")
     
-    draw_universal_footer() # THE FLOOR SEAL
+    draw_status_bar() # Draw the bottom mode bar
+    sys.stdout.flush()
     
     viewport_logs.clear()
     scroll_offset = 0
 
-    # 2. THE SMOKE & MIRRORS MATRIX (Mixed Ghost & Real Loads)
-    # The boolean flag (False) means it's a Ghost Load. (True) means it's a Real Load.
+    # 2. THE SMOKE & MIRRORS MATRIX
     modules = [
-        ("Core OS Interface", "os", False),
-        ("System Pathways", "sys", False),
-        ("Temporal Engine", "time", False),
-        ("Platform Diagnostics", "platform", False),
-        ("Warning Handlers", "warnings", False),
-        ("Exit Routines", "atexit", False),
-        ("Regex Engine", "re", False),
-        ("File Operations", "shutil", False),
-        ("JSON Parsers", "json", False),
-        ("Sys Stat", "stat", False),
-        ("Text Wrapping", "textwrap", False),
-        ("Datetime Engine", "datetime", False),
-        ("Timezone Protocols", "timezone", False),
-        ("Cryptographic Hashes", "hashlib", False),
-        ("Binary Encoders", "base64", False),
-        ("Network Libraries", "urllib", True), 
-        ("Archive Tools", "zipfile", True),
-        ("Pandas DataFrames", "pandas", True) # Always last
+        ("Core OS Interface", "os", False), ("System Pathways", "sys", False),
+        ("Temporal Engine", "time", False), ("Platform Diagnostics", "platform", False),
+        ("Warning Handlers", "warnings", False), ("Exit Routines", "atexit", False),
+        ("Regex Engine", "re", False), ("File Operations", "shutil", False),
+        ("JSON Parsers", "json", False), ("Sys Stat", "stat", False),
+        ("Text Wrapping", "textwrap", False), ("Datetime Engine", "datetime", False),
+        ("Timezone Protocols", "timezone", False), ("Cryptographic Hashes", "hashlib", False),
+        ("Binary Encoders", "base64", False), ("Network Libraries", "urllib", True), 
+        ("Archive Tools", "zipfile", True), ("Pandas DataFrames", "pandas", True)
     ]
     
-    # 3. EXPANDED TYPOGRAPHY MATRIX
     fonts = {
-        # Core Legacy Fonts
-        'MSSansSerif-Regular.ttf': {'win': r"C:\Windows\Fonts\micross.ttf", 'lin_name': 'micross.ttf', 'url': "https://raw.githubusercontent.com/matomo-org/travis-scripts/master/fonts/micross.ttf", 'is_zip': False},
-        'Arial-Regular.ttf': {'win': r"C:\Windows\Fonts\arial.ttf", 'lin_name': 'arial.ttf', 'url': "https://raw.githubusercontent.com/matomo-org/travis-scripts/master/fonts/arial.ttf", 'is_zip': False},
-        'Arial-Bold.ttf': {'win': r"C:\Windows\Fonts\arialbd.ttf", 'lin_name': 'arialbd.ttf', 'url': "https://raw.githubusercontent.com/matomo-org/travis-scripts/master/fonts/arialbd.ttf", 'is_zip': False},
-        'Tahoma-Regular.ttf': {'win': r"C:\Windows\Fonts\tahoma.ttf", 'lin_name': 'tahoma.ttf', 'url': "https://raw.githubusercontent.com/matomo-org/travis-scripts/master/fonts/tahoma.ttf", 'is_zip': False},
-        
-        # Ubuntu Sans
+        'Arial-Regular.ttf': {'win': r"C:\Windows\Fonts\arial.ttf", 'lin_name': 'arial.ttf', 'url': "https://cdn.jsdelivr.net/gh/matomo-org/travis-scripts@master/fonts/arial.ttf", 'is_zip': False},
+        'Arial-Bold.ttf': {'win': r"C:\Windows\Fonts\arialbd.ttf", 'lin_name': 'arialbd.ttf', 'url': "https://cdn.jsdelivr.net/gh/matomo-org/travis-scripts@master/fonts/arialbd.ttf", 'is_zip': False},
+        'Tahoma-Regular.ttf': {'win': r"C:\Windows\Fonts\tahoma.ttf", 'lin_name': 'tahoma.ttf', 'url': "https://cdn.jsdelivr.net/gh/matomo-org/travis-scripts@master/fonts/tahoma.ttf", 'is_zip': False},
+        'MSSansSerif-Regular.ttf': {'win': r"C:\Windows\Fonts\micross.ttf", 'lin_name': 'micross.ttf', 'url': "https://cdn.jsdelivr.net/gh/matomo-org/travis-scripts@master/fonts/micross.ttf", 'is_zip': False},
         'UbuntuSansNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/UbuntuSans.zip", 'is_zip': True},
-        'UbuntuSansNerdFont-Medium.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/UbuntuSans.zip", 'is_zip': True},
-        'UbuntuSansNerdFont-Bold.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/UbuntuSans.zip", 'is_zip': True},
-        
-        # Developer Staples
         'JetBrainsMonoNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip", 'is_zip': True},
         'FiraCodeNerdFont-Medium.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.zip", 'is_zip': True},
         'CaskaydiaCoveNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/CascadiaCode.zip", 'is_zip': True},
-        
-        # Web Standards
-        'OpenSans-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://raw.githubusercontent.com/google/fonts/main/ofl/opensans/OpenSans-Regular.ttf", 'is_zip': False},
-        'NotoSans-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://raw.githubusercontent.com/google/fonts/main/ofl/notosans/NotoSans-Regular.ttf", 'is_zip': False}
+        'NotoSansNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Noto.zip", 'is_zip': True},
+        'OpenSans-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/opensans/static/OpenSans-Regular.ttf", 'is_zip': False},
     }
 
-    total_tasks = len(modules) + len(fonts)
+    total_tasks = len(modules) + (len(fonts) * 4)
     curr = 0
 
-    log_task(format_log("SYSTEM", "INITIALIZING CORE MODULES...", C_TITLE), "RAW")
-    draw_viewport(progress_pct=0.0, active_file="Booting...", current_file_idx=0, total_files=total_tasks, is_interactive=False)
+    # THE CINEMATIC MACRO
+    def matrix_step(log_msg, status="SYSTEM", color=C_SUBTEXT, inc=1, delay=0.15):
+        nonlocal curr
+        curr += inc
+        pct = min(100.0, (curr / max(1, total_tasks)) * 100.0)
+        log_task(format_log(status, log_msg, color), "RAW")
+        draw_viewport(progress_pct=pct, active_file="Initializing...", current_file_idx=curr, total_files=total_tasks, is_interactive=False)
+        time.sleep(delay)
+
+    matrix_step("INITIALIZING CORE MODULES...", "SYSTEM", C_TITLE, inc=0, delay=0.6)
     
     # 4. EXECUTING THE MATRIX LOADS
     for desc, mod, is_real in modules:
-        log_task(format_log("SYSTEM", f"Allocating memory buffer for {desc}...", C_SUBTEXT), "RAW")
+        matrix_step(f"Allocating memory buffer for {desc} [{mod}]...", "SYSTEM", C_SUBTEXT, inc=0, delay=0.08)
         
-        # Only execute the heavy imports if the flag is True
         if is_real:
             if mod == "pandas": import pandas as pd
             elif mod == "urllib": import urllib.request as urllib
             elif mod == "zipfile": import zipfile
+            matrix_step(f"Physical library '{mod}' loaded into RAM.", "MOUNT", C_PROMPT, inc=0, delay=0.2)
         
-        curr += 1
-        log_task(format_log("SUCCESS", f"Module '{mod}' successfully mounted.", C_STAGED), "RAW")
-        draw_viewport(progress_pct=(curr/total_tasks)*100, active_file=f"Loaded {mod}", current_file_idx=curr, total_files=total_tasks, is_interactive=False)
-        
-        if mod != "pandas": time.sleep(0.04) 
+        matrix_step(f"Module '{mod}' successfully mounted and verified.", "SUCCESS", C_STAGED, inc=1, delay=0.1)
 
     # 5. ASSET SCANNING & EXTRACTION
-    log_task(format_log("TYPOGRAPHY", "INITIALIZING TYPOGRAPHY ENGINE...", C_TITLE), "RAW")
+    matrix_step("INITIALIZING TYPOGRAPHY ENGINE...", "SYSTEM", C_TITLE, inc=0, delay=0.8)
     
     os.makedirs(HTML_DATA_DIR, exist_ok=True)
     os.makedirs(TMP_DIR, exist_ok=True)
@@ -3277,53 +3271,60 @@ def verify_and_stage_fonts():
 
     for dest_name, meta in fonts.items():
         dest_path = os.path.join(HTML_DATA_DIR, dest_name)
-        curr += 1
-        pct = (curr / total_tasks) * 100.0
+        matrix_step(f"Evaluating dependency: {dest_name}", "SCAN", C_SUBTEXT, inc=1, delay=0.3)
         
         if not os.path.exists(dest_path):
-            # THIS IS THE FIXED LINE (No 'lin_name=' keyword):
             local_src = find_local_font(meta['win'], meta.get('lin_name', ''))
-            
             if local_src:
-                log_task(format_log("LOCAL", f"Mounting OS Asset: {dest_name}", C_SUBTEXT), "RAW")
+                matrix_step(f"Discovered native OS asset at: {local_src}", "LOCAL", C_DIR, inc=1, delay=0.4)
+                matrix_step(f"Copying {dest_name} to HTML/data vault...", "MOUNT", C_PROMPT, inc=1, delay=0.3)
                 try:
                     shutil.copy2(local_src, dest_path)
-                    log_task(format_log("SUCCESS", f"{dest_name} copied to HTML/data", C_STAGED), "RAW")
+                    matrix_step(f"Asset {dest_name} integrated flawlessly.", "SUCCESS", C_STAGED, inc=1, delay=0.2)
                 except Exception as e:
-                    log_task(format_log("FAILED", f"Mount error: {e}", C_ALERT), "RAW")
+                    matrix_step(f"Mount error: {e}", "FAILED", C_ALERT, inc=1, delay=0.5)
             else:
-                dl_target = os.path.join(TMP_DIR, 'temp_font.zip') if meta.get('is_zip') else dest_path
-                log_task(format_log("MISSING", f"Fetching remote asset: {dest_name}", C_WARN), "RAW")
-                draw_viewport(progress_pct=pct-1, active_file=dest_name, current_file_idx=curr, total_files=total_tasks, is_interactive=False)
+                matrix_step(f"Asset missing locally. Preparing network fetch...", "WARN", C_WARN, inc=1, delay=0.5)
+                matrix_step(f"Opening secure HTTP tunnel to: {meta['url'].split('/')[2]}", "NETWORK", C_DIR, inc=0, delay=0.6)
+                
                 try:
-                    req = urllib.Request(meta['url'], headers={'User-Agent': 'Mozilla/5.0'})
+                    headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                        'Accept': '*/*'
+                    }
+                    req = urllib.Request(meta['url'].strip(), headers=headers)
+                    
                     if meta.get('is_zip'):
-                        log_task(format_log("DOWNLOAD", f"Streaming archive from GitHub...", C_FILE), "RAW")
                         zip_path = os.path.join(TMP_DIR, 'temp_font.zip')
+                        matrix_step(f"Downloading binary payload from {meta['url']}...", "DOWNLOAD", C_FILE, inc=1, delay=1.0)
                         with urllib.urlopen(req) as response, open(zip_path, 'wb') as out_file: shutil.copyfileobj(response, out_file)
                         
-                        log_task(format_log("EXTRACT", f"Unpacking archive...", C_PROMPT), "RAW")
+                        matrix_step(f"Payload received. Unzipping temp_font.zip...", "EXTRACT", C_PROMPT, inc=1, delay=0.6)
                         with zipfile.ZipFile(zip_path, 'r') as z:
                             target_file = next((f for f in z.namelist() if f.endswith(dest_name)), None)
                             if target_file:
+                                matrix_step(f"Located {target_file} inside archive. Extracting to {dest_path}...", "EXTRACT", C_PROMPT, inc=0, delay=0.5)
                                 with z.open(target_file) as zf, open(dest_path, 'wb') as f: shutil.copyfileobj(zf, f)
+                            else:
+                                matrix_step(f"Could not find {dest_name} in archive!", "FAILED", C_ALERT, inc=0, delay=0.5)
+                                
+                        matrix_step(f"Purging temporary archive temp_font.zip...", "CLEANUP", C_SUBTEXT, inc=0, delay=0.4)
                         os.remove(zip_path)
                     else:
+                        matrix_step(f"Downloading raw asset from {meta['url']}...", "DOWNLOAD", C_FILE, inc=2, delay=1.0)
                         with urllib.urlopen(req) as response, open(dest_path, 'wb') as out_file: shutil.copyfileobj(response, out_file)
-                    log_task(format_log("SUCCESS", f"Asset {dest_name} staged.", C_STAGED), "RAW")
+                            
+                    matrix_step(f"Asset {dest_name} successfully staged.", "SUCCESS", C_STAGED, inc=1, delay=0.2)
                 except Exception as e:
-                    log_task(format_log("FAILED", f"{e}", C_ALERT), "RAW")
-                    
-            draw_viewport(progress_pct=pct, active_file=dest_name, current_file_idx=curr, total_files=total_tasks, is_interactive=False)
-            time.sleep(0.2)
+                    matrix_step(f"Network fetch failed: {e}", "FAILED", C_ALERT, inc=2, delay=1.5)
         else:
-            log_task(format_log("VERIFIED", f"Verified Cache: {dest_name}", C_SUBTEXT), "RAW")
-            draw_viewport(progress_pct=pct, active_file=dest_name, current_file_idx=curr, total_files=total_tasks, is_interactive=False)
-            time.sleep(0.02)
+            matrix_step(f"Verified existing cached asset: {dest_name}", "VERIFIED", C_STAGED, inc=3, delay=0.15)
             
-    # 6. UNIVERSAL THEATRICAL LOCK
-    log_task(format_log("SYSTEM", f"System Ready. {C_PROMPT}Press ENTER to boot Operations Center...{RESET}", C_STAGED), "RAW")
+    # 6. THE INTERNAL VIEWPORT LOCK
+    # Push the final instruction directly into the viewport as the last log entry!
+    matrix_step(f"{C_PROMPT}>>> BOOT SEQUENCE COMPLETE. PRESS [ENTER] TO LAUNCH OPERATIONS CENTER <<<{RESET}", "READY", C_STAGED, inc=0, delay=0)
     
+    # Render it one last time and engage the scroll loop
     draw_viewport(progress_pct=100.0, active_file="System Ready", current_file_idx=total_tasks, total_files=total_tasks, is_interactive=True)
     
     while True:
@@ -3414,23 +3415,24 @@ def main():
 
 if __name__ == "__main__":
     try: 
-        # 1. Establish the color palette so the viewport can draw itself
+        # 1. Establish the Color Palette
         init_environment()
         load_config()
         apply_theme(app_config.get("theme", "tokyo_night"))
         
-        # 2. Phase 0: The Cold Boot (Viewport matrix, deferred imports, asset verification)
+        # 2. The Consent Wall (Handles the Y check and Modal internally)
+        display_boot_sequence()
+
+        # 3. Assets (Phase 0 ignites instantly upon returning from the Consent Wall)      
         verify_and_stage_fonts()
         
-        # 3. The Grand Reveal (ASCII Art Welcome Screen)
-        display_boot_sequence()
-        
-        # 4. Operations Center
+        # 4. The Grand Reveal & Main Loop
+        # (The Final Lock is handled safely inside verify_and_stage_fonts)
         main()
         
     except KeyboardInterrupt: 
         clean_exit()
     except Exception as e:
         sys.stdout.write(f"\n\033[31m[FATAL CRASH] {str(e)}\033[0m\n")
-        time.sleep(5) # <--- Force it to stay on screen before exit
+        time.sleep(5) 
         clean_exit()
