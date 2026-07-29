@@ -20,6 +20,7 @@ import base64
 import zipfile
 import urllib.request as urllib
 from datetime import datetime, timezone
+import subprocess
 
 # Global placeholders for the Tier-2 heavyweights
 pd = None
@@ -3212,16 +3213,17 @@ def verify_and_stage_fonts():
     ]
     
     fonts = {
-        'Arial-Regular.ttf': {'win': r"C:\Windows\Fonts\arial.ttf", 'lin_name': 'arial.ttf', 'url': "https://cdn.jsdelivr.net/gh/matomo-org/travis-scripts@master/fonts/arial.ttf", 'is_zip': False},
-        'Arial-Bold.ttf': {'win': r"C:\Windows\Fonts\arialbd.ttf", 'lin_name': 'arialbd.ttf', 'url': "https://cdn.jsdelivr.net/gh/matomo-org/travis-scripts@master/fonts/arialbd.ttf", 'is_zip': False},
-        'Tahoma-Regular.ttf': {'win': r"C:\Windows\Fonts\tahoma.ttf", 'lin_name': 'tahoma.ttf', 'url': "https://cdn.jsdelivr.net/gh/matomo-org/travis-scripts@master/fonts/tahoma.ttf", 'is_zip': False},
+        'Arial-Regular.ttf': {'win': r"C:\Windows\Fonts\arial.ttf", 'lin_name': 'arial.ttf', 'url': "https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/arial32.exe", 'is_cab': True, 'target_ttf': 'arial.ttf'},
+        'Arial-Bold.ttf': {'win': r"C:\Windows\Fonts\arialbd.ttf", 'lin_name': 'arialbd.ttf', 'url': "https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/arialb32.exe", 'is_cab': True, 'target_ttf': 'arialbd.ttf'},
+        'Tahoma-Regular.ttf': {'win': r"C:\Windows\Fonts\tahoma.ttf", 'lin_name': 'tahoma.ttf', 'url': "https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/iel32.exe", 'is_cab': True, 'target_ttf': 'tahoma.ttf'},
+        
         'MSSansSerif-Regular.ttf': {'win': r"C:\Windows\Fonts\micross.ttf", 'lin_name': 'micross.ttf', 'url': "https://cdn.jsdelivr.net/gh/matomo-org/travis-scripts@master/fonts/micross.ttf", 'is_zip': False},
         'UbuntuSansNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/UbuntuSans.zip", 'is_zip': True},
         'JetBrainsMonoNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip", 'is_zip': True},
         'FiraCodeNerdFont-Medium.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.zip", 'is_zip': True},
         'CaskaydiaCoveNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/CascadiaCode.zip", 'is_zip': True},
         'NotoSansNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Noto.zip", 'is_zip': True},
-        'OpenSans-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/opensans/static/OpenSans-Regular.ttf", 'is_zip': False},
+        'OpenSans-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://cdn.jsdelivr.net/gh/googlefonts/opensans@main/fonts/ttf/OpenSans-Regular.ttf", 'is_zip': False},
     }
 
     total_tasks = len(modules) + (len(fonts) * 4)
@@ -3310,6 +3312,44 @@ def verify_and_stage_fonts():
                                 
                         matrix_step(f"Purging temporary archive temp_font.zip...", "CLEANUP", C_SUBTEXT, inc=0, delay=0.4)
                         os.remove(zip_path)
+                        
+                    elif meta.get('is_cab'):
+                        cab_path = os.path.join(TMP_DIR, 'temp_cab.exe')
+                        
+                        dl_cmd = (f"curl.exe -sLO \"{meta['url']}\"" if is_win 
+                                  else f"curl -sLO \"{meta['url']}\"")
+                        matrix_step(dl_cmd, color=C_FILE, inc=0, delay=1.0, is_cmd=True)
+                        
+                        with urllib.urlopen(req) as response, open(cab_path, 'wb') as out_file: 
+                            shutil.copyfileobj(response, out_file)
+                        
+                        f_size = os.path.getsize(cab_path) // 1024
+                        matrix_step(f"Downloaded Microsoft Cabinet Payload ({f_size:,} KB)", color=C_SUBTEXT, inc=0, delay=0, is_cmd=True)
+                        
+                        matrix_step("Ripping target binary from legacy cabinet...", "EXTRACT", C_PROMPT, inc=1, delay=0.2)
+                        
+                        if is_win:
+                            ext_cmd = f"extrac32.exe /E /Y \"{cab_path}\" \"{meta['target_ttf']}\""
+                            matrix_step(ext_cmd, color=C_PROMPT, inc=0, delay=0.5, is_cmd=True)
+                            # extrac32 extracts to current working directory, so we move it to dest_path
+                            subprocess.run(f'extrac32.exe /E /Y "{cab_path}" "{meta["target_ttf"]}"', shell=True, stdout=subprocess.DEVNULL)
+                            if os.path.exists(meta['target_ttf']):
+                                shutil.move(meta['target_ttf'], dest_path)
+                        else:
+                            ext_cmd = f"cabextract -q -F {meta['target_ttf']} temp_cab.exe -d ./HTML/data/"
+                            matrix_step(ext_cmd, color=C_PROMPT, inc=0, delay=0.5, is_cmd=True)
+                            # Run cabextract and dump directly into the HTML_DATA_DIR
+                            subprocess.run(f'cabextract -q -F {meta["target_ttf"]} "{cab_path}" -d "{HTML_DATA_DIR}"', shell=True, stdout=subprocess.DEVNULL)
+                            
+                            # Standardize the output filename (cabextract keeps original lower/uppercase)
+                            extracted_file = os.path.join(HTML_DATA_DIR, meta['target_ttf'])
+                            if os.path.exists(extracted_file) and extracted_file != dest_path:
+                                os.rename(extracted_file, dest_path)
+                        
+                        matrix_step("Purging temporary cabinet artifacts...", "CLEANUP", C_SUBTEXT, inc=1, delay=0.2)
+                        clean_cmd = f"del /F /Q temp_cab.exe" if is_win else f"rm -f temp_cab.exe"
+                        matrix_step(clean_cmd, color=C_SUBTEXT, inc=0, delay=0.3, is_cmd=True)
+                        os.remove(cab_path)
                     else:
                         matrix_step(f"Downloading raw asset from {meta['url']}...", "DOWNLOAD", C_FILE, inc=2, delay=1.0)
                         with urllib.urlopen(req) as response, open(dest_path, 'wb') as out_file: shutil.copyfileobj(response, out_file)
