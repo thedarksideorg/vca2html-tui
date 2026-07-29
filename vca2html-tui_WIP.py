@@ -3259,8 +3259,8 @@ def execute_generate_database():
 
 def verify_and_stage_fonts():
     global global_mode, scroll_offset
-    # Bring the Tier 2 heavy lifters into global scope
-    global pd, urllib, zipfile
+    global pd, zipfile
+    import subprocess
     
     # 1. STANDARDIZED SKELETON SETUP
     sys.stdout.write(f"{C_BG}\033[2J\033[H")
@@ -3304,36 +3304,45 @@ def verify_and_stage_fonts():
 
     total_tasks = len(modules) + (len(fonts) * 4)
     curr = 0
+    is_win = os.name == 'nt'
+    
+    # Dynamic OS Line Break for Human Commands (8 spaces geometry)
+    L_BREAK = " `\n              " if is_win else " \\\n              "
 
-    # THE CINEMATIC MACRO
-    def matrix_step(log_msg, status="SYSTEM", color=C_SUBTEXT, inc=1, delay=0.15):
+    def matrix_step(log_msg, status="SYSTEM", color=C_SUBTEXT, inc=1, delay=0.15, is_cmd=False):
         nonlocal curr
         curr += inc
         pct = min(100.0, (curr / max(1, total_tasks)) * 100.0)
-        log_task(format_log(status, log_msg, color), "RAW")
+        log_task(format_log(status, log_msg, color, is_cmd=is_cmd), "RAW")
         draw_viewport(progress_pct=pct, active_file="Initializing...", current_file_idx=curr, total_files=total_tasks, is_interactive=False)
         time.sleep(delay)
 
-    matrix_step("INITIALIZING CORE MODULES...", "SYSTEM", C_TITLE, inc=0, delay=0.6)
+    matrix_step("INITIALIZING CORE MODULES...", "SYSTEM", C_TITLE, inc=0, delay=0.4)
     
-    # 4. EXECUTING THE MATRIX LOADS
+    # 4. EXECUTING THE MATRIX LOADS (Cleaned up UI, no Pip)
     for desc, mod, is_real in modules:
-        matrix_step(f"Allocating memory buffer for {desc} [{mod}]...", "SYSTEM", C_SUBTEXT, inc=0, delay=0.08)
+        matrix_step(f"Verifying {desc} [{mod}]...", "CORE MOD", C_TITLE, inc=0, delay=0.08)
         
         if is_real:
-            if mod == "pandas": import pandas as pd
-            elif mod == "urllib": import urllib.request as urllib
-            elif mod == "zipfile": import zipfile
-            matrix_step(f"Physical library '{mod}' loaded into RAM.", "MOUNT", C_PROMPT, inc=0, delay=0.2)
-        
-        matrix_step(f"Module '{mod}' successfully mounted and verified.", "SUCCESS", C_STAGED, inc=1, delay=0.1)
+            if mod == "pandas": 
+                import pandas as pd
+            elif mod == "urllib": 
+                # Crash fixed here: Do not alias to urllib
+                import urllib.request
+                import urllib.parse
+            elif mod == "zipfile": 
+                import zipfile
+            matrix_step(f"Physical library securely mounted into RAM.", color=C_STAGED, inc=0, delay=0.1, is_cmd=True)
+        else:
+            matrix_step(f"Native pathways established.", color=C_SUBTEXT, inc=0, delay=0.02, is_cmd=True)
+            
+        matrix_step(f"", inc=1, delay=0, is_cmd=True) # Invisible tick
 
     # 5. ASSET SCANNING & EXTRACTION
     matrix_step("INITIALIZING TYPOGRAPHY ENGINE...", "SYSTEM", C_TITLE, inc=0, delay=0.8)
     
     os.makedirs(HTML_DATA_DIR, exist_ok=True)
     os.makedirs(TMP_DIR, exist_ok=True)
-    is_win = os.name == 'nt'
     
     def find_local_font(win_path, file_name):
         if is_win and os.path.exists(win_path): return win_path
@@ -3349,98 +3358,103 @@ def verify_and_stage_fonts():
 
     for dest_name, meta in fonts.items():
         dest_path = os.path.join(HTML_DATA_DIR, dest_name)
-        matrix_step(f"Evaluating dependency: {dest_name}", "SCAN", C_SUBTEXT, inc=1, delay=0.3)
+        
+        # Now urllib.parse safely exists
+        real_filename = urllib.parse.unquote(meta['url'].split('/')[-1])
+        if "download?family" in real_filename: real_filename = dest_name.replace(".ttf", ".zip")
         
         if not os.path.exists(dest_path):
             local_src = find_local_font(meta['win'], meta.get('lin_name', ''))
+            
             if local_src:
-                matrix_step(f"Discovered native OS asset at: {local_src}", "LOCAL", C_DIR, inc=1, delay=0.4)
-                matrix_step(f"Copying {dest_name} to HTML/data vault...", "MOUNT", C_PROMPT, inc=1, delay=0.3)
+                matrix_step(f"Need {dest_name} (Discovered in native OS cache)", "FONT ASSET", C_TITLE, inc=1, delay=0.4)
+                
+                copy_cmd = f"$ copy /Y \"{local_src}\" \"./HTML/data/\"" if is_win else f"$ cp -v \"{local_src}\" \"./HTML/data/\""
+                matrix_step(copy_cmd, color=C_PROMPT, inc=1, delay=0.3, is_cmd=True)
+                
                 try:
                     shutil.copy2(local_src, dest_path)
-                    matrix_step(f"Asset {dest_name} integrated flawlessly.", "SUCCESS", C_STAGED, inc=1, delay=0.2)
+                    matrix_step(f"Asset copied flawlessly.", color=C_STAGED, inc=1, delay=0.2, is_cmd=True)
                 except Exception as e:
                     matrix_step(f"Mount error: {e}", "FAILED", C_ALERT, inc=1, delay=0.5)
             else:
-                matrix_step(f"Asset missing locally. Preparing network fetch...", "WARN", C_WARN, inc=1, delay=0.5)
-                matrix_step(f"Opening secure HTTP tunnel to: {meta['url'].split('/')[2]}", "NETWORK", C_DIR, inc=0, delay=0.6)
+                matrix_step(f"Need {dest_name} (Not found locally, fetching remote...)", "FONT ASSET", C_WARN, inc=1, delay=0.5)
+                
+                dl_bin = "curl.exe" if is_win else "curl"
+                tmp_target = f"./data/.tmp/{real_filename}"
+                
+                dl_cmd = f"$ {dl_bin} -sL {L_BREAK}\"{meta['url']}\"{L_BREAK}-o \"{tmp_target}\""
+                matrix_step(dl_cmd, color=C_FILE, inc=0, delay=0.8, is_cmd=True)
                 
                 try:
                     headers = {
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
                         'Accept': '*/*'
                     }
-                    req = urllib.Request(meta['url'].strip(), headers=headers)
+                    req = urllib.request.Request(meta['url'].strip(), headers=headers)
                     
-                    if meta.get('is_zip'):
-                        zip_path = os.path.join(TMP_DIR, 'temp_font.zip')
-                        matrix_step(f"Downloading binary payload from {meta['url']}...", "DOWNLOAD", C_FILE, inc=1, delay=1.0)
-                        with urllib.urlopen(req) as response, open(zip_path, 'wb') as out_file: shutil.copyfileobj(response, out_file)
+                    if meta.get('is_cab'):
+                        cab_path = os.path.join(TMP_DIR, real_filename)
                         
-                        matrix_step(f"Payload received. Unzipping temp_font.zip...", "EXTRACT", C_PROMPT, inc=1, delay=0.6)
+                        with urllib.request.urlopen(req) as response, open(cab_path, 'wb') as out_file: 
+                            shutil.copyfileobj(response, out_file)
+                        
+                        matrix_step(f"Downloaded Microsoft Cabinet Payload to {tmp_target}", color=C_SUBTEXT, inc=1, delay=0.1, is_cmd=True)
+                        
+                        if is_win:
+                            ext_cmd = f"$ extrac32.exe /E /Y \"{tmp_target}\"{L_BREAK}\"{meta['target_ttf']}\""
+                            matrix_step(ext_cmd, color=C_PROMPT, inc=0, delay=0.4, is_cmd=True)
+                            subprocess.run(f'extrac32.exe /E /Y "{cab_path}" "{meta["target_ttf"]}"', shell=True, stdout=subprocess.DEVNULL)
+                            if os.path.exists(meta['target_ttf']): shutil.move(meta['target_ttf'], dest_path)
+                        else:
+                            ext_cmd = f"$ cabextract -q -F {meta['target_ttf']} \"{tmp_target}\"{L_BREAK}-d ./HTML/data/"
+                            matrix_step(ext_cmd, color=C_PROMPT, inc=0, delay=0.4, is_cmd=True)
+                            subprocess.run(f'cabextract -q -F "{meta["target_ttf"]}" "{cab_path}" -d "{HTML_DATA_DIR}"', shell=True, stdout=subprocess.DEVNULL)
+                            
+                            ext_file = os.path.join(HTML_DATA_DIR, meta['target_ttf'])
+                            if os.path.exists(ext_file) and ext_file != dest_path: os.rename(ext_file, dest_path)
+                            
+                        matrix_step(f"Successfully ripped {dest_name} from legacy cabinet.", color=C_STAGED, inc=1, delay=0.1, is_cmd=True)
+                        
+                        rm_cmd = f"$ del /F /Q \"{tmp_target}\"" if is_win else f"$ rm -f \"{tmp_target}\""
+                        matrix_step(rm_cmd, color=C_SUBTEXT, inc=0, delay=0.2, is_cmd=True)
+                        os.remove(cab_path)
+                        
+                    elif meta.get('is_zip'):
+                        zip_path = os.path.join(TMP_DIR, real_filename)
+                        with urllib.request.urlopen(req) as response, open(zip_path, 'wb') as out_file: shutil.copyfileobj(response, out_file)
+                        
+                        matrix_step(f"Downloaded ZIP Payload to {tmp_target}", color=C_SUBTEXT, inc=1, delay=0.1, is_cmd=True)
+                        
+                        ext_cmd = f"$ tar.exe -xf \"{tmp_target}\" -C ./HTML/data/" if is_win else f"$ unzip -q \"{tmp_target}\" -d ./HTML/data/"
+                        matrix_step(ext_cmd, color=C_PROMPT, inc=0, delay=0.4, is_cmd=True)
+                        
                         with zipfile.ZipFile(zip_path, 'r') as z:
                             target_file = next((f for f in z.namelist() if f.endswith(dest_name)), None)
                             if target_file:
-                                matrix_step(f"Located {target_file} inside archive. Extracting to {dest_path}...", "EXTRACT", C_PROMPT, inc=0, delay=0.5)
                                 with z.open(target_file) as zf, open(dest_path, 'wb') as f: shutil.copyfileobj(zf, f)
-                            else:
-                                matrix_step(f"Could not find {dest_name} in archive!", "FAILED", C_ALERT, inc=0, delay=0.5)
-                                
-                        matrix_step(f"Purging temporary archive temp_font.zip...", "CLEANUP", C_SUBTEXT, inc=0, delay=0.4)
+                        
+                        matrix_step(f"Successfully extracted {dest_name}.", color=C_STAGED, inc=1, delay=0.1, is_cmd=True)
+                        
+                        rm_cmd = f"$ del /F /Q \"{tmp_target}\"" if is_win else f"$ rm -f \"{tmp_target}\""
+                        matrix_step(rm_cmd, color=C_SUBTEXT, inc=0, delay=0.4, is_cmd=True)
                         os.remove(zip_path)
                         
-                    elif meta.get('is_cab'):
-                        cab_path = os.path.join(TMP_DIR, 'temp_cab.exe')
-                        
-                        dl_cmd = (f"curl.exe -sLO \"{meta['url']}\"" if is_win 
-                                  else f"curl -sLO \"{meta['url']}\"")
-                        matrix_step(dl_cmd, color=C_FILE, inc=0, delay=1.0, is_cmd=True)
-                        
-                        with urllib.urlopen(req) as response, open(cab_path, 'wb') as out_file: 
-                            shutil.copyfileobj(response, out_file)
-                        
-                        f_size = os.path.getsize(cab_path) // 1024
-                        matrix_step(f"Downloaded Microsoft Cabinet Payload ({f_size:,} KB)", color=C_SUBTEXT, inc=0, delay=0, is_cmd=True)
-                        
-                        matrix_step("Ripping target binary from legacy cabinet...", "EXTRACT", C_PROMPT, inc=1, delay=0.2)
-                        
-                        if is_win:
-                            ext_cmd = f"extrac32.exe /E /Y \"{cab_path}\" \"{meta['target_ttf']}\""
-                            matrix_step(ext_cmd, color=C_PROMPT, inc=0, delay=0.5, is_cmd=True)
-                            # extrac32 extracts to current working directory, so we move it to dest_path
-                            subprocess.run(f'extrac32.exe /E /Y "{cab_path}" "{meta["target_ttf"]}"', shell=True, stdout=subprocess.DEVNULL)
-                            if os.path.exists(meta['target_ttf']):
-                                shutil.move(meta['target_ttf'], dest_path)
-                        else:
-                            ext_cmd = f"cabextract -q -F {meta['target_ttf']} temp_cab.exe -d ./HTML/data/"
-                            matrix_step(ext_cmd, color=C_PROMPT, inc=0, delay=0.5, is_cmd=True)
-                            # Run cabextract and dump directly into the HTML_DATA_DIR
-                            subprocess.run(f'cabextract -q -F {meta["target_ttf"]} "{cab_path}" -d "{HTML_DATA_DIR}"', shell=True, stdout=subprocess.DEVNULL)
-                            
-                            # Standardize the output filename (cabextract keeps original lower/uppercase)
-                            extracted_file = os.path.join(HTML_DATA_DIR, meta['target_ttf'])
-                            if os.path.exists(extracted_file) and extracted_file != dest_path:
-                                os.rename(extracted_file, dest_path)
-                        
-                        matrix_step("Purging temporary cabinet artifacts...", "CLEANUP", C_SUBTEXT, inc=1, delay=0.2)
-                        clean_cmd = f"del /F /Q temp_cab.exe" if is_win else f"rm -f temp_cab.exe"
-                        matrix_step(clean_cmd, color=C_SUBTEXT, inc=0, delay=0.3, is_cmd=True)
-                        os.remove(cab_path)
                     else:
-                        matrix_step(f"Downloading raw asset from {meta['url']}...", "DOWNLOAD", C_FILE, inc=2, delay=1.0)
-                        with urllib.urlopen(req) as response, open(dest_path, 'wb') as out_file: shutil.copyfileobj(response, out_file)
-                            
-                    matrix_step(f"Asset {dest_name} successfully staged.", "SUCCESS", C_STAGED, inc=1, delay=0.2)
+                        with urllib.request.urlopen(req) as response, open(dest_path, 'wb') as out_file: shutil.copyfileobj(response, out_file)
+                        matrix_step(f"Streaming raw binary payload directly to vault...", color=C_STAGED, inc=2, delay=1.0, is_cmd=True)
+                        
+                    matrix_step(f"Asset {dest_name} successfully staged.", color=C_STAGED, inc=1, delay=0.2, is_cmd=True)
+                
                 except Exception as e:
-                    matrix_step(f"Network fetch failed: {e}", "FAILED", C_ALERT, inc=2, delay=1.5)
+                    matrix_step(f"Network / IO Exception: {e}", "FAILED", C_ALERT, inc=2, delay=1.5)
         else:
-            matrix_step(f"Verified existing cached asset: {dest_name}", "VERIFIED", C_STAGED, inc=3, delay=0.15)
+            matrix_step(f"Need {dest_name} (Verified in vault cache)", "FONT ASSET", C_TITLE, inc=2, delay=0.15)
+            matrix_step(f"Bypassing network and I/O operations.", color=C_STAGED, inc=2, delay=0, is_cmd=True)
             
-    # 6. THE INTERNAL VIEWPORT LOCK
-    # Push the final instruction directly into the viewport as the last log entry!
+    # 6. UNIVERSAL THEATRICAL LOCK
     matrix_step(f"{C_PROMPT}>>> BOOT SEQUENCE COMPLETE. PRESS [ENTER] TO LAUNCH OPERATIONS CENTER <<<{RESET}", "READY", C_STAGED, inc=0, delay=0)
     
-    # Render it one last time and engage the scroll loop
     draw_viewport(progress_pct=100.0, active_file="System Ready", current_file_idx=total_tasks, total_files=total_tasks, is_interactive=True)
     
     while True:
@@ -3457,8 +3471,6 @@ def verify_and_stage_fonts():
         elif c == '\x1b[B' or c == 'DOWN': scroll_offset = min(max_scroll, scroll_offset + 1)
         elif c == '\x1b[5~' or c == 'PGUP': scroll_offset = max(0, scroll_offset - 10)
         elif c == '\x1b[6~' or c == 'PGDN': scroll_offset = min(max_scroll, scroll_offset + 10)
-        
-        draw_viewport(progress_pct=100.0, active_file="System Ready", current_file_idx=total_tasks, total_files=total_tasks, is_interactive=True)
 
 # --- APPLICATION ENTRY ---
 
