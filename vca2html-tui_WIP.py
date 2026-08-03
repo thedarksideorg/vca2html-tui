@@ -811,6 +811,8 @@ def verify_and_stage_fonts():
     import random
     import os
     import shutil
+    import hashlib
+    import re
     
     # 1. STANDARDIZED SKELETON SETUP
     sys.stdout.write(f"{C_BG}\033[2J\033[H")
@@ -819,7 +821,7 @@ def verify_and_stage_fonts():
     for r in range(2, term_h - 1): draw_frame_line("", row=r)
     draw_frame_line(f"{C_SIZE}PHASE 0: SYSTEM INITIALIZATION & ASSET VERIFICATION{RESET}", row=2, align="center")
     
-    draw_status_bar() # Draw the bottom mode bar
+    draw_status_bar() 
     sys.stdout.flush()
     
     viewport_logs.clear()
@@ -835,8 +837,6 @@ def verify_and_stage_fonts():
         ("Text Wrapping", "textwrap", False), ("Datetime Engine", "datetime", False),
         ("Timezone Protocols", "timezone", False), ("Cryptographic Hashes", "hashlib", False),
         ("Binary Encoders", "base64", False), 
-        
-        # --- THE TRUE LOADS ---
         ("Network Libraries", "urllib", True), 
         ("Archive Tools", "zipfile", True), 
         ("Data Aggregator", "pandas", True),
@@ -857,81 +857,131 @@ def verify_and_stage_fonts():
         'OpenSans-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://cdn.jsdelivr.net/gh/googlefonts/opensans@main/fonts/ttf/OpenSans-Regular.ttf", 'is_zip': False},
     }
 
-    # The Baseline Denominator (Perfect Cache Assumption)
-    boot_total = len(modules) + len(fonts)
-    curr = 0
-
+    # Context Aware Checkmark
+    USE_NERD_FONTS = app_config.get('nerd_fonts', False)
+    CHECK_MARK = "" if USE_NERD_FONTS else "✓"
     is_win = os.name == 'nt'
-    L_CONT = "`" if is_win else "\\"  # Native Line Continuation Character
+    L_CONT = "`" if is_win else "\\" 
 
-    # --- THE ENGINE FUNCTIONS ---
+    os.makedirs(HTML_DATA_DIR, exist_ok=True)
+    os.makedirs(TMP_DIR, exist_ok=True)
 
-    def matrix_step(log_msg, status="SYSTEM", color=C_SUBTEXT, inc=1):
-        """Standard static log entry for Headers."""
-        nonlocal curr
-        curr += inc
-        pct = min(100.0, (curr / max(1, boot_total)) * 100.0)
-        log_task(format_log(status, log_msg, color), "RAW")
-        draw_viewport(progress_pct=pct, active_file="Initializing...", current_file_idx=curr, total_files=boot_total, is_interactive=False)
+    def find_local_font(win_path, file_name):
+        if is_win and os.path.exists(win_path): return win_path
+        if not is_win and file_name:
+            lin_paths = [
+                f"/usr/share/fonts/truetype/msttcorefonts/{file_name}", 
+                f"/usr/share/fonts/TTF/{file_name}", f"/usr/share/fonts/{file_name}",
+                os.path.expanduser(f"~/.local/share/fonts/{file_name}")
+            ]
+            for p in lin_paths:
+                if os.path.exists(p): return p
+        return None
 
-    def spinner_step(cmd_lines, task_func):
-        """Spawns background thread, handles the Labor Illusion, and draws multiline boundaries flawlessly."""
+    # 3. MATHEMATICAL PRE-FLIGHT (Option 2 Logic)
+    total_ghost_loads = sum(1 for m in modules if not m[2])
+    ghost_weight = 1.0 / max(1, total_ghost_loads)
+    
+    # Base denominator: 1 point total for all ghost loads + 1 point per true module command
+    boot_total = sum(1 for m in modules if m[2]) + (1 if total_ghost_loads > 0 else 0)
+    curr = 0.0
+
+    # Expand denominator exactly by the number of shell commands needed per font
+    for dest_name, meta in fonts.items():
+        dest_path = os.path.join(HTML_DATA_DIR, dest_name)
+        if not os.path.exists(dest_path):
+            local_src = find_local_font(meta['win'], meta.get('lin_name', ''))
+            if local_src: boot_total += 2  # Local: Copy, Hash
+            else: boot_total += 4 if meta.get('is_cab') or meta.get('is_zip') else 2 # Remote: Download, Extract, Delete, Hash OR Download, Hash
+        else: boot_total += 1 # Cache: Hash
+            
+    # --- THE PIPELINE ENGINES ---
+    
+    def fast_track_step(tag, desc):
+        """Zero-delay pipeline for native OS bindings (Ghost Loads)."""
         nonlocal curr
         global scroll_offset
+        padded_tag = tag.ljust(11)
         
-        floor_time = random.uniform(1.0, 2.0) # The 1000ms - 2000ms minimum UI hang
-        start_idx = len(viewport_logs)
+        # High-Voltage Glyph
+        viewport_logs.append(f"{C_SUBTEXT}  ({C_STAGED}{CHECK_MARK}{C_SUBTEXT}) {C_ALERT}{padded_tag} {C_TITLE}⚡ {desc}{RESET}")
         
-        # Inject lines into the viewport (Bypassing \n completely to protect borders)
-        first_line = cmd_lines[0]
-        viewport_logs.append(f"{C_SUBTEXT}      ${RESET} {first_line}")
-        for line in cmd_lines[1:]:
-            viewport_logs.append(f"{C_SUBTEXT}        {RESET}{line}")
-            
-        task_complete = False
-        def worker():
-            nonlocal task_complete
-            try: task_func()
-            except Exception: pass
-            task_complete = True
-            
-        t = threading.Thread(target=worker)
-        t.start()
+        curr += ghost_weight # Fractional progression (Option 2)
         
-        start_time = time.time()
+        vp_height = (term_h - 9) - 4 - 1
+        scroll_offset = max(0, len(viewport_logs) - vp_height)
+        
+        pct = min(100.0, (curr / max(1, boot_total)) * 100.0)
+        draw_viewport(progress_pct=pct, active_file="Executing...", current_file_idx=int(curr), total_files=boot_total, is_interactive=False)
+        sys.stdout.flush()
+
+    def execute_pipeline(tag, delimiter, objective, tasks):
+        """Anchors the spinner, executes OS commands sequentially with strict geometry."""
+        nonlocal curr
+        global scroll_offset
+        padded_tag = tag.ljust(11)
+        
+        # 1. Anchored Header with Tight Spinner
+        header_idx = len(viewport_logs)
+        viewport_logs.append(f"{C_SUBTEXT}  ({C_TITLE}/{C_SUBTEXT}) {C_ALERT}{padded_tag} {C_TITLE}{delimiter} {objective}{RESET}")
+        
         spinner_chars = ['|', '/', '-', '\\']
         frame = 0
-        
-        # The Animation Loop
-        while not task_complete or (time.time() - start_time) < floor_time:
-            char = spinner_chars[frame % 4]
-            # Formats: ( | ) $ 
-            bracket_l = f"{C_SUBTEXT}("
-            bracket_r = f"{C_SUBTEXT})"
-            spin = f"{C_TITLE}{char}" # Visually vibrating accent color
-            prompt = f"{bracket_l}{spin}{bracket_r}{C_SUBTEXT} ${RESET}"
+
+        # 2. Iterate Through Child Commands
+        for cmd_lines, task_func in tasks:
+            first_cmd_line = cmd_lines[0]
             
-            viewport_logs[start_idx] = f"{prompt} {first_line}"
+            # The 3-Space Tuck Geometry
+            viewport_logs.append(f"{C_SUBTEXT}   {C_STAGED}$ {first_cmd_line}{RESET}")
             
-            # Auto-scroll to the bottom of the action
-            vp_height = (term_h - 9) - 4 - 1
-            scroll_offset = max(0, len(viewport_logs) - vp_height)
+            # The 4-Space Cascade Geometry (relative to the first letter of command)
+            for line in cmd_lines[1:]:
+                viewport_logs.append(f"{C_SUBTEXT}         {C_STAGED}{line}{RESET}")
+                
+            # Random 800ms - 1600ms Floor
+            floor_time = random.uniform(0.8, 1.6) 
+            task_complete = False
             
-            pct = min(100.0, (curr / max(1, boot_total)) * 100.0)
-            draw_viewport(progress_pct=pct, active_file="Executing...", current_file_idx=curr, total_files=boot_total, is_interactive=False)
+            def worker():
+                nonlocal task_complete
+                try: 
+                    if task_func: task_func()
+                except Exception: pass
+                task_complete = True
+                
+            t = threading.Thread(target=worker)
+            t.start()
+            start_time = time.time()
             
-            time.sleep(0.1)
-            frame += 1
+            # The 150ms Governor Loop
+            while not task_complete or (time.time() - start_time) < floor_time:
+                char = spinner_chars[frame % 4]
+                spin = f"{C_TITLE}{char}"
+                
+                # Update the anchored header
+                viewport_logs[header_idx] = f"{C_SUBTEXT}  ({spin}{C_SUBTEXT}) {C_ALERT}{padded_tag} {C_TITLE}{delimiter} {objective}{RESET}"
+                
+                # Auto-scroll
+                vp_height = (term_h - 9) - 4 - 1
+                scroll_offset = max(0, len(viewport_logs) - vp_height)
+                
+                pct = min(100.0, (curr / max(1, boot_total)) * 100.0)
+                draw_viewport(progress_pct=pct, active_file="Executing...", current_file_idx=int(curr), total_files=boot_total, is_interactive=False)
+                sys.stdout.flush()
+                
+                time.sleep(0.15)
+                frame += 1
             
-        # Clean Exit: Dissolve spinner into exactly 7 spaces
-        viewport_logs[start_idx] = f"{C_SUBTEXT}      ${RESET} {first_line}"
-        
-        curr += 1
+            curr += 1.0 # 1 point per True shell command
+
+        # 3. Final Resolution Snap
+        viewport_logs[header_idx] = f"{C_SUBTEXT}  ({C_STAGED}{CHECK_MARK}{C_SUBTEXT}) {C_ALERT}{padded_tag} {C_TITLE}{delimiter} {objective}{RESET}"
         pct = min(100.0, (curr / max(1, boot_total)) * 100.0)
-        draw_viewport(progress_pct=pct, active_file="Executing...", current_file_idx=curr, total_files=boot_total, is_interactive=False)
+        draw_viewport(progress_pct=pct, active_file="Executing...", current_file_idx=int(curr), total_files=boot_total, is_interactive=False)
+        sys.stdout.flush()
 
     def load_module_task(m):
-        """Thread-safe dynamic importer"""
         global pd, np, zipfile, openpyxl
         if m == "pandas": import pandas as pd
         elif m == "numpy": import numpy as np
@@ -941,41 +991,20 @@ def verify_and_stage_fonts():
             import urllib.parse
         elif m == "zipfile": import zipfile
 
-    matrix_step("INITIALIZING CORE MODULES...", "SYSTEM", C_TITLE, inc=0)
+    # --- PHASE 0 EXECUTION ---
     
-    # 4. EXECUTING THE MATRIX LOADS
+    # 4A. GHOST & TRUE LOADS
     for desc, mod, is_real in modules:
-        matrix_step(f"Verifying {desc} [{mod}]...", "CORE MOD", C_TITLE, inc=0)
-        
-        cmd_str = f"python -m site --user-site {mod}" if not is_win else f"pip show {mod} | findstr Location"
-        
-        if is_real:
-            spinner_step([cmd_str], lambda m=mod: load_module_task(m))
+        if not is_real:
+            fast_track_step("CORE MOD", f"Verifying {desc} [{mod}]")
         else:
-            spinner_step([cmd_str], lambda: time.sleep(0.01))
+            cmd_str = f"python -m site --user-site {mod}" if not is_win else f"pip show {mod} | findstr Location"
+            tasks = [([cmd_str], lambda m=mod: load_module_task(m))]
+            execute_pipeline("CORE MOD", "⚙", f"Loading {desc} [{mod}]", tasks)
 
-    # 5. ASSET SCANNING & EXTRACTION
-    matrix_step("INITIALIZING TYPOGRAPHY ENGINE...", "SYSTEM", C_TITLE, inc=0)
-    
-    os.makedirs(HTML_DATA_DIR, exist_ok=True)
-    os.makedirs(TMP_DIR, exist_ok=True)
-    
-    def find_local_font(win_path, file_name):
-        if is_win and os.path.exists(win_path): return win_path
-        if not is_win and file_name:
-            lin_paths = [
-                f"/usr/share/fonts/truetype/msttcorefonts/{file_name}", f"/usr/share/fonts/truetype/msttcorefonts/{file_name.lower()}",
-                f"/usr/share/fonts/TTF/{file_name}", f"/usr/share/fonts/{file_name}",
-                os.path.expanduser(f"~/.local/share/fonts/{file_name}"), os.path.expanduser(f"~/.fonts/{file_name}")
-            ]
-            for p in lin_paths:
-                if os.path.exists(p): return p
-        return None
-
+    # 4B. FONT ASSETS
     for dest_name, meta in fonts.items():
         dest_path = os.path.join(HTML_DATA_DIR, dest_name)
-        
-        # Parse Real Filename
         real_filename = urllib.parse.unquote(meta['url'].split('/')[-1])
         if "download?family" in real_filename: real_filename = dest_name.replace(".ttf", ".zip")
         
@@ -983,87 +1012,46 @@ def verify_and_stage_fonts():
             local_src = find_local_font(meta['win'], meta.get('lin_name', ''))
             
             if local_src:
-                boot_total += 2 # Dynamic Denominator Expansion
-                matrix_step(f"Need {dest_name} (Discovered in native OS cache)", "FONT ASSET", C_TITLE, inc=1)
-                
-                copy_cmd = [f"copy /Y \"{local_src}\" \"./HTML/data/\""] if is_win else [f"cp -v \"{local_src}\" \"./HTML/data/\""]
-                spinner_step(copy_cmd, lambda: shutil.copy2(local_src, dest_path))
-                
-                hash_cmd = [f"certutil.exe -hashfile \"{dest_name}\" SHA256"] if is_win else [f"sha256sum ./HTML/data/{dest_name}"]
-                spinner_step(hash_cmd, lambda: get_file_hash(dest_path))
-                
+                tasks = [
+                    ([f"copy /Y \"{local_src}\" \"./HTML/data/\"" if is_win else f"cp -v \"{local_src}\" \"./HTML/data/\""], lambda l_src=local_src, d_pth=dest_path: shutil.copy2(l_src, d_pth)),
+                    ([f"certutil.exe -hashfile \"{dest_name}\" SHA256" if is_win else f"sha256sum ./HTML/data/{dest_name}"], lambda path=dest_path: hashlib.sha256(open(path, 'rb').read()).hexdigest() if os.path.exists(path) else None)
+                ]
+                execute_pipeline("FONT ASSET", "▶", f"Need {dest_name} (Discovered in native OS cache)", tasks)
             else:
-                # Dynamic Denominator Expansion
-                boot_total += 4 if meta.get('is_cab') or meta.get('is_zip') else 2 
-                matrix_step(f"Need {dest_name} (Not found locally, fetching remote...)", "FONT ASSET", C_WARN, inc=1)
-                
+                tasks = []
                 dl_bin = "curl.exe" if is_win else "curl"
                 tmp_target = f"./data/.tmp/{real_filename}"
                 real_tmp_path = os.path.join(TMP_DIR, real_filename)
                 
-                # Geometrically isolated URL line
-                dl_cmd = [
-                    f"{dl_bin} -sL {L_CONT}",
-                    f"\"{meta['url']}\" {L_CONT}",
-                    f"-o \"{tmp_target}\""
-                ]
-                
-                def dl_task():
-                    import urllib.request
-                    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Accept': '*/*'}
-                    req = urllib.request.Request(meta['url'].strip(), headers=headers)
-                    with urllib.request.urlopen(req) as response, open(real_tmp_path, 'wb') as out_file: 
-                        shutil.copyfileobj(response, out_file)
-                spinner_step(dl_cmd, dl_task)
+                dl_cmd = [f"{dl_bin} -sL {L_CONT}", f"\"{meta['url']}\" {L_CONT}", f"-o \"{tmp_target}\""]
+                tasks.append((dl_cmd, lambda url=meta["url"].strip(), path=real_tmp_path: subprocess.run(f'{dl_bin} -sL "{url}" -o "{path}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)))
                 
                 if meta.get('is_cab'):
                     if is_win:
-                        ext_cmd = [
-                            f"extrac32.exe /E /Y \"{tmp_target}\" {L_CONT}",
-                            f"\"{meta['target_ttf']}\""
-                        ]
-                        def ext_task():
-                            subprocess.run(f'extrac32.exe /E /Y "{real_tmp_path}" "{meta["target_ttf"]}"', shell=True, stdout=subprocess.DEVNULL)
-                            if os.path.exists(meta['target_ttf']): shutil.move(meta['target_ttf'], dest_path)
+                        ext_cmd = [f"extrac32.exe /E /Y \"{tmp_target}\" {L_CONT}", f"\"{meta['target_ttf']}\""]
+                        tasks.append((ext_cmd, lambda path=real_tmp_path, trg=meta["target_ttf"], dest=dest_path: subprocess.run(f'extrac32.exe /E /Y "{path}" "{trg}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) or (shutil.move(trg, dest) if os.path.exists(trg) else None)))
                     else:
-                        ext_cmd = [
-                            f"cabextract -q -F {meta['target_ttf']} {L_CONT}",
-                            f"\"{tmp_target}\" -d ./HTML/data/"
-                        ]
-                        def ext_task():
-                            subprocess.run(f'cabextract -q -F "{meta["target_ttf"]}" "{real_tmp_path}" -d "{HTML_DATA_DIR}"', shell=True, stdout=subprocess.DEVNULL)
-                            ext_file = os.path.join(HTML_DATA_DIR, meta['target_ttf'])
-                            if os.path.exists(ext_file) and ext_file != dest_path: os.rename(ext_file, dest_path)
-                            
-                    spinner_step(ext_cmd, ext_task)
-                    
-                    rm_cmd = [f"del /F /Q \"{tmp_target}\""] if is_win else [f"rm -f \"{tmp_target}\""]
-                    spinner_step(rm_cmd, lambda: os.remove(real_tmp_path))
+                        ext_cmd = [f"cabextract -q -F {meta['target_ttf']} {L_CONT}", f"\"{tmp_target}\" -d ./HTML/data/"]
+                        tasks.append((ext_cmd, lambda trg=meta["target_ttf"], path=real_tmp_path: subprocess.run(f'cabextract -q -F "{trg}" "{path}" -d "{HTML_DATA_DIR}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)))
+                        
+                    tasks.append(([f"del /F /Q \"{tmp_target}\"" if is_win else f"rm -f \"{tmp_target}\""], lambda path=real_tmp_path: os.remove(path) if os.path.exists(path) else None))
                     
                 elif meta.get('is_zip'):
-                    ext_cmd = [
-                        f"tar.exe -xf \"{tmp_target}\" {L_CONT}" if is_win else f"unzip -q \"{tmp_target}\" {L_CONT}",
-                        f"-C ./HTML/data/" if is_win else f"-d ./HTML/data/"
-                    ]
-                    def ext_task():
-                        with zipfile.ZipFile(real_tmp_path, 'r') as z:
-                            target_file = next((f for f in z.namelist() if f.endswith(dest_name)), None)
-                            if target_file:
-                                with z.open(target_file) as zf, open(dest_path, 'wb') as f: shutil.copyfileobj(zf, f)
-                    spinner_step(ext_cmd, ext_task)
+                    ext_cmd = [f"tar.exe -xf \"{tmp_target}\" {L_CONT}" if is_win else f"unzip -q \"{tmp_target}\" {L_CONT}", f"-C ./HTML/data/" if is_win else f"-d ./HTML/data/"]
+                    def ext_task(path=real_tmp_path):
+                        subprocess.run(f'tar.exe -xf "{path}" -C "{HTML_DATA_DIR}"' if is_win else f'unzip -q "{path}" -d "{HTML_DATA_DIR}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    tasks.append((ext_cmd, ext_task))
+                    tasks.append(([f"del /F /Q \"{tmp_target}\"" if is_win else f"rm -f \"{tmp_target}\""], lambda path=real_tmp_path: os.remove(path) if os.path.exists(path) else None))
                     
-                    rm_cmd = [f"del /F /Q \"{tmp_target}\""] if is_win else [f"rm -f \"{tmp_target}\""]
-                    spinner_step(rm_cmd, lambda: os.remove(real_tmp_path))
-                    
-                hash_cmd = [f"certutil.exe -hashfile \"{dest_name}\" SHA256"] if is_win else [f"sha256sum ./HTML/data/{dest_name}"]
-                spinner_step(hash_cmd, lambda: get_file_hash(dest_path))
+                tasks.append(([f"certutil.exe -hashfile \"{dest_name}\" SHA256" if is_win else f"sha256sum ./HTML/data/{dest_name}"], lambda path=dest_path: hashlib.sha256(open(path, 'rb').read()).hexdigest() if os.path.exists(path) else None))
+                
+                execute_pipeline("FONT ASSET", "⇲", f"Need {dest_name} (Fetching remote...)", tasks)
         else:
-            matrix_step(f"Need {dest_name} (Verified in vault cache)", "FONT ASSET", C_TITLE, inc=1)
+            tasks = [([f"certutil.exe -hashfile \"{dest_name}\" SHA256" if is_win else f"sha256sum ./HTML/data/{dest_name}"], lambda path=dest_path: hashlib.sha256(open(path, 'rb').read()).hexdigest() if os.path.exists(path) else None)]
+            execute_pipeline("FONT ASSET", "◈", f"Need {dest_name} (Verified in vault cache)", tasks)
 
-    # 6. UNIVERSAL THEATRICAL LOCK
-    matrix_step(f"{C_PROMPT}>>> BOOT SEQUENCE COMPLETE. PRESS [ENTER] TO LAUNCH OPERATIONS CENTER <<<{RESET}", "READY", C_STAGED, inc=0)
-    
-    draw_viewport(progress_pct=100.0, active_file="System Ready", current_file_idx=boot_total, total_files=boot_total, is_interactive=True)
+    # 5. UNIVERSAL THEATRICAL LOCK
+    execute_pipeline("SYSTEM READY", "▶", f"{C_PROMPT}BOOT SEQUENCE COMPLETE. PRESS [ENTER] TO LAUNCH OPERATIONS CENTER{RESET}", [])
     
     while True:
         c = getch()
@@ -1080,7 +1068,8 @@ def verify_and_stage_fonts():
         elif c == '\x1b[5~' or c == 'PGUP': scroll_offset = max(0, scroll_offset - 10)
         elif c == '\x1b[6~' or c == 'PGDN': scroll_offset = min(max_scroll, scroll_offset + 10)
         
-        draw_viewport(progress_pct=100.0, active_file="System Ready", current_file_idx=boot_total, total_files=boot_total, is_interactive=True)
+        pct = min(100.0, (curr / max(1, boot_total)) * 100.0)
+        draw_viewport(progress_pct=pct, active_file="System Ready", current_file_idx=int(curr), total_files=boot_total, is_interactive=True)
 
 def display_boot_sequence():
     global global_mode
@@ -3292,221 +3281,6 @@ def execute_generate_database():
         
         break
     global_mode = "MAIN MENU"
-
-def verify_and_stage_fonts():
-    global global_mode, scroll_offset
-    global pd, zipfile
-    import subprocess
-    
-    # 1. STANDARDIZED SKELETON SETUP
-    sys.stdout.write(f"{C_BG}\033[2J\033[H")
-    term_w, term_h = get_term_size()
-    draw_top_bar()
-    for r in range(2, term_h - 1): draw_frame_line("", row=r)
-    draw_frame_line(f"{C_SIZE}PHASE 0: SYSTEM INITIALIZATION & ASSET VERIFICATION{RESET}", row=2, align="center")
-    
-    draw_status_bar() # Draw the bottom mode bar
-    sys.stdout.flush()
-    
-    viewport_logs.clear()
-    scroll_offset = 0
-
-    # 2. THE SMOKE & MIRRORS MATRIX
-    modules = [
-        ("Core OS Interface", "os", False), ("System Pathways", "sys", False),
-        ("Temporal Engine", "time", False), ("Platform Diagnostics", "platform", False),
-        ("Warning Handlers", "warnings", False), ("Exit Routines", "atexit", False),
-        ("Regex Engine", "re", False), ("File Operations", "shutil", False),
-        ("JSON Parsers", "json", False), ("Sys Stat", "stat", False),
-        ("Text Wrapping", "textwrap", False), ("Datetime Engine", "datetime", False),
-        ("Timezone Protocols", "timezone", False), ("Cryptographic Hashes", "hashlib", False),
-        ("Binary Encoders", "base64", False), ("Network Libraries", "urllib", True), 
-        ("Archive Tools", "zipfile", True), ("Pandas DataFrames", "pandas", True)
-    ]
-    
-    fonts = {
-        'Arial-Regular.ttf': {'win': r"C:\Windows\Fonts\arial.ttf", 'lin_name': 'arial.ttf', 'url': "https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/arial32.exe", 'is_cab': True, 'target_ttf': 'arial.ttf'},
-        'Arial-Bold.ttf': {'win': r"C:\Windows\Fonts\arialbd.ttf", 'lin_name': 'arialbd.ttf', 'url': "https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/arialb32.exe", 'is_cab': True, 'target_ttf': 'arialbd.ttf'},
-        'Tahoma-Regular.ttf': {'win': r"C:\Windows\Fonts\tahoma.ttf", 'lin_name': 'tahoma.ttf', 'url': "https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/iel32.exe", 'is_cab': True, 'target_ttf': 'tahoma.ttf'},
-        
-        'MSSansSerif-Regular.ttf': {'win': r"C:\Windows\Fonts\micross.ttf", 'lin_name': 'micross.ttf', 'url': "https://cdn.jsdelivr.net/gh/matomo-org/travis-scripts@master/fonts/micross.ttf", 'is_zip': False},
-        'UbuntuSansNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/UbuntuSans.zip", 'is_zip': True},
-        'JetBrainsMonoNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip", 'is_zip': True},
-        'FiraCodeNerdFont-Medium.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.zip", 'is_zip': True},
-        'CaskaydiaCoveNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/CascadiaCode.zip", 'is_zip': True},
-        'NotoSansNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Noto.zip", 'is_zip': True},
-        'OpenSans-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://cdn.jsdelivr.net/gh/googlefonts/opensans@main/fonts/ttf/OpenSans-Regular.ttf", 'is_zip': False},
-    }
-
-    total_tasks = len(modules) + (len(fonts) * 4)
-    curr = 0
-    is_win = os.name == 'nt'
-    
-    # Dynamic OS Line Break for Human Commands (8 spaces geometry)
-    L_BREAK = " `\n              " if is_win else " \\\n              "
-
-    def matrix_step(log_msg, status="SYSTEM", color=C_SUBTEXT, inc=1, delay=0.15, is_cmd=False):
-        nonlocal curr
-        curr += inc
-        pct = min(100.0, (curr / max(1, total_tasks)) * 100.0)
-        log_task(format_log(status, log_msg, color, is_cmd=is_cmd), "RAW")
-        draw_viewport(progress_pct=pct, active_file="Initializing...", current_file_idx=curr, total_files=total_tasks, is_interactive=False)
-        time.sleep(delay)
-
-    matrix_step("INITIALIZING CORE MODULES...", "SYSTEM", C_TITLE, inc=0, delay=0.4)
-    
-    # 4. EXECUTING THE MATRIX LOADS (Cleaned up UI, no Pip)
-    for desc, mod, is_real in modules:
-        matrix_step(f"Verifying {desc} [{mod}]...", "CORE MOD", C_TITLE, inc=0, delay=0.08)
-        
-        if is_real:
-            if mod == "pandas": 
-                import pandas as pd
-            elif mod == "urllib": 
-                # Crash fixed here: Do not alias to urllib
-                import urllib.request
-                import urllib.parse
-            elif mod == "zipfile": 
-                import zipfile
-            matrix_step(f"Physical library securely mounted into RAM.", color=C_STAGED, inc=0, delay=0.1, is_cmd=True)
-        else:
-            matrix_step(f"Native pathways established.", color=C_SUBTEXT, inc=0, delay=0.02, is_cmd=True)
-            
-        matrix_step(f"", inc=1, delay=0, is_cmd=True) # Invisible tick
-
-    # 5. ASSET SCANNING & EXTRACTION
-    matrix_step("INITIALIZING TYPOGRAPHY ENGINE...", "SYSTEM", C_TITLE, inc=0, delay=0.8)
-    
-    os.makedirs(HTML_DATA_DIR, exist_ok=True)
-    os.makedirs(TMP_DIR, exist_ok=True)
-    
-    def find_local_font(win_path, file_name):
-        if is_win and os.path.exists(win_path): return win_path
-        if not is_win and file_name:
-            lin_paths = [
-                f"/usr/share/fonts/truetype/msttcorefonts/{file_name}", f"/usr/share/fonts/truetype/msttcorefonts/{file_name.lower()}",
-                f"/usr/share/fonts/TTF/{file_name}", f"/usr/share/fonts/{file_name}",
-                os.path.expanduser(f"~/.local/share/fonts/{file_name}"), os.path.expanduser(f"~/.fonts/{file_name}")
-            ]
-            for p in lin_paths:
-                if os.path.exists(p): return p
-        return None
-
-    for dest_name, meta in fonts.items():
-        dest_path = os.path.join(HTML_DATA_DIR, dest_name)
-        
-        # Now urllib.parse safely exists
-        real_filename = urllib.parse.unquote(meta['url'].split('/')[-1])
-        if "download?family" in real_filename: real_filename = dest_name.replace(".ttf", ".zip")
-        
-        if not os.path.exists(dest_path):
-            local_src = find_local_font(meta['win'], meta.get('lin_name', ''))
-            
-            if local_src:
-                matrix_step(f"Need {dest_name} (Discovered in native OS cache)", "FONT ASSET", C_TITLE, inc=1, delay=0.4)
-                
-                copy_cmd = f"$ copy /Y \"{local_src}\" \"./HTML/data/\"" if is_win else f"$ cp -v \"{local_src}\" \"./HTML/data/\""
-                matrix_step(copy_cmd, color=C_PROMPT, inc=1, delay=0.3, is_cmd=True)
-                
-                try:
-                    shutil.copy2(local_src, dest_path)
-                    matrix_step(f"Asset copied flawlessly.", color=C_STAGED, inc=1, delay=0.2, is_cmd=True)
-                except Exception as e:
-                    matrix_step(f"Mount error: {e}", "FAILED", C_ALERT, inc=1, delay=0.5)
-            else:
-                matrix_step(f"Need {dest_name} (Not found locally, fetching remote...)", "FONT ASSET", C_WARN, inc=1, delay=0.5)
-                
-                dl_bin = "curl.exe" if is_win else "curl"
-                tmp_target = f"./data/.tmp/{real_filename}"
-                
-                dl_cmd = f"$ {dl_bin} -sL {L_BREAK}\"{meta['url']}\"{L_BREAK}-o \"{tmp_target}\""
-                matrix_step(dl_cmd, color=C_FILE, inc=0, delay=0.8, is_cmd=True)
-                
-                try:
-                    headers = {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-                        'Accept': '*/*'
-                    }
-                    req = urllib.request.Request(meta['url'].strip(), headers=headers)
-                    
-                    if meta.get('is_cab'):
-                        cab_path = os.path.join(TMP_DIR, real_filename)
-                        
-                        with urllib.request.urlopen(req) as response, open(cab_path, 'wb') as out_file: 
-                            shutil.copyfileobj(response, out_file)
-                        
-                        matrix_step(f"Downloaded Microsoft Cabinet Payload to {tmp_target}", color=C_SUBTEXT, inc=1, delay=0.1, is_cmd=True)
-                        
-                        if is_win:
-                            ext_cmd = f"$ extrac32.exe /E /Y \"{tmp_target}\"{L_BREAK}\"{meta['target_ttf']}\""
-                            matrix_step(ext_cmd, color=C_PROMPT, inc=0, delay=0.4, is_cmd=True)
-                            subprocess.run(f'extrac32.exe /E /Y "{cab_path}" "{meta["target_ttf"]}"', shell=True, stdout=subprocess.DEVNULL)
-                            if os.path.exists(meta['target_ttf']): shutil.move(meta['target_ttf'], dest_path)
-                        else:
-                            ext_cmd = f"$ cabextract -q -F {meta['target_ttf']} \"{tmp_target}\"{L_BREAK}-d ./HTML/data/"
-                            matrix_step(ext_cmd, color=C_PROMPT, inc=0, delay=0.4, is_cmd=True)
-                            subprocess.run(f'cabextract -q -F "{meta["target_ttf"]}" "{cab_path}" -d "{HTML_DATA_DIR}"', shell=True, stdout=subprocess.DEVNULL)
-                            
-                            ext_file = os.path.join(HTML_DATA_DIR, meta['target_ttf'])
-                            if os.path.exists(ext_file) and ext_file != dest_path: os.rename(ext_file, dest_path)
-                            
-                        matrix_step(f"Successfully ripped {dest_name} from legacy cabinet.", color=C_STAGED, inc=1, delay=0.1, is_cmd=True)
-                        
-                        rm_cmd = f"$ del /F /Q \"{tmp_target}\"" if is_win else f"$ rm -f \"{tmp_target}\""
-                        matrix_step(rm_cmd, color=C_SUBTEXT, inc=0, delay=0.2, is_cmd=True)
-                        os.remove(cab_path)
-                        
-                    elif meta.get('is_zip'):
-                        zip_path = os.path.join(TMP_DIR, real_filename)
-                        with urllib.request.urlopen(req) as response, open(zip_path, 'wb') as out_file: shutil.copyfileobj(response, out_file)
-                        
-                        matrix_step(f"Downloaded ZIP Payload to {tmp_target}", color=C_SUBTEXT, inc=1, delay=0.1, is_cmd=True)
-                        
-                        ext_cmd = f"$ tar.exe -xf \"{tmp_target}\" -C ./HTML/data/" if is_win else f"$ unzip -q \"{tmp_target}\" -d ./HTML/data/"
-                        matrix_step(ext_cmd, color=C_PROMPT, inc=0, delay=0.4, is_cmd=True)
-                        
-                        with zipfile.ZipFile(zip_path, 'r') as z:
-                            target_file = next((f for f in z.namelist() if f.endswith(dest_name)), None)
-                            if target_file:
-                                with z.open(target_file) as zf, open(dest_path, 'wb') as f: shutil.copyfileobj(zf, f)
-                        
-                        matrix_step(f"Successfully extracted {dest_name}.", color=C_STAGED, inc=1, delay=0.1, is_cmd=True)
-                        
-                        rm_cmd = f"$ del /F /Q \"{tmp_target}\"" if is_win else f"$ rm -f \"{tmp_target}\""
-                        matrix_step(rm_cmd, color=C_SUBTEXT, inc=0, delay=0.4, is_cmd=True)
-                        os.remove(zip_path)
-                        
-                    else:
-                        with urllib.request.urlopen(req) as response, open(dest_path, 'wb') as out_file: shutil.copyfileobj(response, out_file)
-                        matrix_step(f"Streaming raw binary payload directly to vault...", color=C_STAGED, inc=2, delay=1.0, is_cmd=True)
-                        
-                    matrix_step(f"Asset {dest_name} successfully staged.", color=C_STAGED, inc=1, delay=0.2, is_cmd=True)
-                
-                except Exception as e:
-                    matrix_step(f"Network / IO Exception: {e}", "FAILED", C_ALERT, inc=2, delay=1.5)
-        else:
-            matrix_step(f"Need {dest_name} (Verified in vault cache)", "FONT ASSET", C_TITLE, inc=2, delay=0.15)
-            matrix_step(f"Bypassing network and I/O operations.", color=C_STAGED, inc=2, delay=0, is_cmd=True)
-            
-    # 6. UNIVERSAL THEATRICAL LOCK
-    matrix_step(f"{C_PROMPT}>>> BOOT SEQUENCE COMPLETE. PRESS [ENTER] TO LAUNCH OPERATIONS CENTER <<<{RESET}", "READY", C_STAGED, inc=0, delay=0)
-    
-    draw_viewport(progress_pct=100.0, active_file="System Ready", current_file_idx=total_tasks, total_files=total_tasks, is_interactive=True)
-    
-    while True:
-        c = getch()
-        if isinstance(c, bytes):
-            try: c = c.decode('utf-8')
-            except: continue
-        if c in ('\r', '\n', '\x1b'): break
-        
-        vp_height = (term_h - 9) - 4 - 1
-        max_scroll = max(0, len(viewport_logs) - vp_height)
-        
-        if c == '\x1b[A' or c == 'UP': scroll_offset = max(0, scroll_offset - 1)
-        elif c == '\x1b[B' or c == 'DOWN': scroll_offset = min(max_scroll, scroll_offset + 1)
-        elif c == '\x1b[5~' or c == 'PGUP': scroll_offset = max(0, scroll_offset - 10)
-        elif c == '\x1b[6~' or c == 'PGDN': scroll_offset = min(max_scroll, scroll_offset + 10)
 
 # --- APPLICATION ENTRY ---
 
