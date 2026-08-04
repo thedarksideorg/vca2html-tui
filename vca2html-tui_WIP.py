@@ -827,6 +827,9 @@ def verify_and_stage_fonts():
     viewport_logs.clear()
     scroll_offset = 0
 
+    BASE_INDENT = 0
+    MARGIN = " " * BASE_INDENT
+
     # 2. THE SMOKE & MIRRORS MATRIX
     modules = [
         ("Core OS Interface", "os", False), ("System Pathways", "sys", False),
@@ -857,7 +860,6 @@ def verify_and_stage_fonts():
         'OpenSans-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://cdn.jsdelivr.net/gh/googlefonts/opensans@main/fonts/ttf/OpenSans-Regular.ttf", 'is_zip': False},
     }
 
-    # Context Aware Checkmark
     USE_NERD_FONTS = app_config.get('nerd_fonts', False)
     CHECK_MARK = "" if USE_NERD_FONTS else "✓"
     is_win = os.name == 'nt'
@@ -881,19 +883,16 @@ def verify_and_stage_fonts():
     # 3. MATHEMATICAL PRE-FLIGHT (Option 2 Logic)
     total_ghost_loads = sum(1 for m in modules if not m[2])
     ghost_weight = 1.0 / max(1, total_ghost_loads)
-    
-    # Base denominator: 1 point total for all ghost loads + 1 point per true module command
     boot_total = sum(1 for m in modules if m[2]) + (1 if total_ghost_loads > 0 else 0)
     curr = 0.0
 
-    # Expand denominator exactly by the number of shell commands needed per font
     for dest_name, meta in fonts.items():
         dest_path = os.path.join(HTML_DATA_DIR, dest_name)
         if not os.path.exists(dest_path):
             local_src = find_local_font(meta['win'], meta.get('lin_name', ''))
-            if local_src: boot_total += 2  # Local: Copy, Hash
-            else: boot_total += 4 if meta.get('is_cab') or meta.get('is_zip') else 2 # Remote: Download, Extract, Delete, Hash OR Download, Hash
-        else: boot_total += 1 # Cache: Hash
+            if local_src: boot_total += 2
+            else: boot_total += 4 if meta.get('is_cab') or meta.get('is_zip') else 2 
+        else: boot_total += 1 
             
     # --- THE PIPELINE ENGINES ---
     
@@ -901,12 +900,11 @@ def verify_and_stage_fonts():
         """Zero-delay pipeline for native OS bindings (Ghost Loads)."""
         nonlocal curr
         global scroll_offset
-        padded_tag = tag.ljust(11)
+        padded_tag = tag.ljust(10)
         
-        # High-Voltage Glyph
-        viewport_logs.append(f"{C_SUBTEXT}  ({C_STAGED}{CHECK_MARK}{C_SUBTEXT}) {C_ALERT}{padded_tag} {C_TITLE}⚡ {desc}{RESET}")
-        
-        curr += ghost_weight # Fractional progression (Option 2)
+        # Muted parens, Green check, 2-space moat, Light Blue Objective
+        viewport_logs.append(f"{MARGIN}{C_SUBTEXT}({C_STAGED}{CHECK_MARK}{C_SUBTEXT}){RESET} {C_PROMPT}{padded_tag}{RESET}  {C_TITLE}❯{RESET}  {C_FILE}{desc}{RESET}")
+        curr += ghost_weight 
         
         vp_height = (term_h - 9) - 4 - 1
         scroll_offset = max(0, len(viewport_logs) - vp_height)
@@ -914,32 +912,33 @@ def verify_and_stage_fonts():
         pct = min(100.0, (curr / max(1, boot_total)) * 100.0)
         draw_viewport(progress_pct=pct, active_file="Executing...", current_file_idx=int(curr), total_files=boot_total, is_interactive=False)
         sys.stdout.flush()
+        
+        # THE MICRO-CASCADE DELAY (30ms - 80ms)
+        time.sleep(random.uniform(0.03, 0.08))
 
-    def execute_pipeline(tag, delimiter, objective, tasks):
+    def execute_pipeline(tag, objective, tasks):
         """Anchors the spinner, executes OS commands sequentially with strict geometry."""
         nonlocal curr
         global scroll_offset
-        padded_tag = tag.ljust(11)
+        padded_tag = tag.ljust(10)
         
-        # 1. Anchored Header with Tight Spinner
+        # Anchored Header with Active Orange Parens and Cyan Pipe
         header_idx = len(viewport_logs)
-        viewport_logs.append(f"{C_SUBTEXT}  ({C_TITLE}/{C_SUBTEXT}) {C_ALERT}{padded_tag} {C_TITLE}{delimiter} {objective}{RESET}")
+        viewport_logs.append(f"{MARGIN}{C_SIZE}({C_TITLE}|{C_SIZE}){RESET} {C_PROMPT}{padded_tag}{RESET}  {C_TITLE}❯{RESET}  {C_FILE}{objective}{RESET}")
         
         spinner_chars = ['|', '/', '-', '\\']
         frame = 0
 
-        # 2. Iterate Through Child Commands
         for cmd_lines, task_func in tasks:
             first_cmd_line = cmd_lines[0]
             
-            # The 3-Space Tuck Geometry
-            viewport_logs.append(f"{C_SUBTEXT}   {C_STAGED}$ {first_cmd_line}{RESET}")
+            # The Wall-Hug Geometry ($ perfectly tracks the spinner /)
+            viewport_logs.append(f"{MARGIN} {C_STAGED}${RESET} {first_cmd_line}")
             
-            # The 4-Space Cascade Geometry (relative to the first letter of command)
+            # The 4-Space Cascade (Relative to the 'c' in the command text)
             for line in cmd_lines[1:]:
-                viewport_logs.append(f"{C_SUBTEXT}         {C_STAGED}{line}{RESET}")
+                viewport_logs.append(f"{MARGIN}       {line}")
                 
-            # Random 800ms - 1600ms Floor
             floor_time = random.uniform(0.8, 1.6) 
             task_complete = False
             
@@ -954,15 +953,13 @@ def verify_and_stage_fonts():
             t.start()
             start_time = time.time()
             
-            # The 150ms Governor Loop
+            # Governor Loop
             while not task_complete or (time.time() - start_time) < floor_time:
                 char = spinner_chars[frame % 4]
-                spin = f"{C_TITLE}{char}"
+                spin = f"{C_TITLE}{char}{C_SIZE}"
                 
-                # Update the anchored header
-                viewport_logs[header_idx] = f"{C_SUBTEXT}  ({spin}{C_SUBTEXT}) {C_ALERT}{padded_tag} {C_TITLE}{delimiter} {objective}{RESET}"
+                viewport_logs[header_idx] = f"{MARGIN}{C_SIZE}({spin}){RESET} {C_PROMPT}{padded_tag}{RESET}  {C_TITLE}❯{RESET}  {C_FILE}{objective}{RESET}"
                 
-                # Auto-scroll
                 vp_height = (term_h - 9) - 4 - 1
                 scroll_offset = max(0, len(viewport_logs) - vp_height)
                 
@@ -973,10 +970,10 @@ def verify_and_stage_fonts():
                 time.sleep(0.15)
                 frame += 1
             
-            curr += 1.0 # 1 point per True shell command
+            curr += 1.0
 
-        # 3. Final Resolution Snap
-        viewport_logs[header_idx] = f"{C_SUBTEXT}  ({C_STAGED}{CHECK_MARK}{C_SUBTEXT}) {C_ALERT}{padded_tag} {C_TITLE}{delimiter} {objective}{RESET}"
+        # Final Resolution Snap (Muted Parens, Green Check)
+        viewport_logs[header_idx] = f"{MARGIN}{C_SUBTEXT}({C_STAGED}{CHECK_MARK}{C_SUBTEXT}){RESET} {C_PROMPT}{padded_tag}{RESET}  {C_TITLE}❯{RESET}  {C_FILE}{objective}{RESET}"
         pct = min(100.0, (curr / max(1, boot_total)) * 100.0)
         draw_viewport(progress_pct=pct, active_file="Executing...", current_file_idx=int(curr), total_files=boot_total, is_interactive=False)
         sys.stdout.flush()
@@ -996,11 +993,12 @@ def verify_and_stage_fonts():
     # 4A. GHOST & TRUE LOADS
     for desc, mod, is_real in modules:
         if not is_real:
-            fast_track_step("CORE MOD", f"Verifying {desc} [{mod}]")
+            fast_track_step("SYS MODULE", f"Verifying {desc} {C_SUBTEXT}[{C_FILE}{mod}{C_SUBTEXT}]{RESET}")
         else:
-            cmd_str = f"python -m site --user-site {mod}" if not is_win else f"pip show {mod} | findstr Location"
+            if is_win: cmd_str = f"{C_TITLE}pip{RESET} {C_TITLE}show{RESET} {C_FILE}{mod}{RESET} {C_SUBTEXT}|{RESET} {C_TITLE}findstr{RESET} {C_FILE}Location{RESET}"
+            else: cmd_str = f"{C_TITLE}python{RESET} {C_SUBTEXT}-{C_SIZE}m{RESET} {C_TITLE}site{RESET} {C_SUBTEXT}--{C_SIZE}user{C_SUBTEXT}-{C_SIZE}site{RESET} {C_FILE}{mod}{RESET}"
             tasks = [([cmd_str], lambda m=mod: load_module_task(m))]
-            execute_pipeline("CORE MOD", "⚙", f"Loading {desc} [{mod}]", tasks)
+            execute_pipeline("SYS MODULE", f"Loading {desc} {C_SUBTEXT}[{C_FILE}{mod}{C_SUBTEXT}]{RESET}", tasks)
 
     # 4B. FONT ASSETS
     for dest_name, meta in fonts.items():
@@ -1012,46 +1010,80 @@ def verify_and_stage_fonts():
             local_src = find_local_font(meta['win'], meta.get('lin_name', ''))
             
             if local_src:
+                if is_win: copy_cmd = f"{C_TITLE}copy{RESET} {C_SUBTEXT}/{C_SIZE}Y{RESET} {C_SUBTEXT}\"{C_FILE}{local_src}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}\"{C_FILE}./HTML/data/{C_SUBTEXT}\"{RESET}"
+                else: copy_cmd = f"{C_TITLE}cp{RESET} {C_SUBTEXT}-{C_SIZE}v{RESET} {C_SUBTEXT}\"{C_FILE}{local_src}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}\"{C_FILE}./HTML/data/{C_SUBTEXT}\"{RESET}"
+                
+                if is_win: hash_cmd = f"{C_TITLE}certutil.exe{RESET} {C_SUBTEXT}-{C_SIZE}hashfile{RESET} {C_SUBTEXT}\"{C_FILE}{dest_name}{C_SUBTEXT}\"{RESET} {C_TITLE}SHA256{RESET}"
+                else: hash_cmd = f"{C_TITLE}sha256sum{RESET} {C_SUBTEXT}\"{C_FILE}./HTML/data/{dest_name}{C_SUBTEXT}\"{RESET}"
+
                 tasks = [
-                    ([f"copy /Y \"{local_src}\" \"./HTML/data/\"" if is_win else f"cp -v \"{local_src}\" \"./HTML/data/\""], lambda l_src=local_src, d_pth=dest_path: shutil.copy2(l_src, d_pth)),
-                    ([f"certutil.exe -hashfile \"{dest_name}\" SHA256" if is_win else f"sha256sum ./HTML/data/{dest_name}"], lambda path=dest_path: hashlib.sha256(open(path, 'rb').read()).hexdigest() if os.path.exists(path) else None)
+                    ([copy_cmd], lambda l_src=local_src, d_pth=dest_path: shutil.copy2(l_src, d_pth)),
+                    ([hash_cmd], lambda path=dest_path: hashlib.sha256(open(path, 'rb').read()).hexdigest() if os.path.exists(path) else None)
                 ]
-                execute_pipeline("FONT ASSET", "▶", f"Need {dest_name} (Discovered in native OS cache)", tasks)
+                execute_pipeline("FONT ASSET", f"Need {dest_name} (Discovered in native OS cache)", tasks)
             else:
                 tasks = []
                 dl_bin = "curl.exe" if is_win else "curl"
                 tmp_target = f"./data/.tmp/{real_filename}"
                 real_tmp_path = os.path.join(TMP_DIR, real_filename)
                 
-                dl_cmd = [f"{dl_bin} -sL {L_CONT}", f"\"{meta['url']}\" {L_CONT}", f"-o \"{tmp_target}\""]
+                dl_cmd = [
+                    f"{C_TITLE}{dl_bin}{RESET} {C_SUBTEXT}-{C_SIZE}sL{RESET} {C_SUBTEXT}{L_CONT}{RESET}", 
+                    f"{C_SUBTEXT}\"{C_FILE}{meta['url']}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}{L_CONT}{RESET}", 
+                    f"{C_SUBTEXT}-{C_SIZE}o{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET}"
+                ]
                 tasks.append((dl_cmd, lambda url=meta["url"].strip(), path=real_tmp_path: subprocess.run(f'{dl_bin} -sL "{url}" -o "{path}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)))
                 
                 if meta.get('is_cab'):
                     if is_win:
-                        ext_cmd = [f"extrac32.exe /E /Y \"{tmp_target}\" {L_CONT}", f"\"{meta['target_ttf']}\""]
+                        ext_cmd = [
+                            f"{C_TITLE}extrac32.exe{RESET} {C_SUBTEXT}/{C_SIZE}E{RESET} {C_SUBTEXT}/{C_SIZE}Y{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}{L_CONT}{RESET}", 
+                            f"{C_SUBTEXT}\"{C_FILE}{meta['target_ttf']}{C_SUBTEXT}\"{RESET}"
+                        ]
                         tasks.append((ext_cmd, lambda path=real_tmp_path, trg=meta["target_ttf"], dest=dest_path: subprocess.run(f'extrac32.exe /E /Y "{path}" "{trg}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) or (shutil.move(trg, dest) if os.path.exists(trg) else None)))
+                        del_cmd = f"{C_TITLE}del{RESET} {C_SUBTEXT}/{C_SIZE}F{RESET} {C_SUBTEXT}/{C_SIZE}Q{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET}"
                     else:
-                        ext_cmd = [f"cabextract -q -F {meta['target_ttf']} {L_CONT}", f"\"{tmp_target}\" -d ./HTML/data/"]
+                        ext_cmd = [
+                            f"{C_TITLE}cabextract{RESET} {C_SUBTEXT}-{C_SIZE}q{RESET} {C_SUBTEXT}-{C_SIZE}F{RESET} {C_SUBTEXT}\"{C_FILE}{meta['target_ttf']}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}{L_CONT}{RESET}", 
+                            f"{C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}-{C_SIZE}d{RESET} {C_SUBTEXT}\"{C_FILE}./HTML/data/{C_SUBTEXT}\"{RESET}"
+                        ]
                         tasks.append((ext_cmd, lambda trg=meta["target_ttf"], path=real_tmp_path: subprocess.run(f'cabextract -q -F "{trg}" "{path}" -d "{HTML_DATA_DIR}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)))
+                        del_cmd = f"{C_TITLE}rm{RESET} {C_SUBTEXT}-{C_SIZE}f{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET}"
                         
-                    tasks.append(([f"del /F /Q \"{tmp_target}\"" if is_win else f"rm -f \"{tmp_target}\""], lambda path=real_tmp_path: os.remove(path) if os.path.exists(path) else None))
+                    tasks.append(([del_cmd], lambda path=real_tmp_path: os.remove(path) if os.path.exists(path) else None))
                     
                 elif meta.get('is_zip'):
-                    ext_cmd = [f"tar.exe -xf \"{tmp_target}\" {L_CONT}" if is_win else f"unzip -q \"{tmp_target}\" {L_CONT}", f"-C ./HTML/data/" if is_win else f"-d ./HTML/data/"]
+                    if is_win:
+                        ext_cmd = [
+                            f"{C_TITLE}tar.exe{RESET} {C_SUBTEXT}-{C_SIZE}xf{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}{L_CONT}{RESET}", 
+                            f"{C_SUBTEXT}-{C_SIZE}C{RESET} {C_SUBTEXT}\"{C_FILE}./HTML/data/{C_SUBTEXT}\"{RESET}"
+                        ]
+                        del_cmd = f"{C_TITLE}del{RESET} {C_SUBTEXT}/{C_SIZE}F{RESET} {C_SUBTEXT}/{C_SIZE}Q{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET}"
+                    else:
+                        ext_cmd = [
+                            f"{C_TITLE}unzip{RESET} {C_SUBTEXT}-{C_SIZE}q{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}{L_CONT}{RESET}", 
+                            f"{C_SUBTEXT}-{C_SIZE}d{RESET} {C_SUBTEXT}\"{C_FILE}./HTML/data/{C_SUBTEXT}\"{RESET}"
+                        ]
+                        del_cmd = f"{C_TITLE}rm{RESET} {C_SUBTEXT}-{C_SIZE}f{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET}"
+
                     def ext_task(path=real_tmp_path):
                         subprocess.run(f'tar.exe -xf "{path}" -C "{HTML_DATA_DIR}"' if is_win else f'unzip -q "{path}" -d "{HTML_DATA_DIR}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     tasks.append((ext_cmd, ext_task))
-                    tasks.append(([f"del /F /Q \"{tmp_target}\"" if is_win else f"rm -f \"{tmp_target}\""], lambda path=real_tmp_path: os.remove(path) if os.path.exists(path) else None))
+                    tasks.append(([del_cmd], lambda path=real_tmp_path: os.remove(path) if os.path.exists(path) else None))
                     
-                tasks.append(([f"certutil.exe -hashfile \"{dest_name}\" SHA256" if is_win else f"sha256sum ./HTML/data/{dest_name}"], lambda path=dest_path: hashlib.sha256(open(path, 'rb').read()).hexdigest() if os.path.exists(path) else None))
+                if is_win: hash_cmd = f"{C_TITLE}certutil.exe{RESET} {C_SUBTEXT}-{C_SIZE}hashfile{RESET} {C_SUBTEXT}\"{C_FILE}{dest_name}{C_SUBTEXT}\"{RESET} {C_TITLE}SHA256{RESET}"
+                else: hash_cmd = f"{C_TITLE}sha256sum{RESET} {C_SUBTEXT}\"{C_FILE}./HTML/data/{dest_name}{C_SUBTEXT}\"{RESET}"
+                tasks.append(([hash_cmd], lambda path=dest_path: hashlib.sha256(open(path, 'rb').read()).hexdigest() if os.path.exists(path) else None))
                 
-                execute_pipeline("FONT ASSET", "⇲", f"Need {dest_name} (Fetching remote...)", tasks)
+                execute_pipeline("FONT ASSET", f"Need {dest_name} (Fetching remote...)", tasks)
         else:
-            tasks = [([f"certutil.exe -hashfile \"{dest_name}\" SHA256" if is_win else f"sha256sum ./HTML/data/{dest_name}"], lambda path=dest_path: hashlib.sha256(open(path, 'rb').read()).hexdigest() if os.path.exists(path) else None)]
-            execute_pipeline("FONT ASSET", "◈", f"Need {dest_name} (Verified in vault cache)", tasks)
+            if is_win: hash_cmd = f"{C_TITLE}certutil.exe{RESET} {C_SUBTEXT}-{C_SIZE}hashfile{RESET} {C_SUBTEXT}\"{C_FILE}{dest_name}{C_SUBTEXT}\"{RESET} {C_TITLE}SHA256{RESET}"
+            else: hash_cmd = f"{C_TITLE}sha256sum{RESET} {C_SUBTEXT}\"{C_FILE}./HTML/data/{dest_name}{C_SUBTEXT}\"{RESET}"
+            tasks = [([hash_cmd], lambda path=dest_path: hashlib.sha256(open(path, 'rb').read()).hexdigest() if os.path.exists(path) else None)]
+            execute_pipeline("FONT ASSET", f"Need {dest_name} (Verified in vault cache)", tasks)
 
     # 5. UNIVERSAL THEATRICAL LOCK
-    execute_pipeline("SYSTEM READY", "▶", f"{C_PROMPT}BOOT SEQUENCE COMPLETE. PRESS [ENTER] TO LAUNCH OPERATIONS CENTER{RESET}", [])
+    execute_pipeline("SYSTEM RDY", f"{C_STAGED}BOOT SEQUENCE COMPLETE. PRESS [ENTER] TO LAUNCH OPERATIONS CENTER{RESET}", [])
     
     while True:
         c = getch()
