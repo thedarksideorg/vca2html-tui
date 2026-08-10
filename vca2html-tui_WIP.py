@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ==============================================================================
+# =============================================================================
 # VCA2HTML-TUI v3.3.0 (Ultimate Optical Engine)
 # OPTICAL LENS DATABASE ENGINE
 # ==============================================================================
@@ -77,6 +77,7 @@ CORRUPT_DIR = os.path.join(DB_DIR, 'corrupt')
 HTML_DIR = os.path.join(DATA_DIR, 'HTML')
 HTML_DATA_DIR = os.path.join(HTML_DIR, 'data')
 HTML_DB_DIR = os.path.join(HTML_DATA_DIR, 'db')
+HTML_FONT_DIR = os.path.join(HTML_DATA_DIR, 'fonts')
 TMP_DIR = os.path.join(DATA_DIR, '.tmp')
 DB_FILE = os.path.join(DB_DIR, 'master_lens_db.json')
 ICONS_FILE = os.path.join(DB_DIR, '.icons')
@@ -171,31 +172,95 @@ GLOBAL_LICENSE = "Copyright © 2026 Daniel Casada. This program is free software
 GLOBAL_DISCLAIMER = "This application was created to help optical lab technicians get lens technical specifications into legacy LMS systems. This tool tries to take industry \"standard VCA files\", parse them properly, then format them into a human readable format. It is not affiliated with National Optronics™ (DAC Vision™) or any proprietary LMS manufacturer. There is absolutely no support for this tool and I am not responsible for any invalid information, errors, or any data loss. This application comes as is and you must use at your own risk."
 
 VALID_EXTENSIONS = ['.vca', '.csv', '.xlsx', '.xls', '.txt']
-DEFAULT_ICONS = {
-    "opt_eng": {"char": "󰇻", "pad": 2}, "mode": {"char": "󰚡", "pad": 1},
-    "db": {"char": "󱘲", "pad": 1}, "lens": {"char": "󰊪", "pad": 2},
-    "stage": {"char": "", "pad": 1}, "conv": {"char": "", "pad": 1},
-    "add": {"char": "󱘫", "pad": 1}, "list": {"char": "󱤢", "pad": 1},
-    "scan": {"char": "󱘶", "pad": 1}, "gen": {"char": "󱘸", "pad": 1},
-    "html": {"char": "󰊯", "pad": 1}, "tools": {"char": "󰏗", "pad": 1},
-    "move": {"char": "󱄗", "pad": 1}, "copy": {"char": "󱉦", "pad": 1},
-    "ren": {"char": "󱓦", "pad": 1}, "del": {"char": "󱂨", "pad": 1},
-    "quit": {"char": "󰗼", "pad": 1}, "nf": {"char": "⚡", "pad": 0},
-    "arr_up": {"char": "󰧇", "pad": 1}, "arr_dn": {"char": "󰦿", "pad": 1},
-    "arr_prv": {"char": "󰧀", "pad": 1}, "arr_nxt": {"char": "󰧂", "pad": 1},
-    "dir_up": {"char": "󰷏", "pad": 1}, "dir": {"char": "󰉖", "pad": 1},
-    "file": {"char": "󰈙", "pad": 1}, "term": {"char": "", "pad": 1},
-    "prot": {"char": "󰒃", "pad": 1}, "ext_json": {"char": "󰘦", "pad": 1},
-    "ext_html": {"char": "", "pad": 1}, "ext_csv": {"char": "󰈙", "pad": 1},
-    "ext_vca": {"char": "󰈙", "pad": 1}, "ext_txt": {"char": "󰈙", "pad": 1}
+USE_NERD_FONTS = app_config.get('nerd_fonts', False)
+
+# The Master Icon Dictionary (Flat, Zero-Padding, with ASCII Fallbacks)
+ICONS = {
+    "check": "" if USE_NERD_FONTS else "✓",
+    "cross": "" if USE_NERD_FONTS else "X",
+    "toggle": "" if USE_NERD_FONTS else "=",
+    "nf": "⚡" if USE_NERD_FONTS else "NF",
+    "opt_eng": "󰇻" if USE_NERD_FONTS else "SYS",
+    "mode": "󰚡" if USE_NERD_FONTS else "M:",
+    "db": "󱘲" if USE_NERD_FONTS else "DB:",
+    "lens": "󰊪" if USE_NERD_FONTS else "O",
+    "stage": "" if USE_NERD_FONTS else "+",
+    "term": "" if USE_NERD_FONTS else ">",
+    "prot": "󰒃" if USE_NERD_FONTS else "@",
+    "conv": "" if USE_NERD_FONTS else "~",
+    "add": "󱘫" if USE_NERD_FONTS else "+",
+    "list": "󱤢" if USE_NERD_FONTS else "=",
+    "scan": "󱘶" if USE_NERD_FONTS else "?",
+    "gen": "󱘸" if USE_NERD_FONTS else "*",
+    "html": "󰊯" if USE_NERD_FONTS else "</>",
+    "tools": "󰏗" if USE_NERD_FONTS else "*",
+    "move": "󱄗" if USE_NERD_FONTS else "->",
+    "copy": "󱉦" if USE_NERD_FONTS else "C",
+    "ren": "󱓦" if USE_NERD_FONTS else "R",
+    "del": "󱂨" if USE_NERD_FONTS else "X",
+    "quit": "󰗼" if USE_NERD_FONTS else "Q",
+    "arr_up": "󰧇" if USE_NERD_FONTS else "^",
+    "arr_dn": "󰦿" if USE_NERD_FONTS else "v",
+    "arr_prv": "󰧀" if USE_NERD_FONTS else "<",
+    "arr_nxt": "󰧂" if USE_NERD_FONTS else ">",
+    "dir_up": "󰷏" if USE_NERD_FONTS else "..",
+    "dir": "󰉖" if USE_NERD_FONTS else "DIR",
+    "file": "󰈙" if USE_NERD_FONTS else "DOC",
+    "ext_json": "󰘦" if USE_NERD_FONTS else "{ }",
+    "ext_html": "" if USE_NERD_FONTS else "< >",
+    "ext_csv": "󰈙" if USE_NERD_FONTS else "CSV",
+    "ext_vca": "󰈙" if USE_NERD_FONTS else "VCA",
+    "ext_txt": "󰈙" if USE_NERD_FONTS else "TXT",
+    "pfx_ok": "󰄬" if USE_NERD_FONTS else "[+]",
+    "pfx_warn": "󰀪" if USE_NERD_FONTS else "[*]",
+    "pfx_err": "󰅙" if USE_NERD_FONTS else "[!]",
+    "pfx_info": "󰋼" if USE_NERD_FONTS else "[~]"
 }
 
-active_icons = DEFAULT_ICONS.copy()
+# If you need to make a mutable copy for a specific session state
+active_icons = ICONS.copy()
 
 # --- INITIALIZATION & CONFIGURATION ---
 
+def preflight_dependency_check():
+    """Fails fast if 3rd party modules are missing, providing the exact install command."""
+    import importlib.util
+    import sys
+    import os
+
+    required_modules = ['pandas', 'numpy', 'openpyxl']
+    missing = []
+
+    for mod in required_modules:
+        if importlib.util.find_spec(mod) is None:
+            missing.append(mod)
+
+    if missing:
+        pkg_str = " ".join(missing)
+        
+        # 1. Flood the entire terminal with the Tokyo Night background color
+        sys.stdout.write(f"{C_BG}\033[2J\033[H")
+        
+        # 2. \033[K forces the background color to paint all the way to the right edge
+        print(f"{C_BG}\033[K")
+        print(f"{C_BG}  {C_SIZE}❯  SYSTEM HALT: Missing Required Dependencies{RESET}{C_BG}\033[K")
+        print(f"{C_BG}     {C_SUBTEXT}The engine cannot boot. You are missing:{RESET} {C_FILE}{', '.join(missing)}{RESET}{C_BG}\033[K")
+        print(f"{C_BG}\033[K")
+        
+        if os.name == 'nt':
+            print(f"{C_BG}     {C_SUBTEXT}Run this command to install them:{RESET}{C_BG}\033[K")
+            print(f"{C_BG}     {C_STAGED}$ py -m pip install {pkg_str}{RESET}{C_BG}\033[K")
+            print(f"{C_BG}     {C_SUBTEXT}(If 'py' fails, try: {C_STAGED}python -m pip install {pkg_str}{C_SUBTEXT}){RESET}{C_BG}\033[K")
+        else:
+            print(f"{C_BG}     {C_SUBTEXT}Run this command to install them:{RESET}{C_BG}\033[K")
+            print(f"{C_BG}     {C_STAGED}$ python3 -m pip install {pkg_str}{RESET}{C_BG}\033[K")
+            print(f"{C_BG}     {C_SUBTEXT}(Or use your native package manager, e.g., sudo pacman -S python3-pandas){RESET}{C_BG}\033[K")
+        
+        print(f"{C_BG}\033[K{RESET}")
+        sys.exit(1)
+        
 def init_environment():
-    dirs = [DATA_DIR, IMPORT_DIR, ORIGINALS_DIR, DB_DIR, VLP_ARCHIVE, PURGED_DIR, CORRUPT_DIR, HTML_DIR, HTML_DATA_DIR, HTML_DB_DIR, TMP_DIR]
+    dirs = [DATA_DIR, IMPORT_DIR, ORIGINALS_DIR, DB_DIR, VLP_ARCHIVE, PURGED_DIR, CORRUPT_DIR, HTML_DIR, HTML_DATA_DIR, HTML_FONT_DIR, HTML_DB_DIR, TMP_DIR]
     for d in dirs: 
         os.makedirs(d, exist_ok=True)
     if not os.path.exists(CONFIG_FILE):
@@ -205,7 +270,7 @@ def init_environment():
     if not os.path.exists(ICONS_FILE):
         try:
             with open(ICONS_FILE, 'w', encoding='utf-8') as f:
-                json.dump(DEFAULT_ICONS, f, indent=4, ensure_ascii=False)
+                json.dump(ICONS, f, indent=4, ensure_ascii=False)
         except: pass
 
 def load_config():
@@ -229,22 +294,19 @@ def save_config():
     except Exception: 
         pass
 
-def get_ico(key, pad=True):
-    if not app_config['nerd_fonts']: return ""
-    icon_data = active_icons.get(key, {})
-    if isinstance(icon_data, str): return icon_data + (" " if pad else "")
-    return icon_data.get("char", "") + (" " * icon_data.get("pad", 0) if pad else "")
+def get_ico(key):
+    """Returns the icon or its ASCII fallback with zero padding."""
+    return active_icons.get(key, "")
 
-def get_ext_ico(filename, pad=True):
-    if not app_config['nerd_fonts']: return ""
+def get_ext_ico(filename):
+    """Dynamically grabs the file extension and returns the matched icon."""
     ext = os.path.splitext(filename)[1].lower().replace('.', '')
-    icon_data = active_icons.get(f"ext_{ext}", active_icons.get('file', {}))
-    if isinstance(icon_data, str): return icon_data + (" " if pad else "")
-    return icon_data.get("char", " ") + (" " * icon_data.get("pad", 0) if pad else "")
+    # Tries to find 'ext_json', if it fails, falls back to the default 'file' icon
+    return active_icons.get(f"ext_{ext}", active_icons.get('file', ""))
 
 def get_pfx(t):
-    if app_config['nerd_fonts']: return {'ok': '󰄬 ', 'warn': '󰀪 ', 'err': '󰅙 ', 'info': '󰋼 '}.get(t, '')
-    return {'ok': '[+] ', 'warn': '[*] ', 'err': '[!] ', 'info': '[~] '}.get(t, '')
+    """Returns the status prefix."""
+    return active_icons.get(f"pfx_{t}", "")
 
 def get_sys_info():
     try: user = os.getlogin()
@@ -295,7 +357,7 @@ def enforce_security_lock():
         for r in range(2, term_h - 1): draw_frame_line("", row=r)
          
         r = term_h // 2 - 2
-        draw_frame_line(f"{C_ALERT}{get_pfx('err')}{get_ico('prot', pad=False)} CRITICAL SECURITY ALERT: Master Database Signature Mismatch!{RESET}", row=r, align="center")
+        draw_frame_line(f"{C_ALERT}{get_pfx('err')}{get_ico('prot')} CRITICAL SECURITY ALERT: Master Database Signature Mismatch!{RESET}", row=r, align="center")
         draw_frame_line(f"{C_WARN}The master_lens_db.json file has been altered outside of the application.{RESET}", row=r+2, align="center")
         draw_frame_line(f"{C_WARN}To restore integrity, you must run the (G)eneration Sequence to rebuild the Vault.{RESET}", row=r+3, align="center")
         
@@ -326,7 +388,7 @@ def format_bytes(size):
 def get_prompt_indicator():
     """Returns the globally themed input indicator."""
     if app_config.get('nerd_fonts', False):
-        return f"{C_BGLIGHT} {C_PROMPT}{get_ico('term', pad=False)}  {RESET}{C_BGLIGHT}"
+        return f"{C_BGLIGHT} {C_PROMPT}{get_ico('term')}  {RESET}{C_BGLIGHT}"
     else:
         return f"{C_BGLIGHT}{C_PROMPT}>{RESET}{C_BGLIGHT}"
 
@@ -594,7 +656,7 @@ def handle_error_hijack():
     global err_msg
     if not err_msg: return False
     term_w, term_h = get_term_size()
-    prompt_ico = get_ico('term', pad=False) if app_config['nerd_fonts'] else "[!]"
+    prompt_ico = get_ico('term') if app_config['nerd_fonts'] else "[!]"
     sys.stdout.write(f"\033[{term_h - 4};5H{C_BGLIGHT} {C_ALERT}{prompt_ico} {err_msg} {C_SUBTEXT}(Press ENTER){RESET}{C_BGLIGHT}{' '*10}{RESET}")
     sys.stdout.flush()
     while True:
@@ -602,7 +664,7 @@ def handle_error_hijack():
         if c == 'F12': execute_admin_menu(); return True
         if c in ['\r', '\n']: break
     err_msg = ""
-    sys.stdout.write(f"\033[{term_h - 4};5H{C_BGLIGHT} {C_PROMPT}{get_ico('term', pad=False)}  {RESET}{C_BGLIGHT}{' '*60}{RESET}\033[{term_h - 4};9H{C_BGLIGHT}")
+    sys.stdout.write(f"\033[{term_h - 4};5H{C_BGLIGHT} {C_PROMPT}{get_ico('term')}  {RESET}{C_BGLIGHT}{' '*60}{RESET}\033[{term_h - 4};9H{C_BGLIGHT}")
     sys.stdout.flush()
     return True
 
@@ -646,13 +708,13 @@ def draw_status_bar():
     elif "DELETE" in mode_str: m_key = "del"
     else: m_key = "mode"
     
-    m_block = f"{C_SIZE}{get_ico(m_key)}MODE: {C_TITLE}{global_mode}{C_BORDER}"
-    db_block = f"{C_SIZE}{get_ico('db')}DB: {C_TITLE}{'ACTIVE' if db_active else 'OFFLINE'}{C_BORDER}"
-    l_block = f"{C_SIZE}{get_ico('lens')}LENSES: {C_STAGED}{total_lenses}{C_BORDER}"
-    s_block = f"{C_SIZE}{get_ico('stage')}STAGED: {C_TITLE}{staged}{C_BORDER}"
+    m_block = f"{C_SIZE}{get_ico(m_key)} MODE: {C_TITLE}{global_mode}{C_BORDER}"
+    db_block = f"{C_SIZE}{get_ico('db')} DB: {C_TITLE}{'ACTIVE' if db_active else 'OFFLINE'}{C_BORDER}"
+    l_block = f"{C_SIZE}{get_ico('lens')} LENSES: {C_STAGED}{total_lenses}{C_BORDER}"
+    s_block = f"{C_SIZE}{get_ico('stage')} STAGED: {C_TITLE}{staged}{C_BORDER}"
 
     left = f"{C_BORDER}╚════[{m_block}]════[{db_block}]══({l_block})════[{s_block}]"
-    right = f"═══[{C_TITLE}{get_ico('prot')}{get_sys_info()}{C_BORDER}]════╝{RESET}"
+    right = f"═══[{C_TITLE}{get_ico('prot')} {get_sys_info()}{C_BORDER}]════╝{RESET}"
     
     gap = max(0, term_w - ansi_len(left) - ansi_len(right))
     sys.stdout.write(f"\033[{term_h - 1};1H{left}{'═' * gap}{right}")
@@ -661,7 +723,7 @@ def draw_status_bar():
 def draw_universal_footer_ui(prompt_text):
     term_w, term_h = get_term_size()
     draw_status_bar()
-    sys.stdout.write(f"\033[{term_h - 4};5H{C_BGLIGHT} {C_PROMPT}{get_ico('term', pad=False)}  {C_STAGED}{prompt_text}{RESET}{C_BGLIGHT}{' '*40}{RESET}\033[{term_h - 4};{10+ansi_len(prompt_text)}H")
+    sys.stdout.write(f"\033[{term_h - 4};5H{C_BGLIGHT} {C_PROMPT}{get_ico('term')}  {C_STAGED}{prompt_text}{RESET}{C_BGLIGHT}{' '*40}{RESET}\033[{term_h - 4};{10+ansi_len(prompt_text)}H")
     sys.stdout.flush()
 
 def draw_universal_footer(prompt_text="Press ENTER to return..."):
@@ -717,7 +779,7 @@ def draw_modal(title, prompt_text, is_password=False, is_y_n=False):
     start_row = (term_h // 2) - 3
 
     # Opaque background using {C_BG} to prevent viewport bleed
-    indicator = f"{C_PROMPT}{get_ico('term', pad=False)}  {RESET}" if app_config.get('nerd_fonts', False) else f"{C_PROMPT}> {RESET}"
+    indicator = f"{C_PROMPT}{get_ico('term')}  {RESET}" if app_config.get('nerd_fonts', False) else f"{C_PROMPT}> {RESET}"
     ind_len = 3 if app_config.get('nerd_fonts', False) else 2
 
     sys.stdout.write(f"\033[{start_row};{start_col}H{C_BORDER}┌{'─' * (box_w - 2)}┐{RESET}")
@@ -756,10 +818,10 @@ def draw_modal(title, prompt_text, is_password=False, is_y_n=False):
 
 def get_prompt_indicator():
     if app_config.get('nerd_fonts', False):
-        ico = get_ico('term', pad=False)
-        return f"{C_BGLIGHT} {C_PROMPT}{ico}  {RESET}{C_BGLIGHT}"
+        ico = get_ico('term')
+        return f"{C_PROMPT}{ico}{RESET}{C_BGLIGHT}"
     else:
-        return f"{C_BGLIGHT}{C_PROMPT}>{RESET}{C_BGLIGHT}"
+        return f"{C_PROMPT}>{RESET}{C_BGLIGHT}"
 
 def render_ui_skeleton(loading_text="Initializing..."):
     sys.stdout.write(f"{C_BG}\033[2J\033[H")
@@ -814,23 +876,19 @@ def verify_and_stage_fonts():
     import hashlib
     import re
     
-    # 1. STANDARDIZED SKELETON SETUP
     sys.stdout.write(f"{C_BG}\033[2J\033[H")
     term_w, term_h = get_term_size()
     draw_top_bar()
     for r in range(2, term_h - 1): draw_frame_line("", row=r)
     draw_frame_line(f"{C_SIZE}PHASE 0: SYSTEM INITIALIZATION & ASSET VERIFICATION{RESET}", row=2, align="center")
-    
     draw_status_bar() 
     sys.stdout.flush()
     
     viewport_logs.clear()
     scroll_offset = 0
-
     BASE_INDENT = 0
     MARGIN = " " * BASE_INDENT
 
-    # 2. THE SMOKE & MIRRORS MATRIX
     modules = [
         ("Core OS Interface", "os", False), ("System Pathways", "sys", False),
         ("Temporal Engine", "time", False), ("Platform Diagnostics", "platform", False),
@@ -851,13 +909,18 @@ def verify_and_stage_fonts():
         'Arial-Regular.ttf': {'win': r"C:\Windows\Fonts\arial.ttf", 'lin_name': 'arial.ttf', 'url': "https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/arial32.exe", 'is_cab': True, 'target_ttf': 'arial.ttf'},
         'Arial-Bold.ttf': {'win': r"C:\Windows\Fonts\arialbd.ttf", 'lin_name': 'arialbd.ttf', 'url': "https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/arialb32.exe", 'is_cab': True, 'target_ttf': 'arialbd.ttf'},
         'Tahoma-Regular.ttf': {'win': r"C:\Windows\Fonts\tahoma.ttf", 'lin_name': 'tahoma.ttf', 'url': "https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/iel32.exe", 'is_cab': True, 'target_ttf': 'tahoma.ttf'},
-        'MSSansSerif-Regular.ttf': {'win': r"C:\Windows\Fonts\micross.ttf", 'lin_name': 'micross.ttf', 'url': "https://cdn.jsdelivr.net/gh/matomo-org/travis-scripts@master/fonts/micross.ttf", 'is_zip': False},
-        'UbuntuSansNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/UbuntuSans.zip", 'is_zip': True},
+        'MSSansSerif-Regular.ttf': {'win': r"C:\Windows\Fonts\micross.ttf", 'lin_name': 'micross.ttf', 'url': "https://cdn.jsdelivr.net/gh/matomo-org/travis-scripts@master/fonts/micross.ttf"},
+        'UbuntuSansNerdFont-Regular.ttf': {
+            'win': "", 'lin_name': "", 
+            'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/UbuntuSans.zip", 
+            'is_zip': True,
+            'extra_targets': ['UbuntuSansNerdFont-Medium.ttf', 'UbuntuSansNerdFont-Bold.ttf', 'UbuntuSansNerdFont-Italic.ttf']
+        },
         'JetBrainsMonoNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip", 'is_zip': True},
-        'FiraCodeNerdFont-Medium.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.zip", 'is_zip': True},
+        'FiraCodeNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.zip", 'is_zip': True},
         'CaskaydiaCoveNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/CascadiaCode.zip", 'is_zip': True},
         'NotoSansNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Noto.zip", 'is_zip': True},
-        'OpenSans-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://cdn.jsdelivr.net/gh/googlefonts/opensans@main/fonts/ttf/OpenSans-Regular.ttf", 'is_zip': False},
+        'OpenSans-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://cdn.jsdelivr.net/gh/googlefonts/opensans@main/fonts/ttf/OpenSans-Regular.ttf"},
     }
 
     USE_NERD_FONTS = app_config.get('nerd_fonts', False)
@@ -866,7 +929,11 @@ def verify_and_stage_fonts():
     L_CONT = "`" if is_win else "\\" 
 
     os.makedirs(HTML_DATA_DIR, exist_ok=True)
+    os.makedirs(HTML_FONT_DIR, exist_ok=True)
     os.makedirs(TMP_DIR, exist_ok=True)
+
+    # Dynamic Display Path logic: Strips absolute prefix, converts backslashes to UNIX forward slashes
+    display_font_dir = "./" + os.path.relpath(HTML_FONT_DIR).replace(os.sep, '/')
 
     def find_local_font(win_path, file_name):
         if is_win and os.path.exists(win_path): return win_path
@@ -880,62 +947,53 @@ def verify_and_stage_fonts():
                 if os.path.exists(p): return p
         return None
 
-    # 3. MATHEMATICAL PRE-FLIGHT (Option 2 Logic)
+    # 3. MATHEMATICAL PRE-FLIGHT (Dynamic Targets)
     total_ghost_loads = sum(1 for m in modules if not m[2])
     ghost_weight = 1.0 / max(1, total_ghost_loads)
     boot_total = sum(1 for m in modules if m[2]) + (1 if total_ghost_loads > 0 else 0)
     curr = 0.0
 
     for dest_name, meta in fonts.items():
-        dest_path = os.path.join(HTML_DATA_DIR, dest_name)
-        if not os.path.exists(dest_path):
-            local_src = find_local_font(meta['win'], meta.get('lin_name', ''))
-            if local_src: boot_total += 2
-            else: boot_total += 4 if meta.get('is_cab') or meta.get('is_zip') else 2 
-        else: boot_total += 1 
+        targets = [dest_name] + meta.get('extra_targets', [])
+        missing_count = sum(1 for t in targets if not os.path.exists(os.path.join(HTML_FONT_DIR, t)))
+        
+        if missing_count == 0:
+            boot_total += len(targets) # Hash only for each target
+        else:
+            local_src = find_local_font(meta.get('win', ''), meta.get('lin_name', ''))
+            if local_src: 
+                boot_total += 2 # Copy, Hash
+            else: 
+                boot_total += 1 # Download
+                if meta.get('is_cab') or meta.get('is_zip'): boot_total += 2 # Extract, Delete
+                else: boot_total += 1 # Move direct file
+                boot_total += len(targets) # Hash for every single target requested
             
-    # --- THE PIPELINE ENGINES ---
-    
     def fast_track_step(tag, desc):
-        """Zero-delay pipeline for native OS bindings (Ghost Loads)."""
         nonlocal curr
         global scroll_offset
         padded_tag = tag.ljust(10)
-        
-        # Muted parens, Green check, 2-space moat, Light Blue Objective
         viewport_logs.append(f"{MARGIN}{C_SUBTEXT}({C_STAGED}{CHECK_MARK}{C_SUBTEXT}){RESET} {C_PROMPT}{padded_tag}{RESET}  {C_TITLE}❯{RESET}  {C_FILE}{desc}{RESET}")
         curr += ghost_weight 
-        
         vp_height = (term_h - 9) - 4 - 1
         scroll_offset = max(0, len(viewport_logs) - vp_height)
-        
         pct = min(100.0, (curr / max(1, boot_total)) * 100.0)
         draw_viewport(progress_pct=pct, active_file="Executing...", current_file_idx=int(curr), total_files=boot_total, is_interactive=False)
         sys.stdout.flush()
-        
-        # THE MICRO-CASCADE DELAY (30ms - 80ms)
         time.sleep(random.uniform(0.03, 0.08))
 
     def execute_pipeline(tag, objective, tasks):
-        """Anchors the spinner, executes OS commands sequentially with strict geometry."""
         nonlocal curr
         global scroll_offset
         padded_tag = tag.ljust(10)
-        
-        # Anchored Header with Active Orange Parens and Cyan Pipe
         header_idx = len(viewport_logs)
         viewport_logs.append(f"{MARGIN}{C_SIZE}({C_TITLE}|{C_SIZE}){RESET} {C_PROMPT}{padded_tag}{RESET}  {C_TITLE}❯{RESET}  {C_FILE}{objective}{RESET}")
-        
         spinner_chars = ['|', '/', '-', '\\']
         frame = 0
 
         for cmd_lines, task_func in tasks:
             first_cmd_line = cmd_lines[0]
-            
-            # The Wall-Hug Geometry ($ perfectly tracks the spinner /)
             viewport_logs.append(f"{MARGIN} {C_STAGED}${RESET} {first_cmd_line}")
-            
-            # The 4-Space Cascade (Relative to the 'c' in the command text)
             for line in cmd_lines[1:]:
                 viewport_logs.append(f"{MARGIN}       {line}")
                 
@@ -953,26 +1011,19 @@ def verify_and_stage_fonts():
             t.start()
             start_time = time.time()
             
-            # Governor Loop
             while not task_complete or (time.time() - start_time) < floor_time:
                 char = spinner_chars[frame % 4]
                 spin = f"{C_TITLE}{char}{C_SIZE}"
-                
                 viewport_logs[header_idx] = f"{MARGIN}{C_SIZE}({spin}){RESET} {C_PROMPT}{padded_tag}{RESET}  {C_TITLE}❯{RESET}  {C_FILE}{objective}{RESET}"
-                
                 vp_height = (term_h - 9) - 4 - 1
                 scroll_offset = max(0, len(viewport_logs) - vp_height)
-                
                 pct = min(100.0, (curr / max(1, boot_total)) * 100.0)
                 draw_viewport(progress_pct=pct, active_file="Executing...", current_file_idx=int(curr), total_files=boot_total, is_interactive=False)
                 sys.stdout.flush()
-                
                 time.sleep(0.15)
                 frame += 1
-            
             curr += 1.0
 
-        # Final Resolution Snap (Muted Parens, Green Check)
         viewport_logs[header_idx] = f"{MARGIN}{C_SUBTEXT}({C_STAGED}{CHECK_MARK}{C_SUBTEXT}){RESET} {C_PROMPT}{padded_tag}{RESET}  {C_TITLE}❯{RESET}  {C_FILE}{objective}{RESET}"
         pct = min(100.0, (curr / max(1, boot_total)) * 100.0)
         draw_viewport(progress_pct=pct, active_file="Executing...", current_file_idx=int(curr), total_files=boot_total, is_interactive=False)
@@ -988,8 +1039,6 @@ def verify_and_stage_fonts():
             import urllib.parse
         elif m == "zipfile": import zipfile
 
-    # --- PHASE 0 EXECUTION ---
-    
     # 4A. GHOST & TRUE LOADS
     for desc, mod, is_real in modules:
         if not is_real:
@@ -1002,31 +1051,35 @@ def verify_and_stage_fonts():
 
     # 4B. FONT ASSETS
     for dest_name, meta in fonts.items():
-        dest_path = os.path.join(HTML_DATA_DIR, dest_name)
+        targets = [dest_name] + meta.get('extra_targets', [])
+        missing_count = sum(1 for t in targets if not os.path.exists(os.path.join(HTML_FONT_DIR, t)))
         real_filename = urllib.parse.unquote(meta['url'].split('/')[-1])
         if "download?family" in real_filename: real_filename = dest_name.replace(".ttf", ".zip")
         
-        if not os.path.exists(dest_path):
-            local_src = find_local_font(meta['win'], meta.get('lin_name', ''))
-            
+        # Determine Display Title based on multi-target
+        obj_title = f"{dest_name} {C_SUBTEXT}(+{len(targets)-1} extras){RESET}" if len(targets) > 1 else dest_name
+
+        if missing_count > 0:
+            local_src = find_local_font(meta.get('win', ''), meta.get('lin_name', ''))
             if local_src:
-                if is_win: copy_cmd = f"{C_TITLE}copy{RESET} {C_SUBTEXT}/{C_SIZE}Y{RESET} {C_SUBTEXT}\"{C_FILE}{local_src}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}\"{C_FILE}./HTML/data/{C_SUBTEXT}\"{RESET}"
-                else: copy_cmd = f"{C_TITLE}cp{RESET} {C_SUBTEXT}-{C_SIZE}v{RESET} {C_SUBTEXT}\"{C_FILE}{local_src}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}\"{C_FILE}./HTML/data/{C_SUBTEXT}\"{RESET}"
+                if is_win: copy_cmd = f"{C_TITLE}copy{RESET} {C_SUBTEXT}/{C_SIZE}Y{RESET} {C_SUBTEXT}\"{C_FILE}{local_src}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}\"{C_FILE}{display_font_dir}{C_SUBTEXT}\"{RESET}"
+                else: copy_cmd = f"{C_TITLE}cp{RESET} {C_SUBTEXT}-{C_SIZE}v{RESET} {C_SUBTEXT}\"{C_FILE}{local_src}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}\"{C_FILE}{display_font_dir}{C_SUBTEXT}\"{RESET}"
                 
                 if is_win: hash_cmd = f"{C_TITLE}certutil.exe{RESET} {C_SUBTEXT}-{C_SIZE}hashfile{RESET} {C_SUBTEXT}\"{C_FILE}{dest_name}{C_SUBTEXT}\"{RESET} {C_TITLE}SHA256{RESET}"
-                else: hash_cmd = f"{C_TITLE}sha256sum{RESET} {C_SUBTEXT}\"{C_FILE}./HTML/data/{dest_name}{C_SUBTEXT}\"{RESET}"
+                else: hash_cmd = f"{C_TITLE}sha256sum{RESET} {C_SUBTEXT}\"{C_FILE}{display_font_dir}/{dest_name}{C_SUBTEXT}\"{RESET}"
 
                 tasks = [
-                    ([copy_cmd], lambda l_src=local_src, d_pth=dest_path: shutil.copy2(l_src, d_pth)),
-                    ([hash_cmd], lambda path=dest_path: hashlib.sha256(open(path, 'rb').read()).hexdigest() if os.path.exists(path) else None)
+                    ([copy_cmd], lambda l_src=local_src, d_pth=os.path.join(HTML_FONT_DIR, dest_name): shutil.copy2(l_src, d_pth)),
+                    ([hash_cmd], lambda path=os.path.join(HTML_FONT_DIR, dest_name): hashlib.sha256(open(path, 'rb').read()).hexdigest() if os.path.exists(path) else None)
                 ]
-                execute_pipeline("FONT ASSET", f"Need {dest_name} (Discovered in native OS cache)", tasks)
+                execute_pipeline("FONT ASSET", f"Need {obj_title} (Found in native OS cache)", tasks)
             else:
                 tasks = []
                 dl_bin = "curl.exe" if is_win else "curl"
                 tmp_target = f"./data/.tmp/{real_filename}"
                 real_tmp_path = os.path.join(TMP_DIR, real_filename)
                 
+                # 1. Download Task
                 dl_cmd = [
                     f"{C_TITLE}{dl_bin}{RESET} {C_SUBTEXT}-{C_SIZE}sL{RESET} {C_SUBTEXT}{L_CONT}{RESET}", 
                     f"{C_SUBTEXT}\"{C_FILE}{meta['url']}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}{L_CONT}{RESET}", 
@@ -1034,53 +1087,85 @@ def verify_and_stage_fonts():
                 ]
                 tasks.append((dl_cmd, lambda url=meta["url"].strip(), path=real_tmp_path: subprocess.run(f'{dl_bin} -sL "{url}" -o "{path}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)))
                 
+                # 2. Extract / Move Tasks
                 if meta.get('is_cab'):
                     if is_win:
                         ext_cmd = [
                             f"{C_TITLE}extrac32.exe{RESET} {C_SUBTEXT}/{C_SIZE}E{RESET} {C_SUBTEXT}/{C_SIZE}Y{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}{L_CONT}{RESET}", 
                             f"{C_SUBTEXT}\"{C_FILE}{meta['target_ttf']}{C_SUBTEXT}\"{RESET}"
                         ]
-                        tasks.append((ext_cmd, lambda path=real_tmp_path, trg=meta["target_ttf"], dest=dest_path: subprocess.run(f'extrac32.exe /E /Y "{path}" "{trg}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) or (shutil.move(trg, dest) if os.path.exists(trg) else None)))
+                        tasks.append((ext_cmd, lambda path=real_tmp_path, trg=meta["target_ttf"], dest=os.path.join(HTML_FONT_DIR, dest_name): subprocess.run(f'extrac32.exe /E /Y "{path}" "{trg}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) or (shutil.move(trg, dest) if os.path.exists(trg) else None)))
                         del_cmd = f"{C_TITLE}del{RESET} {C_SUBTEXT}/{C_SIZE}F{RESET} {C_SUBTEXT}/{C_SIZE}Q{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET}"
                     else:
                         ext_cmd = [
                             f"{C_TITLE}cabextract{RESET} {C_SUBTEXT}-{C_SIZE}q{RESET} {C_SUBTEXT}-{C_SIZE}F{RESET} {C_SUBTEXT}\"{C_FILE}{meta['target_ttf']}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}{L_CONT}{RESET}", 
-                            f"{C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}-{C_SIZE}d{RESET} {C_SUBTEXT}\"{C_FILE}./HTML/data/{C_SUBTEXT}\"{RESET}"
+                            f"{C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}-{C_SIZE}d{RESET} {C_SUBTEXT}\"{C_FILE}{display_font_dir}{C_SUBTEXT}\"{RESET}"
                         ]
-                        tasks.append((ext_cmd, lambda trg=meta["target_ttf"], path=real_tmp_path: subprocess.run(f'cabextract -q -F "{trg}" "{path}" -d "{HTML_DATA_DIR}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)))
+                        tasks.append((ext_cmd, lambda trg=meta["target_ttf"], path=real_tmp_path: subprocess.run(f'cabextract -q -F "{trg}" "{path}" -d "{HTML_FONT_DIR}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)))
                         del_cmd = f"{C_TITLE}rm{RESET} {C_SUBTEXT}-{C_SIZE}f{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET}"
                         
                     tasks.append(([del_cmd], lambda path=real_tmp_path: os.remove(path) if os.path.exists(path) else None))
                     
                 elif meta.get('is_zip'):
+                    # The raw string for the background OS execution
+                    real_targets = " ".join([f'"{t}"' for t in targets])
+                    
                     if is_win:
+                        # Base tar command + Directory flag on its own line
                         ext_cmd = [
                             f"{C_TITLE}tar.exe{RESET} {C_SUBTEXT}-{C_SIZE}xf{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}{L_CONT}{RESET}", 
-                            f"{C_SUBTEXT}-{C_SIZE}C{RESET} {C_SUBTEXT}\"{C_FILE}./HTML/data/{C_SUBTEXT}\"{RESET}"
+                            f"{C_SUBTEXT}-{C_SIZE}C{RESET} {C_SUBTEXT}\"{C_FILE}{display_font_dir}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}{L_CONT}{RESET}"
                         ]
+                        # Dynamically append each target on its own line
+                        for i, t in enumerate(targets):
+                            cont = "" if i == len(targets) - 1 else f" {C_SUBTEXT}{L_CONT}{RESET}"
+                            ext_cmd.append(f"{C_SUBTEXT}\"{C_FILE}{t}{C_SUBTEXT}\"{RESET}{cont}")
+                            
                         del_cmd = f"{C_TITLE}del{RESET} {C_SUBTEXT}/{C_SIZE}F{RESET} {C_SUBTEXT}/{C_SIZE}Q{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET}"
                     else:
+                        # Base unzip command
                         ext_cmd = [
-                            f"{C_TITLE}unzip{RESET} {C_SUBTEXT}-{C_SIZE}q{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}{L_CONT}{RESET}", 
-                            f"{C_SUBTEXT}-{C_SIZE}d{RESET} {C_SUBTEXT}\"{C_FILE}./HTML/data/{C_SUBTEXT}\"{RESET}"
+                            f"{C_TITLE}unzip{RESET} {C_SUBTEXT}-{C_SIZE}q{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}{L_CONT}{RESET}"
                         ]
+                        # Dynamically append each target on its own line
+                        for t in targets:
+                            ext_cmd.append(f"{C_SUBTEXT}\"{C_FILE}{t}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}{L_CONT}{RESET}")
+                        # Append the target directory as the final line
+                        ext_cmd.append(f"{C_SUBTEXT}-{C_SIZE}d{RESET} {C_SUBTEXT}\"{C_FILE}{display_font_dir}{C_SUBTEXT}\"{RESET}")
+                        
                         del_cmd = f"{C_TITLE}rm{RESET} {C_SUBTEXT}-{C_SIZE}f{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET}"
 
-                    def ext_task(path=real_tmp_path):
-                        subprocess.run(f'tar.exe -xf "{path}" -C "{HTML_DATA_DIR}"' if is_win else f'unzip -q "{path}" -d "{HTML_DATA_DIR}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    def ext_task(path=real_tmp_path, t_str=real_targets):
+                        if is_win: subprocess.run(f'tar.exe -xf "{path}" -C "{HTML_FONT_DIR}" {t_str}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        else: subprocess.run(f'unzip -q "{path}" {t_str} -d "{HTML_FONT_DIR}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            
                     tasks.append((ext_cmd, ext_task))
                     tasks.append(([del_cmd], lambda path=real_tmp_path: os.remove(path) if os.path.exists(path) else None))
-                    
-                if is_win: hash_cmd = f"{C_TITLE}certutil.exe{RESET} {C_SUBTEXT}-{C_SIZE}hashfile{RESET} {C_SUBTEXT}\"{C_FILE}{dest_name}{C_SUBTEXT}\"{RESET} {C_TITLE}SHA256{RESET}"
-                else: hash_cmd = f"{C_TITLE}sha256sum{RESET} {C_SUBTEXT}\"{C_FILE}./HTML/data/{dest_name}{C_SUBTEXT}\"{RESET}"
-                tasks.append(([hash_cmd], lambda path=dest_path: hashlib.sha256(open(path, 'rb').read()).hexdigest() if os.path.exists(path) else None))
                 
-                execute_pipeline("FONT ASSET", f"Need {dest_name} (Fetching remote...)", tasks)
+                else:
+                    # Direct Download (Not a CAB/ZIP, just raw .ttf) - Moves file from temp to final destination
+                    if is_win: mv_cmd = f"{C_TITLE}move{RESET} {C_SUBTEXT}/{C_SIZE}Y{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}\"{C_FILE}{display_font_dir}/{dest_name}{C_SUBTEXT}\"{RESET}"
+                    else: mv_cmd = f"{C_TITLE}mv{RESET} {C_SUBTEXT}-{C_SIZE}f{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}\"{C_FILE}{display_font_dir}/{dest_name}{C_SUBTEXT}\"{RESET}"
+                    tasks.append(([mv_cmd], lambda p1=real_tmp_path, p2=os.path.join(HTML_FONT_DIR, dest_name): shutil.move(p1, p2) if os.path.exists(p1) else None))
+
+                # 3. Hash Task (For EVERY target dynamically)
+                for t in targets:
+                    t_path = os.path.join(HTML_FONT_DIR, t)
+                    if is_win: h_cmd = f"{C_TITLE}certutil.exe{RESET} {C_SUBTEXT}-{C_SIZE}hashfile{RESET} {C_SUBTEXT}\"{C_FILE}{t}{C_SUBTEXT}\"{RESET} {C_TITLE}SHA256{RESET}"
+                    else: h_cmd = f"{C_TITLE}sha256sum{RESET} {C_SUBTEXT}\"{C_FILE}{display_font_dir}/{t}{C_SUBTEXT}\"{RESET}"
+                    tasks.append(([h_cmd], lambda path=t_path: hashlib.sha256(open(path, 'rb').read()).hexdigest() if os.path.exists(path) else None))
+                
+                execute_pipeline("FONT ASSET", f"Need {obj_title} (Fetching remote...)", tasks)
         else:
-            if is_win: hash_cmd = f"{C_TITLE}certutil.exe{RESET} {C_SUBTEXT}-{C_SIZE}hashfile{RESET} {C_SUBTEXT}\"{C_FILE}{dest_name}{C_SUBTEXT}\"{RESET} {C_TITLE}SHA256{RESET}"
-            else: hash_cmd = f"{C_TITLE}sha256sum{RESET} {C_SUBTEXT}\"{C_FILE}./HTML/data/{dest_name}{C_SUBTEXT}\"{RESET}"
-            tasks = [([hash_cmd], lambda path=dest_path: hashlib.sha256(open(path, 'rb').read()).hexdigest() if os.path.exists(path) else None)]
-            execute_pipeline("FONT ASSET", f"Need {dest_name} (Verified in vault cache)", tasks)
+            # All targets verified locally in vault
+            tasks = []
+            for t in targets:
+                t_path = os.path.join(HTML_FONT_DIR, t)
+                if is_win: h_cmd = f"{C_TITLE}certutil.exe{RESET} {C_SUBTEXT}-{C_SIZE}hashfile{RESET} {C_SUBTEXT}\"{C_FILE}{t}{C_SUBTEXT}\"{RESET} {C_TITLE}SHA256{RESET}"
+                else: h_cmd = f"{C_TITLE}sha256sum{RESET} {C_SUBTEXT}\"{C_FILE}{display_font_dir}/{t}{C_SUBTEXT}\"{RESET}"
+                tasks.append(([h_cmd], lambda path=t_path: hashlib.sha256(open(path, 'rb').read()).hexdigest() if os.path.exists(path) else None))
+            
+            execute_pipeline("FONT ASSET", f"Verified {obj_title} (In vault cache)", tasks)
 
     # 5. UNIVERSAL THEATRICAL LOCK
     execute_pipeline("SYSTEM RDY", f"{C_STAGED}BOOT SEQUENCE COMPLETE. PRESS [ENTER] TO LAUNCH OPERATIONS CENTER{RESET}", [])
@@ -2595,7 +2680,7 @@ def run_file_manager(op, start_dir=BASE_DIR, ext_filter=None):
             clip.append((n, p, pth))
 
     def get_arrow(key, fallback):
-        ico = get_ico(key, pad=False)
+        ico = get_ico(key)
         return ico if ico else fallback
 
     while True:
@@ -2731,7 +2816,7 @@ def run_file_manager(op, start_dir=BASE_DIR, ext_filter=None):
         draw_status_bar()
         
         # Position the blinking cursor safely within the inner wall structure
-        sys.stdout.write(f"\033[{term_h - 4};5H{C_BGLIGHT} {C_PROMPT}{get_ico('term', pad=False)}  {RESET}{C_BGLIGHT}{' '*40}{RESET}\033[{term_h - 4};9H{C_BGLIGHT}")
+        sys.stdout.write(f"\033[{term_h - 4};5H{C_BGLIGHT} {C_PROMPT}{get_ico('term')}  {RESET}{C_BGLIGHT}{' '*40}{RESET}\033[{term_h - 4};9H{C_BGLIGHT}")
         sys.stdout.flush()
 
         if handle_error_hijack(): continue
@@ -3329,33 +3414,33 @@ def main():
         draw_frame_line(f"{C_SIZE}OPTICAL LENS SPECIFICATIONS ENGINE: OPERATIONS CENTER{RESET}", row=2, align="center")
         
         pad = 15
-        draw_frame_line(f"{C_TITLE}{get_ico('conv')}(C){C_FILE}onvert Manufacturers File -> Generate .VLP{RESET}", row=6, indent=pad)
-        draw_frame_line(f"{C_TITLE}{get_ico('add')}(A){C_FILE}dd staged .VLP files into the Vault{RESET}", row=7, indent=pad)
-        draw_frame_line(f"{C_TITLE}{get_ico('list')}(L){C_FILE}ist existing .VLP files in Vault{RESET}", row=8, indent=pad)
-        draw_frame_line(f"{C_TITLE}{get_ico('scan')}(S){C_FILE}can existing Vault for integrity errors{RESET}", row=9, indent=pad)
-        draw_frame_line(f"{C_TITLE}{get_ico('gen')}(G){C_FILE}eneration Sequence (Wipe & Rebuild DB){RESET}", row=10, indent=pad)
-        draw_frame_line(f"{C_TITLE}{get_ico('html')}(E){C_FILE}xecute Master HTML Generation{RESET}", row=11, indent=pad)
+        draw_frame_line(f"{C_TITLE}{get_ico('conv')} (C){C_FILE}onvert Manufacturers File -> Generate .VLP{RESET}", row=6, indent=pad)
+        draw_frame_line(f"{C_TITLE}{get_ico('add')} (A){C_FILE}dd staged .VLP files into the Vault{RESET}", row=7, indent=pad)
+        draw_frame_line(f"{C_TITLE}{get_ico('list')} (L){C_FILE}ist existing .VLP files in Vault{RESET}", row=8, indent=pad)
+        draw_frame_line(f"{C_TITLE}{get_ico('scan')} (S){C_FILE}can existing Vault for integrity errors{RESET}", row=9, indent=pad)
+        draw_frame_line(f"{C_TITLE}{get_ico('gen')} (G){C_FILE}eneration Sequence (Wipe & Rebuild DB){RESET}", row=10, indent=pad)
+        draw_frame_line(f"{C_TITLE}{get_ico('html')} (E){C_FILE}xecute Master HTML Generation{RESET}", row=11, indent=pad)
         
-        draw_frame_line(f"{C_TITLE}{get_ico('tools')}File Tools:{RESET}", row=13, indent=pad)
-        draw_frame_line(f"  {C_TITLE}{get_ico('move')}(M){C_FILE}ove files{RESET}", row=14, indent=pad)
-        draw_frame_line(f"  {C_TITLE}{get_ico('copy')}Co{C_TITLE}(p){C_FILE}y files{RESET}", row=15, indent=pad)
-        draw_frame_line(f"  {C_TITLE}{get_ico('ren')}(R){C_FILE}ename file{RESET}", row=16, indent=pad)
-        draw_frame_line(f"  {C_TITLE}{get_ico('del')}(D){C_FILE}elete files{RESET}", row=17, indent=pad)
+        draw_frame_line(f"{C_TITLE}{get_ico('tools')} File Tools:{RESET}", row=13, indent=pad)
+        draw_frame_line(f"  {C_TITLE}{get_ico('move')} (M){C_FILE}ove files{RESET}", row=14, indent=pad)
+        draw_frame_line(f"  {C_TITLE}{get_ico('copy')} Co{C_TITLE}(p){C_FILE}y files{RESET}", row=15, indent=pad)
+        draw_frame_line(f"  {C_TITLE}{get_ico('ren')} (R){C_FILE}ename file{RESET}", row=16, indent=pad)
+        draw_frame_line(f"  {C_TITLE}{get_ico('del')} (D){C_FILE}elete files{RESET}", row=17, indent=pad)
         
-        draw_frame_line(f"{C_ALERT}{get_ico('quit')}(Q)uit Application{RESET}", row=19, indent=pad)
+        draw_frame_line(f"{C_ALERT}{get_ico('quit')} (Q)uit Application{RESET}", row=19, indent=pad)
         
         global_mode = "MAIN MENU"
         
         nf_status = f"{C_STAGED}[ON]{RESET}" if app_config.get('nerd_fonts') else f"{C_ALERT}[OFF]{RESET}"
-        nf_text = f"{C_PROMPT}{get_ico('nf')}(N)erd Fonts: {nf_status}"
+        nf_text = f"{C_PROMPT}{get_ico('nf')} (N)erd Fonts: {nf_status}"
         draw_frame_line(nf_text, row=term_h - 5, align="right")
         
         ins_1 = f"Press a command hotkey (e.g. {C_PROMPT}C{C_SUBTEXT})."
-        draw_frame_line(ins_1, row=term_h - 5, align="left", indent=4)
+        draw_frame_line(ins_1, row=term_h - 5, align="left", indent=0)
         
         draw_status_bar()
         
-        sys.stdout.write(f"\033[{term_h - 4};5H{C_BGLIGHT} {C_PROMPT}{get_ico('term', pad=False)}  {RESET}{C_BGLIGHT}{' '*40}{RESET}\033[{term_h - 4};9H{C_BGLIGHT}")
+        sys.stdout.write(f"\033[{term_h - 4};5H{C_PROMPT}{get_ico('term')}  {RESET}{C_BGLIGHT}{' '*40}{RESET}\033[{term_h - 4};9H{C_BGLIGHT}")
         sys.stdout.flush()
 
         if handle_error_hijack(): continue
@@ -3384,7 +3469,8 @@ def main():
         elif cmd.lower() == 'r': run_file_manager('re', start_dir=BASE_DIR)
 
 if __name__ == "__main__":
-    try: 
+    try:
+        preflight_dependency_check()
         # 1. Establish the Color Palette
         init_environment()
         load_config()
