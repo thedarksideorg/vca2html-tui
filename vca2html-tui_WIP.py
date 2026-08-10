@@ -8,6 +8,7 @@ import os            # Core filesystem (C-binding, instant)
 import sys           # Console/stdout printing (C-binding, instant)
 import time          # Delays and UI pacing (C-binding, instant)
 import shutil        # Copy/Move/Delete files (Lightweight wrapper)
+import stat          # Needed for listing directories
 import subprocess    # Running CAB extraction (C-binding, instant)
 import hashlib       # SHA256 Verification (C-binding, instant)
 import threading     # Required for the background spinner
@@ -174,51 +175,57 @@ GLOBAL_DISCLAIMER = "This application was created to help optical lab technician
 VALID_EXTENSIONS = ['.vca', '.csv', '.xlsx', '.xls', '.txt']
 USE_NERD_FONTS = app_config.get('nerd_fonts', False)
 
-# The Master Icon Dictionary (Flat, Zero-Padding, with ASCII Fallbacks)
-ICONS = {
-    "check": "" if USE_NERD_FONTS else "✓",
-    "cross": "" if USE_NERD_FONTS else "X",
-    "toggle": "" if USE_NERD_FONTS else "=",
-    "nf": "⚡" if USE_NERD_FONTS else "NF",
-    "opt_eng": "󰇻" if USE_NERD_FONTS else "SYS",
-    "mode": "󰚡" if USE_NERD_FONTS else "M:",
-    "db": "󱘲" if USE_NERD_FONTS else "DB:",
-    "lens": "󰊪" if USE_NERD_FONTS else "O",
-    "stage": "" if USE_NERD_FONTS else "+",
-    "term": "" if USE_NERD_FONTS else ">",
-    "prot": "󰒃" if USE_NERD_FONTS else "@",
-    "conv": "" if USE_NERD_FONTS else "~",
-    "add": "󱘫" if USE_NERD_FONTS else "+",
-    "list": "󱤢" if USE_NERD_FONTS else "=",
-    "scan": "󱘶" if USE_NERD_FONTS else "?",
-    "gen": "󱘸" if USE_NERD_FONTS else "*",
-    "html": "󰊯" if USE_NERD_FONTS else "</>",
-    "tools": "󰏗" if USE_NERD_FONTS else "*",
-    "move": "󱄗" if USE_NERD_FONTS else "->",
-    "copy": "󱉦" if USE_NERD_FONTS else "C",
-    "ren": "󱓦" if USE_NERD_FONTS else "R",
-    "del": "󱂨" if USE_NERD_FONTS else "X",
-    "quit": "󰗼" if USE_NERD_FONTS else "Q",
-    "arr_up": "󰧇" if USE_NERD_FONTS else "^",
-    "arr_dn": "󰦿" if USE_NERD_FONTS else "v",
-    "arr_prv": "󰧀" if USE_NERD_FONTS else "<",
-    "arr_nxt": "󰧂" if USE_NERD_FONTS else ">",
-    "dir_up": "󰷏" if USE_NERD_FONTS else "..",
-    "dir": "󰉖" if USE_NERD_FONTS else "DIR",
-    "file": "󰈙" if USE_NERD_FONTS else "DOC",
-    "ext_json": "󰘦" if USE_NERD_FONTS else "{ }",
-    "ext_html": "" if USE_NERD_FONTS else "< >",
-    "ext_csv": "󰈙" if USE_NERD_FONTS else "CSV",
-    "ext_vca": "󰈙" if USE_NERD_FONTS else "VCA",
-    "ext_txt": "󰈙" if USE_NERD_FONTS else "TXT",
-    "pfx_ok": "󰄬" if USE_NERD_FONTS else "[+]",
-    "pfx_warn": "󰀪" if USE_NERD_FONTS else "[*]",
-    "pfx_err": "󰅙" if USE_NERD_FONTS else "[!]",
-    "pfx_info": "󰋼" if USE_NERD_FONTS else "[~]"
-}
+active_icons = {}
 
-# If you need to make a mutable copy for a specific session state
-active_icons = ICONS.copy()
+def reload_icons():
+    """Rebuilds the icon dictionary in-place based directly on the config state."""
+    nf_on = app_config.get('nerd_fonts', False)
+    
+    new_icons = {
+        "check": "" if nf_on else "✓",
+        "cross": "" if nf_on else "X",
+        "toggle": "" if nf_on else "=",
+        "nf": "⚡" if nf_on else "NF",
+        "opt_eng": "󰇻" if nf_on else "SYS",
+        "mode": "󰚡" if nf_on else "M:",
+        "db": "󱘲" if nf_on else "DB:",
+        "lens": "󰊪" if nf_on else "O",
+        "stage": "" if nf_on else "+",
+        "term": "" if nf_on else ">",
+        "prot": "󰒃" if nf_on else "@",
+        "conv": "" if nf_on else "~",
+        "add": "󱘫" if nf_on else "+",
+        "list": "󱤢" if nf_on else "=",
+        "scan": "󱘶" if nf_on else "?",
+        "gen": "󱘸" if nf_on else "*",
+        "html": "󰊯" if nf_on else "</>",
+        "tools": "󰏗" if nf_on else "*",
+        "move": "󱄗" if nf_on else "->",
+        "copy": "󱉦" if nf_on else "C",
+        "ren": "󱓦" if nf_on else "R",
+        "del": "󱂨" if nf_on else "X",
+        "quit": "󰗼" if nf_on else "Q",
+        "arr_up": "󰧇" if nf_on else "^",
+        "arr_dn": "󰦿" if nf_on else "v",
+        "arr_prv": "󰧀" if nf_on else "<",
+        "arr_nxt": "󰧂" if nf_on else ">",
+        "dir_up": "󰷏" if nf_on else "..",
+        "dir": "󰉖" if nf_on else "DIR",
+        "file": "󰈙" if nf_on else "DOC",
+        "ext_json": "󰘦" if nf_on else "{ }",
+        "ext_html": "" if nf_on else "< >",
+        "ext_csv": "󰈙" if nf_on else "CSV",
+        "ext_vca": "󰈙" if nf_on else "VCA",
+        "ext_txt": "󰈙" if nf_on else "TXT",
+        "pfx_ok": "󰄬" if nf_on else "[+]",
+        "pfx_warn": "󰀪" if nf_on else "[*]",
+        "pfx_err": "󰅙" if nf_on else "[!]",
+        "pfx_info": "󰋼" if nf_on else "[~]"
+    }
+    active_icons.clear()
+    active_icons.update(new_icons)
+
+reload_icons()
 
 # --- INITIALIZATION & CONFIGURATION ---
 
@@ -2683,11 +2690,18 @@ def run_file_manager(op, start_dir=BASE_DIR, ext_filter=None):
         ico = get_ico(key)
         return ico if ico else fallback
 
+    def safe_mode(path):
+        try: return os.stat(path).st_mode
+        except: return 0
+        
+    def safe_size(path):
+        try: return os.path.getsize(path)
+        except: return 0
+
     while True:
         sys.stdout.write(f"{C_BG}\033[2J\033[H")
         term_w, term_h = get_term_size()
         
-        # Calculate exactly how wide the inner panes are, accounting for the 3 vertical lines
         pane_l_w = (term_w - 3) // 2
         pane_r_w = term_w - 3 - pane_l_w
         center_col = pane_l_w + 2
@@ -2706,24 +2720,38 @@ def run_file_manager(op, start_dir=BASE_DIR, ext_filter=None):
             left_path = ldir_abs
             right_path = ""
         
-        # Row 2: Directory Info
         sys.stdout.write(f"\033[2;1H{C_BORDER}║ {C_DIR}Active Directory: \033[4m{left_path}{RESET}")
         if right_path: sys.stdout.write(f"\033[2;{term_w - ansi_len(right_path) - 1}H{C_TITLE}{right_path}{RESET}")
         sys.stdout.write(f"\033[2;{term_w}H{C_BORDER}║{RESET}")
         
-        # Row 3: The Hybrid Attached Ceiling
         sys.stdout.write(f"\033[3;1H{C_BORDER}╟{'─'*pane_l_w}┬{'─'*pane_r_w}╢{RESET}")
 
+        if op == 'add' and ldir != IMPORT_DIR: 
+            ldir = IMPORT_DIR
+            
         try: items = os.listdir(ldir)
         except: items = []
-        if op == 'add' and ldir != IMPORT_DIR: ldir = IMPORT_DIR; items = os.listdir(ldir)
             
-        dirs = sorted([(i, os.stat(os.path.join(ldir, i)).st_mode, os.path.join(ldir, i)) for i in items if os.path.isdir(os.path.join(ldir, i))])
-        if ext_filter: files = sorted([(i, os.stat(os.path.join(ldir, i)).st_mode, os.path.join(ldir, i)) for i in items if not os.path.isdir(os.path.join(ldir, i)) and os.path.splitext(i)[1].lower() in ext_filter])
-        else: files = sorted([(i, os.stat(os.path.join(ldir, i)).st_mode, os.path.join(ldir, i)) for i in items if not os.path.isdir(os.path.join(ldir, i))])
+        dirs_list = []
+        files_list = []
+        
+        for i in items:
+            pth = os.path.join(ldir, i)
+            mode = safe_mode(pth) 
             
-        if op == 'add': l_items = [("-- LOCKED --", 0, "")] + [(f[0], f[1], f[2]) for f in files]
-        else: l_items = [("../", 0, os.path.dirname(ldir))] + [(f"{d[0]}/", d[1], d[2]) for d in dirs] + [(f[0], f[1], f[2]) for f in files]
+            if os.path.isdir(pth):
+                dirs_list.append((i, mode, pth))
+            else:
+                if not ext_filter or os.path.splitext(i)[1].lower() in ext_filter:
+                    files_list.append((i, mode, pth))
+                    
+        dirs_list.sort(key=lambda x: x[0].lower())
+        files_list.sort(key=lambda x: x[0].lower())
+            
+        if op == 'add': 
+            l_items = [("-- LOCKED --", 0, "")] + files_list
+        else: 
+            l_items = [("../", 0, os.path.dirname(ldir))] + [(f"{d[0]}/", d[1], d[2]) for d in dirs_list] + files_list
 
         max_lpage = max(1, (len(l_items) + 15) // 16)
         max_rpage = max(1, (len(clip) + 7) // 8)
@@ -2734,7 +2762,6 @@ def run_file_manager(op, start_dir=BASE_DIR, ext_filter=None):
         l_head_l = f"  {a_up}   SCROLL UP"; l_head_r = f"(Page {lpage+1} of {max_lpage})"
         r_head_l = f"  {a_prv}   PREV PAGE"; r_head_r = f"(Page {rpage+1} of {max_rpage})"
         
-        # Row 4: Column Headers
         sys.stdout.write(f"\033[4;1H{C_BORDER}║{RESET} {C_PROMPT}{l_head_l}{RESET}")
         sys.stdout.write(f"\033[4;{center_col - ansi_len(l_head_r) - 1}H{C_SIZE}{l_head_r}{RESET}")
         sys.stdout.write(f"\033[4;{center_col}H{C_BORDER}│{RESET} {C_PROMPT}{r_head_l}{RESET}")
@@ -2755,7 +2782,7 @@ def run_file_manager(op, start_dir=BASE_DIR, ext_filter=None):
                 elif n == "-- LOCKED --": ico = ""
                 else: ico = get_ext_ico(n)
                 
-                size_str = f"{C_TITLE}{'<DIR>':>6}{RESET}" if os.path.isdir(pth) or n=='../' or n=='-- LOCKED --' else f"{C_SIZE}{format_bytes(os.path.getsize(pth)):>6}{RESET}"
+                size_str = f"{C_TITLE}{'<DIR>':>6}{RESET}" if os.path.isdir(pth) or n=='../' or n=='-- LOCKED --' else f"{C_SIZE}{format_bytes(safe_size(pth)):>6}{RESET}"
                 perms_str = f"{C_DIR}d{C_STAGED}r{C_SIZE}w{C_ALERT}x{C_STAGED}r{C_SIZE}w{C_ALERT}x{C_STAGED}r{C_SIZE}w{C_ALERT}x{RESET}" if n in ('../', '-- LOCKED --') else (eza_perms(p_mode) if p_mode else "drwxrwxrwx")
                 
                 max_n_len = pane_l_w - 3 - 4 - ansi_len(ico) - 1 - 6 - 1 - 10
@@ -2783,7 +2810,8 @@ def run_file_manager(op, start_dir=BASE_DIR, ext_filter=None):
                 if i % 2 == 0:
                     c_prefix = f"{C_PROMPT}[{get_alpha_id(r_idx):>2}]{RESET}"
                     cico = get_ico('dir') if os.path.isdir(cpth) else get_ext_ico(cn)
-                    csize_str = f"{C_TITLE}{'<DIR>':>6}{RESET}" if os.path.isdir(cpth) else f"{C_SIZE}{format_bytes(os.path.getsize(cpth)):>6}{RESET}"
+                    
+                    csize_str = f"{C_TITLE}{'<DIR>':>6}{RESET}" if os.path.isdir(cpth) else f"{C_SIZE}{format_bytes(safe_size(cpth)):>6}{RESET}"
                     cperms_str = eza_perms(cp_mode) if cp_mode else "drwxrwxrwx"
                     
                     max_cn_len = pane_r_w - 3 - 4 - ansi_len(cico) - 1 - 6 - 1 - 10
@@ -2906,7 +2934,7 @@ def execute_batch_convert():
     for r in range(2, term_h - 1): draw_frame_line("", row=r)
     draw_frame_line(f"{C_SIZE}VCA REFINERY: DATA SANITIZATION & MATH{RESET}", row=2, align="center")
     
-    draw_universal_footer() # THE FLOOR SEAL
+    draw_universal_footer()
     
     # 3. INITIALIZE VIEWPORT
     viewport_logs.clear()
@@ -3454,7 +3482,7 @@ def main():
         
         if cmd == 'F12': execute_admin_menu()
         elif cmd.lower() in ['q', 'x']: clean_exit()
-        elif cmd.lower() == 'n': app_config['nerd_fonts'] = not app_config.get('nerd_fonts', False); save_config()
+        elif cmd.lower() == 'n': app_config['nerd_fonts'] = not app_config.get('nerd_fonts', False); reload_icons(); save_config()
         # Look closely below: we decoupled the file manager from the router!
         elif cmd.lower() == 'c': execute_batch_convert() 
         elif cmd.lower() == 'a': execute_add_database()
