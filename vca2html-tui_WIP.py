@@ -823,6 +823,35 @@ def draw_modal(title, prompt_text, is_password=False, is_y_n=False):
         elif c in ('\x08', '\x7f'): input_str = input_str[:-1]
         elif len(input_str) < box_w - 6 - ind_len and c.isprintable(): input_str += c
 
+def vp_log(tag, msg, status="ok"):
+    """Injects a standardized, formatted line directly into the viewport."""
+    global scroll_offset, viewport_logs
+    
+    # Map the status to the correct icon and color we just built in ICONS
+    if status == "ok":
+        pfx = f"{C_STAGED}{get_pfx('ok')}"
+        msg_color = C_FILE
+    elif status == "warn":
+        pfx = f"{C_WARN}{get_pfx('warn')}"
+        msg_color = C_WARN
+    elif status == "err":
+        pfx = f"{C_ALERT}{get_pfx('err')}"
+        msg_color = C_ALERT
+    else:
+        pfx = f"{C_TITLE}{get_pfx('info')}"
+        msg_color = C_TITLE
+
+    # Construct the geometrically perfect line
+    padded_tag = tag.ljust(12)
+    line = f"  {C_SUBTEXT}({pfx}{C_SUBTEXT}){RESET} {C_PROMPT}{padded_tag}{RESET} {C_TITLE}❯{RESET} {msg_color}{msg}{RESET}"
+    
+    viewport_logs.append(line)
+    
+    # Auto-scroll to the bottom as new lines are added
+    _, term_h = get_term_size()
+    vp_height = (term_h - 9) - 4 - 1
+    scroll_offset = max(0, len(viewport_logs) - vp_height)
+
 def get_prompt_indicator():
     if app_config.get('nerd_fonts', False):
         ico = get_ico('term')
@@ -2554,117 +2583,7 @@ def calculate_curves(df):
     
     return df
 
-def parse_vlp_attributes(desc, raw_name, style_val, class_val, filt_val, coat_val, seg_val, int_val, mat, idx):
-    d_str = str(desc).strip()
-    f_str = str(filt_val).strip() if str(filt_val).lower() not in ['nan', 'none', ''] else ""
-    
-    d_str = re.sub(r'(?<!\d)(1\.[4-9])(?!\d)', r'\g<1>0', d_str)
-    
-    # 1. Protect BlueGuard & Blue Filter
-    if re.search(r'(?i)\b(Blue\s*Guard|Blue-Guard)\b', d_str):
-        d_str = re.sub(r'(?i)\b(Blue\s*Guard|Blue-Guard)\b', 'BlueGuard', d_str)
-        if 'HEV' not in f_str.upper(): f_str = (f_str + " HEV").strip()
-        
-    if re.search(r'(?i)\b(Clear\s*Blue\s*Filter|Blue\s*Filter|Blue-Filter)\b', d_str):
-        d_str = re.sub(r'(?i)\b(Clear\s*Blue\s*Filter|Blue\s*Filter|Blue-Filter)\b', 'Blue Filter', d_str)
-        if 'HEV' not in f_str.upper(): f_str = (f_str + " HEV").strip()
 
-    # 2. Extract standard filters
-    filt_match = re.search(r'(?i)\b(UV420|UVRI|Blue\s*Blocker)\b', d_str)
-    if filt_match:
-        f_str = (f_str + " " + filt_match.group(1)).strip()
-
-    # 3. Aggressive Noise Vacuum
-    scrub_regex = r'(?i)\b(HA|HARD\s*RESIN|COATED|UNCOATED|PHOT\s*GRY|PHOT\s*BRN|PHOT|POLR|POL)\b'
-    d_str = re.sub(scrub_regex, '', d_str)
-    f_str = re.sub(scrub_regex, '', f_str)
-    
-    d_str = re.sub(r'(?i)\bQ-Change|Q Change\b', 'Quick-Change', d_str)
-    d_str = re.sub(r'(?i)(?<!\.)(?<!MR-)(?<!MR)\b[D]?\d{2,3}(?:/\d{2,3})?(?:mm)?\b', '', d_str)
-    
-    # 4. Smart Coating Formatter
-    coat = str(coat_val).strip() if str(coat_val).lower() not in ['nan', 'none', ''] else ""
-    found_coats = re.findall(r'(?i)\b(SHMC|HMC|HC|AR|A/R|UNCOATED|SR)\b', d_str)
-    if found_coats:
-        unique_coats = list(dict.fromkeys([c.upper().replace('A/R', 'AR') for c in found_coats]))
-        if 'UNCOATED' in unique_coats and len(unique_coats) > 1: unique_coats.remove('UNCOATED')
-        coat_str = " / ".join(unique_coats)
-        if not coat or coat.upper() == "UNCOATED": coat = coat_str
-        
-    if not coat: coat = "Uncoated"
-    coat = re.sub(r'(?i)\bSR\s+AR\b', 'SR / AR', coat)
-    
-    d_str = re.sub(r'(?i)\b(SHMC|HMC|HC|AR|A/R|UNCOATED|SR)\b', '', d_str)
-    f_str = re.sub(r'(?i)\b(SHMC|HMC|HC|AR|A/R|UNCOATED|SR)\b', '', f_str)
-    
-    # 5. Strict Lens Type Nomenclature (Now with Explicit DB Overrides)
-    is_fin = str(class_val).strip().upper() == 'FIN'
-    
-    # Fallback regexes, negative lookbehind to avoid index numbers (e.g. 1.50 -> 50)
-    tri_match = re.search(r'(?i)\b(\d{1,2}x\d{2})\b', str(desc))
-    seg_match = re.search(r'(?i)(?<!\.)\b(?:FT|Flat\s*Top|Round|Blend|-)?\s*(\d{2})\b', str(desc))
-
-    sw = str(seg_val).replace('.0', '').strip() if pd.notna(seg_val) and str(seg_val).lower() not in ['nan', 'none', ''] else None
-    ih = str(int_val).replace('.0', '').strip() if pd.notna(int_val) and str(int_val).lower() not in ['nan', 'none', ''] else None
-
-    d_str = re.sub(r'(?i)\b(BIFOCAL|TRIFOCAL|FLAT\s*TOP|TRI|FT|ROUND|BLEND|-)\b', '', d_str)
-    d_str = re.sub(r'(?i)\b(\d{1,2}x\d{2})\b', '', d_str)
-    d_str = re.sub(r'(?i)(?<!\.)\b(\d{2})\b', '', d_str)
-
-    prefix = ""
-    if style_val in [10, 11, 12, 15]:
-        p_base = "FIN" if is_fin else "SF"
-        if ih and sw: prefix = f"{p_base} TRIFOCAL {ih}x{sw}"
-        elif tri_match: prefix = f"{p_base} TRIFOCAL {tri_match.group(1).lower()}"
-        else: prefix = f"{p_base} TRIFOCAL"
-    elif style_val in [2, 3, 4, 5, 8, 9, 16]:
-        p_base = "FIN" if is_fin else "SF"
-        if sw: prefix = f"{p_base} BIFOCAL FT{sw}"
-        elif seg_match: prefix = f"{p_base} BIFOCAL FT{seg_match.group(1)}"
-        else: prefix = f"{p_base} BIFOCAL"
-    elif style_val == 6: prefix = "FIN PAL" if is_fin else "SF PAL"
-    elif style_val in [1, 13, 14]: prefix = "FSV" if is_fin else "SFSV"
-    else: prefix = "FSV" if is_fin else "SF"
-    
-    d_str = re.sub(r'(?i)\b(SV|FSV|SF|SFSV|PROG|PAL|SEMI-FINISHED|FINISHED|SFFT|FIN)\b', '', d_str)
-    d_str = re.sub(r'\s{2,}', ' ', d_str).strip()
-    f_str = re.sub(r'\s{2,}', ' ', f_str).strip()
-    
-    long_desc = f"{prefix} {d_str}".strip()
-
-    # 6. SHORT DESCRIPTION GENERATOR
-    ast = "*" if is_fin else ""
-    
-    if style_val in [10, 11, 12, 15]: s_type = f"TRI {ih}x{sw}" if (ih and sw) else (f"TRI {tri_match.group(1).lower()}" if tri_match else "TRI")
-    elif style_val in [2, 3, 4, 5, 8, 9, 16]: s_type = f"FT{sw}" if sw else (f"FT{seg_match.group(1)}" if seg_match else "BIFOCAL")
-    elif style_val == 6: s_type = "PAL"
-    else: s_type = "FSV" if is_fin else "SFSV"
-
-    s_brand = ""
-    if style_val == 6:
-        b_src = str(raw_name) if str(raw_name).strip() else str(desc)
-        b_clean = re.sub(r'(?i)\b(PAL|PROG|PROGRESSIVE|POLY|CR-39|TRIVEX|POLARIZED|POL|PHOT|TRANS|TRANSITIONS|PHOTOFUSION|1\.\d{2})\b', '', b_src)
-        b_clean = re.sub(r'(?i)\b(EXG3|XTR|Extra\s*Active|PGY3|Pro\s*Gr[ae]y|PBN3|Pro\s*Brown|PIO3|Pioneer|BRG[1-3]?|BURG|BURGUNDY|GRY[1-3]?|GRAY|GREY|BRN[1-3]?|BROWN|G-15|GRN[1-3]?|GREEN|BLU[1-3]?|BLUE|YEL[1-3]?|YLW|YELLOW|PNK[1-3]?|ROS[1-3]?|ROSE|PINK|PUR[1-3]?|PRP[1-3]?|PLUM|PURPLE)\b', '', b_clean)
-        b_clean = re.sub(r'[^a-zA-Z0-9\s-]', '', b_clean).strip()
-        s_brand = " ".join(b_clean.split()[:2]).upper()
-
-    s_mat = ""
-    if mat == 'Plastic (CR-39)': s_mat = "CR-39"
-    elif mat == 'Polycarbonate': s_mat = "POLY"
-    elif mat == 'Trivex': s_mat = "TRIVEX"
-    elif pd.notna(idx): s_mat = f"{float(idx):.2f}"
-    
-    s_tags = []
-    if 'POL' in str(desc).upper(): s_tags.append("POLR")
-    if re.search(r'(?i)\b(PHOT|PhotoFusion|Transition|LifeRx|Quick-Change|Sensitivity)\b', str(desc) + " " + str(filt_val)): s_tags.append("PHOT")
-    
-    short_parts = [f"{ast}{s_type}"]
-    if s_brand: short_parts.append(s_brand)
-    if s_mat: short_parts.append(s_mat)
-    short_parts.extend(s_tags)
-    short_desc = " ".join(short_parts).replace("  ", " ").strip()
-    
-    return long_desc, short_desc, f_str, coat
 
 # --- FILE MANAGER ---
 
@@ -2919,29 +2838,30 @@ def run_file_manager(op, start_dir=BASE_DIR, ext_filter=None):
 
 def execute_batch_convert():
     global global_mode, scroll_offset
+    
+    # 1. PRE-HEATED LOCAL IMPORTS (Lightning fast, IDE friendly)
+    import pandas as pd
+    import numpy as np
     import shutil
     import stat
-    import pandas as pd
     
-    # 1. FILE SELECTION
+    # 2. FILE SELECTION
     tgt_list = run_file_manager('convert', start_dir=BASE_DIR, ext_filter=['.vca', '.csv', '.xlsx', '.xls', '.txt'])
     if not tgt_list: return
     
-    # 2. STANDARDIZED SKELETON SETUP
+    # 3. STANDARDIZED SKELETON SETUP
     sys.stdout.write(f"{C_BG}\033[2J\033[H")
     term_w, term_h = get_term_size()
     draw_top_bar()
     for r in range(2, term_h - 1): draw_frame_line("", row=r)
     draw_frame_line(f"{C_SIZE}VCA REFINERY: DATA SANITIZATION & MATH{RESET}", row=2, align="center")
-    
     draw_universal_footer()
     
-    # 3. INITIALIZE VIEWPORT
+    # 4. INITIALIZE VIEWPORT
     viewport_logs.clear()
     scroll_offset = 0
     total_files = len(tgt_list)
     
-    # Define the absolute VCA Schema for Headerless injections
     STANDARD_VCA_HEADERS = [
         "MFG", "Class", "Description", "Material", "Material Brand", "Product Name", 
         "Style", "Filter", "Coating", "Coating Brand", "Right OPC", "Left OPC", 
@@ -2955,109 +2875,107 @@ def execute_batch_convert():
     
     draw_viewport(progress_pct=0.0, active_file="Initializing Refinery...", current_file_idx=0, total_files=total_files, is_interactive=False)
     
-    # 4. CONVERSION LOOP
+    # 5. CONVERSION LOOP
     for idx, tgt in enumerate(tgt_list):
         fname = os.path.basename(tgt)
         base_name = os.path.splitext(fname)[0]
-        log_task(format_log("I/O", f"Processing {fname}...", C_FILE), "RAW")
+        vp_log("I/O STREAM", f"Processing {fname}...", "info")
         
         try:
-            # --- HEADERLESS AUTO-HEAL SNIFFER ---
             has_header = True
             if tgt.lower().endswith(('.csv', '.txt', '.vca')):
                 with open(tgt, 'r', encoding='utf-8', errors='ignore') as f:
                     first_line = f.readline().upper()
-                    # If it doesn't have standard VCA header terminology, it's naked.
                     if "MFG" not in first_line and "DESCRIPTION" not in first_line:
                         has_header = False
                         
             if not has_header:
-                log_task(format_log("AUTO-HEAL", f"Headerless file detected. Injecting VCA Schema.", C_WARN), "RAW")
+                vp_log("AUTO-HEAL", "Headerless file detected. Injecting VCA Schema.", "warn")
                 df = pd.read_csv(tgt, header=None, names=STANDARD_VCA_HEADERS, dtype=str)
             else:
-                # If Excel or standard CSV, read normally
                 if tgt.lower().endswith(('.xlsx', '.xls')): df = pd.read_excel(tgt, dtype=str)
                 else: df = pd.read_csv(tgt, dtype=str)
             
-            # Drop purely empty rows
+            # Silently drop completely empty rows so regex doesn't break
             df = df.dropna(how='all')
             
-            # --- INVERSE DEDUCTION LOGIC (MR-7 vs MR-10) ---
-            # Search the file for 1.67 material clues
+            # --- INVERSE DEDUCTION LOGIC (The Exception Rule) ---
             mat_col = 'Material' if 'Material' in df.columns else 'Description'
             
-            # Count explicit occurrences
-            mr7_count = df[mat_col].str.contains('MR-7|MR7', case=False, na=False).sum()
-            mr10_count = df[mat_col].str.contains('MR-10|MR10', case=False, na=False).sum()
+            # Safety fill to prevent NaN crash on `.str.contains`
+            safe_desc = df[mat_col].fillna('')
             
-            # Identify ambiguous 1.67s (e.g. marked as PU or just 1.67)
-            ambiguous_mask = df[mat_col].str.contains('PU|1.67', case=False, na=False) & \
-                             ~df[mat_col].str.contains('MR-7|MR7|MR-10|MR10', case=False, na=False)
+            mr7_count = int(safe_desc.str.contains('MR-7|MR7', case=False, na=False).sum())
+            mr10_count = int(safe_desc.str.contains('MR-10|MR10', case=False, na=False).sum())
+            
+            ambiguous_mask = safe_desc.str.contains('PU|1.67', case=False, na=False) & \
+                             ~safe_desc.str.contains('MR-7|MR7|MR-10|MR10', case=False, na=False)
                              
             if ambiguous_mask.sum() > 0:
                 deduced_material = ""
-                
-                # Inverse Deduction
-                if mr7_count > mr10_count: 
-                    deduced_material = "MR-10"
-                    log_task(format_log("INFERENCE", f"MR-7 scored {mr7_count}. Ambiguous materials assigned to MR-10.", C_PROMPT), "RAW")
-                elif mr10_count > mr7_count:
+                # THE EXCEPTION RULE: If MR-10 is specifically labeled the most, the unmarked ones are cheap MR-7
+                if mr10_count > mr7_count: 
                     deduced_material = "MR-7"
-                    log_task(format_log("INFERENCE", f"MR-10 scored {mr10_count}. Ambiguous materials assigned to MR-7.", C_PROMPT), "RAW")
+                    vp_log("INFERENCE", f"MR-10 scored {mr10_count}. Ambiguous assigned to MR-7.", "ok")
+                elif mr7_count > mr10_count:
+                    deduced_material = "MR-10"
+                    vp_log("INFERENCE", f"MR-7 scored {mr7_count}. Ambiguous assigned to MR-10.", "ok")
                 else:
-                    # Dead Tie or 0/0. Human Fallback Required.
-                    log_task(format_log("AMBIGUITY", f"1.67 Scoring tied. Requesting Human Fallback.", C_ALERT), "RAW")
-                    ans = draw_modal("AMBIGUITY DETECTED", f"File '{fname}' has unknown 1.67 materials. Type MR7 or MR10:", is_password=False)
-                    
-                    # RE-DRAW SKELETON AFTER MODAL
-                    sys.stdout.write(f"{C_BG}\033[2J\033[H")
-                    draw_top_bar()
-                    for r in range(2, term_h - 1): draw_frame_line("", row=r)
-                    draw_frame_line(f"{C_SIZE}VCA REFINERY: DATA SANITIZATION & MATH{RESET}", row=2, align="center")
-                    draw_universal_footer() # Seal it again
-                    
-                    deduced_material = "MR-7" if "7" in ans else "MR-10"
-                    log_task(format_log("HUMAN_INPUT", f"Forced ambiguity resolution to {deduced_material}", C_STAGED), "RAW")
+                    # THE 0==0 TIE TRAP SHIELD
+                    if mr7_count == 0:
+                        deduced_material = "MR-7" # Industry standard fallback if nothing is labeled
+                        vp_log("INFERENCE", "No explicit 1.67 markers found. Defaulted to MR-7.", "ok")
+                    else:
+                        vp_log("AMBIGUITY", "1.67 Scoring tied. Requesting Human Fallback.", "err")
+                        ans = draw_modal("AMBIGUITY DETECTED", f"File '{fname}' has tied 1.67 materials. Type MR7 or MR10:", is_password=False)
+                        
+                        sys.stdout.write(f"{C_BG}\033[2J\033[H")
+                        draw_top_bar()
+                        for r in range(2, term_h - 1): draw_frame_line("", row=r)
+                        draw_frame_line(f"{C_SIZE}VCA REFINERY: DATA SANITIZATION & MATH{RESET}", row=2, align="center")
+                        draw_universal_footer()
+                        
+                        deduced_material = "MR-7" if ans and "7" in ans else "MR-10"
+                        vp_log("OVERRIDE", f"Forced ambiguity resolution to {deduced_material}", "warn")
                 
-                # Apply the deduced material to the ambiguous rows
                 df.loc[ambiguous_mask, mat_col] = df.loc[ambiguous_mask, mat_col] + f" ({deduced_material})"
 
-            # --- OPTICAL MATH & SAG CALCULATION PLACEHOLDER ---
-            # (Insert your specific True Curve and SAG calculation logic here)
-            # log_task(format_log("CALCULATING", f"Processing Base True Curves...", C_TITLE), "RAW")
-            # df['True Front Curve (1.53)'] = ...
-            # df['True Back Curve (1.53)'] = ...
-            # df['SAG at 50mm'] = ...
+            # --- OPTICAL MATH PLACEHOLDER ---
+            # vp_log("CALCULATING", "Processing Base True Curves...", "info")
 
-            # 5. DISPLACEMENT & OUTPUT
-            # Write the clean .vlp file to the Staging/Import Directory
             vlp_filename = f"{base_name}.vlp"
             import_path = os.path.join(IMPORT_DIR, vlp_filename)
             
+            # --- THE UNLOCK SHIELD ---
+            # If a locked file from a previous run exists, unlock it so we can overwrite it
+            if os.path.exists(import_path):
+                try: os.chmod(import_path, stat.S_IWRITE | stat.S_IREAD)
+                except: pass
+            
+            # Now Pandas can safely write the file
             df.to_csv(import_path, index=False)
             
-            # Lock the .vlp file to Read-Only so users don't accidentally edit the clean file
+            # Re-lock the file to Read-Only to protect the new data
             try: os.chmod(import_path, stat.S_IREAD | stat.S_IRGRP | stat.S_IROTH)
             except: pass
             
-            # Move the dirty original to the Originals vault
             try:
                 dest_orig = os.path.join(ORIGINALS_DIR, fname)
                 if os.path.exists(dest_orig):
-                    os.remove(dest_orig) # Replace if re-running
+                    os.remove(dest_orig)
                 shutil.move(tgt, dest_orig)
-                log_task(format_log("DISPLACED", f"Original routed to /originals/", C_STAGED), "RAW")
+                vp_log("DISPLACED", "Original routed to /originals/", "ok")
             except Exception as e:
-                log_task(format_log("WARNING", f"Could not move original: {str(e)}", C_WARN), "RAW")
+                vp_log("WARNING", f"Could not move original: {str(e)}", "warn")
                 
-            log_task(format_log("SUCCESS", f"Purified -> {vlp_filename}", C_STAGED), "RAW")
+            vp_log("SUCCESS", f"Purified -> {vlp_filename}", "ok")
             
         except Exception as e:
-            log_task(format_log("FATAL_I/O", f"Failed to convert {fname}: {str(e)}", C_ALERT), "RAW")
+            vp_log("FATAL I/O", f"Failed to convert {fname}: {str(e)}", "err")
             
         pct = ((idx + 1) / total_files) * 100.0
         draw_viewport(progress_pct=pct, active_file=fname, current_file_idx=idx+1, total_files=total_files)
-        time.sleep(0.1) # Smooth telemetry pacing
+        time.sleep(0.1)
         
     # 6. FIXED INTERACTIVE SCROLL LOOP
     draw_viewport(progress_pct=100.0, active_file="Batch Complete", current_file_idx=total_files, total_files=total_files, is_interactive=True)
@@ -3086,17 +3004,21 @@ def execute_add_database():
     if not enforce_security_lock(): return
     global_mode = "VAULT GATEKEEPER (Add)"
     
+    # 1. PRE-HEATED LOCAL IMPORTS
+    import pandas as pd
+    import shutil
+    import stat
+    
     tgt_list = run_file_manager('add', start_dir=IMPORT_DIR, ext_filter=['.vlp'])
     if not tgt_list: global_mode = "MAIN MENU"; return
     
-    # 1. STANDARDIZED SKELETON SETUP
+    # 2. STANDARDIZED SKELETON SETUP
     sys.stdout.write(f"{C_BG}\033[2J\033[H")
     term_w, term_h = get_term_size()
     draw_top_bar()
     for r in range(2, term_h - 1): draw_frame_line("", row=r)
     draw_frame_line(f"{C_SIZE}VAULT GATEKEEPER: ATOMIC BATCH VERIFICATION{RESET}", row=2, align="center")
-    
-    draw_universal_footer() # THE FLOOR SEAL
+    draw_universal_footer()
     
     vault_hashes = set()
     vault_files = [f for f in os.listdir(VLP_ARCHIVE) if f.lower().endswith('.vlp')]
@@ -3110,24 +3032,23 @@ def execute_add_database():
     cleaned_dfs = {}
     failed_file = None; fail_reason = ""
     
-    # 2. INITIALIZE VIEWPORT
+    # 3. INITIALIZE VIEWPORT
     viewport_logs.clear()
     scroll_offset = 0
     total_files = len(tgt_list)
     
-    log_task(format_log("SYSTEM", "Cross-referencing batch against Vault records..."), "RAW")
+    vp_log("SYSTEM", "Cross-referencing batch against Vault records...", "info")
     draw_viewport(progress_pct=0.0, active_file="Verifying...", current_file_idx=0, total_files=total_files, is_interactive=False)
     
-    # 3. VERIFICATION LOOP
+    # 4. VERIFICATION LOOP
     for idx, tgt in enumerate(tgt_list):
         fname = os.path.basename(tgt)
         if fname in vault_files: 
             failed_file = tgt; fail_reason = "Filename collision."; break
             
-        log_task(format_log("I/O", f"Reading absolute path -> {tgt}", C_FILE), "RAW")
+        vp_log("I/O STREAM", f"Reading absolute path -> {tgt}", "info")
         
         try:
-            # Drop purely empty rows and exact Intra-file duplicates silently
             df = robust_read_csv(tgt).dropna(how='all').drop_duplicates()
             
             for row_idx, row_data in df.iterrows():
@@ -3144,7 +3065,7 @@ def execute_add_database():
                     failed_file = tgt
                     failed_lens = row_dict.get('Description', row_dict.get('Name', 'Unknown Lens'))
                     original_location = batch_hashes[h_id]
-                    fail_reason = f"Cross-file duplicate! Row {row_idx + 2} matches data already seen in {original_location}. Lens: {failed_lens}"
+                    fail_reason = f"Cross-file duplicate! Row {row_idx + 2} matches {original_location}."
                     break
                     
                 batch_hashes[h_id] = f"'{fname}' (Row {row_idx + 2})"
@@ -3155,7 +3076,7 @@ def execute_add_database():
         except Exception as e: 
             failed_file = tgt; fail_reason = f"Read error: {str(e)}"; break
             
-    # 4. REJECTION PROTOCOL
+    # 5. REJECTION PROTOCOL
     if failed_file:
         fname = os.path.basename(failed_file); base_name = os.path.splitext(fname)[0]
         try: os.chmod(failed_file, stat.S_IWRITE | stat.S_IREAD); os.remove(failed_file)
@@ -3171,13 +3092,13 @@ def execute_add_database():
                     except: pass
                     break
 
-        log_task(format_log("FATAL", f"Validation Failure in '{fname}'", C_ALERT), "RAW")
-        log_task(format_log("REASON", fail_reason, C_ALERT), "RAW")
-        log_task(format_log("ACTION", "Offending .vlp file deleted from Staging.", C_WARN), "RAW")
+        vp_log("FATAL REJECT", f"Validation Failure in '{fname}'", "err")
+        vp_log("REASON", fail_reason, "err")
+        vp_log("ACTION", "Offending .vlp file deleted from Staging.", "warn")
         
         draw_viewport(progress_pct=100.0, active_file="HALTED", current_file_idx=total_files, total_files=total_files, is_interactive=True)
     
-    # 5. ACCEPTANCE PROTOCOL
+    # 6. ACCEPTANCE PROTOCOL
     else:
         moved = 0
         for idx, tgt in enumerate(tgt_list):
@@ -3187,7 +3108,7 @@ def execute_add_database():
                 try: os.remove(tgt)
                 except: pass
                 os.chmod(dest, stat.S_IREAD | stat.S_IRGRP | stat.S_IROTH)
-                log_task(format_log("SECURITY", f"{os.path.basename(tgt)} scrubbed and locked to 0444", C_STAGED), "RAW")
+                vp_log("SECURITY", f"{os.path.basename(tgt)} scrubbed and locked to 0444", "ok")
                 moved += 1
             except: pass
             
@@ -3195,10 +3116,10 @@ def execute_add_database():
             draw_viewport(progress_pct=pct, active_file=os.path.basename(tgt), current_file_idx=idx+1, total_files=total_files)
             time.sleep(0.05)
             
-        log_task(format_log("SYSTEM", f"BATCH ACCEPTED: {moved} files securely written to Vault.", C_STAGED), "RAW")
+        vp_log("SYSTEM", f"BATCH ACCEPTED: {moved} files securely written to Vault.", "ok")
         draw_viewport(progress_pct=100.0, active_file="Complete", current_file_idx=total_files, total_files=total_files, is_interactive=True)
         
-    # 6. FIXED INTERACTIVE SCROLL LOOP
+    # 7. FIXED INTERACTIVE SCROLL LOOP
     while True:
         c = getch()
         if isinstance(c, bytes):
