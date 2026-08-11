@@ -628,6 +628,50 @@ def getch():
         finally: termios.tcsetattr(fd, termios.TCSADRAIN, old)
         return ch
 
+def draw_z_index_modal(title, prompt, mask=False):
+    """Draws a floating modal over the active UI and intercepts input."""
+    term_w, term_h = get_term_size()
+    box_w = max(50, ansi_len(prompt) + 10)
+    box_h = 5
+    start_y = (term_h // 2) - (box_h // 2)
+    start_x = (term_w - box_w) // 2
+    
+    for i in range(box_h):
+        row = start_y + i
+        if i == 0 or i == box_h - 1:
+            text = f"{C_BORDER}+{'-'*(box_w-2)}+{RESET}"
+        elif i == 1:
+            text = f"{C_BORDER}|{C_TITLE}{title:^{box_w-2}}{C_BORDER}|{RESET}"
+        elif i == 2:
+            text = f"{C_BORDER}|{C_PROMPT} {prompt:<{box_w-3}}{C_BORDER}|{RESET}"
+        elif i == 3:
+            text = f"{C_BORDER}|{C_FILE} > {' ' * (box_w-6)}{C_BORDER}|{RESET}"
+        sys.stdout.write(f"\033[{row};{start_x}H{C_BG}{text}")
+    sys.stdout.flush()
+    
+    val = ""
+    while True:
+        cursor_x = start_x + 4 + len(val)
+        sys.stdout.write(f"\033[{start_y+3};{cursor_x}H\033[?25h")
+        sys.stdout.flush()
+        
+        ch = getch()
+        if ch in ['\r', '\n']:
+            break
+        elif ch == 'ESC':
+            sys.stdout.write("\033[?25l")
+            return None
+        elif ch in ['BACKSPACE', '\x08', '\x7f', 'DEL']:
+            if len(val) > 0:
+                val = val[:-1]
+                sys.stdout.write(f"\033[{start_y+3};{cursor_x-1}H \033[{start_y+3};{cursor_x-1}H")
+        elif len(ch) == 1 and ch.isprintable() and len(val) < box_w - 7:
+            val += ch
+            sys.stdout.write('*' if mask else ch)
+            
+    sys.stdout.write("\033[?25l")
+    return val
+
 def live_input(prompt, hotkeys=False, default_text=""):
     sys.stdout.write(prompt); sys.stdout.flush()
     buf = default_text
@@ -2839,29 +2883,34 @@ def run_file_manager(op, start_dir=BASE_DIR, ext_filter=None):
 def execute_batch_convert():
     global global_mode, scroll_offset
     
-    # 1. PRE-HEATED LOCAL IMPORTS (Lightning fast, IDE friendly)
+    # 1. PRE-HEATED LOCAL IMPORTS
     import pandas as pd
     import numpy as np
     import shutil
     import stat
+    import os
+    import time
     
     # 2. FILE SELECTION
     tgt_list = run_file_manager('convert', start_dir=BASE_DIR, ext_filter=['.vca', '.csv', '.xlsx', '.xls', '.txt'])
     if not tgt_list: return
     
-    # 3. STANDARDIZED SKELETON SETUP
-    sys.stdout.write(f"{C_BG}\033[2J\033[H")
-    term_w, term_h = get_term_size()
-    draw_top_bar()
-    for r in range(2, term_h - 1): draw_frame_line("", row=r)
-    draw_frame_line(f"{C_SIZE}VCA REFINERY: DATA SANITIZATION & MATH{RESET}", row=2, align="center")
-    draw_universal_footer()
-    
-    # 4. INITIALIZE VIEWPORT
+    # --- HELPER: UI REDRAW ---
+    # We need a quick way to clean the screen after the Z-Modal closes
+    def redraw_skeleton():
+        sys.stdout.write(f"{C_BG}\033[2J\033[H")
+        term_w, term_h = get_term_size()
+        draw_top_bar()
+        for r in range(2, term_h - 1): draw_frame_line("", row=r)
+        draw_frame_line(f"{C_SIZE}VCA REFINERY: DATA SANITIZATION & MATH{RESET}", row=2, align="center")
+        draw_universal_footer()
+
+    redraw_skeleton()
     viewport_logs.clear()
     scroll_offset = 0
     total_files = len(tgt_list)
     
+    # 3. THE ZERO-SPACE HEADER LOGIC
     STANDARD_VCA_HEADERS = [
         "MFG", "Class", "Description", "Material", "Material Brand", "Product Name", 
         "Style", "Filter", "Coating", "Coating Brand", "Right OPC", "Left OPC", 
@@ -2872,14 +2921,22 @@ def execute_batch_convert():
         "Special", "Cat Code", "Filter Brand", "DRP In", "DRP Up", "NRP In", 
         "NRP Up", "Hor Diam", "Nom Diam", "Obj Clear", "Obj Rad"
     ]
+    # We instantly generate a spaceless version of the schema for auto-healing
+    CLEAN_HEADERS = [h.replace(" ", "") for h in STANDARD_VCA_HEADERS]
     
-    draw_viewport(progress_pct=0.0, active_file="Initializing Refinery...", current_file_idx=0, total_files=total_files, is_interactive=False)
+    # --- MEMORY BANK SETUP ---
+    memory_bank = []     # Holds the DataFrames and metadata in RAM
+    global_mfgs = set()  # A master set of every MFG abbreviation found
+    mfg_translation_map = {}
     
-    # 5. CONVERSION LOOP
+    draw_viewport(progress_pct=0.0, active_file="Phase 1: Ingestion...", current_file_idx=0, total_files=total_files, is_interactive=False)
+    
+    # =========================================================================
+    # PHASE 1: INGESTION, ZERO-SPACE SANITIZATION, AND SCANNING
+    # =========================================================================
     for idx, tgt in enumerate(tgt_list):
         fname = os.path.basename(tgt)
-        base_name = os.path.splitext(fname)[0]
-        vp_log("I/O STREAM", f"Processing {fname}...", "info")
+        vp_log("PHASE 1", f"Ingesting into RAM: {fname}", "info")
         
         try:
             has_header = True
@@ -2890,94 +2947,156 @@ def execute_batch_convert():
                         has_header = False
                         
             if not has_header:
-                vp_log("AUTO-HEAL", "Headerless file detected. Injecting VCA Schema.", "warn")
-                df = pd.read_csv(tgt, header=None, names=STANDARD_VCA_HEADERS, dtype=str)
+                vp_log("AUTO-HEAL", "Injecting VCA Schema...", "warn")
+                df = pd.read_csv(tgt, header=None, names=CLEAN_HEADERS, dtype=str)
             else:
                 if tgt.lower().endswith(('.xlsx', '.xls')): df = pd.read_excel(tgt, dtype=str)
                 else: df = pd.read_csv(tgt, dtype=str)
             
-            # Silently drop completely empty rows so regex doesn't break
+            # --- THE ZERO-SPACE SHIELD ---
+            # Remove EVERY space from the column headers. 'Frnt Rad' -> 'FrntRad', 'Sph / Base' -> 'Sph/Base'
+            df.columns = df.columns.str.replace(r'\s+', '', regex=True)
+            
+            df = df.apply(lambda col: col.str.strip() if col.dtype == "object" else col)
+            df = df.replace('', np.nan)
             df = df.dropna(how='all')
             
-            # --- INVERSE DEDUCTION LOGIC (The Exception Rule) ---
+            # Unify Indexes using the new spaceless names
+            if 'dIndex' in df.columns and 'eIndex' in df.columns:
+                df['SafeIndex'] = df['dIndex'].combine_first(df['eIndex'])
+            elif 'dIndex' in df.columns: df['SafeIndex'] = df['dIndex']
+            elif 'eIndex' in df.columns: df['SafeIndex'] = df['eIndex']
+            else: df['SafeIndex'] = np.nan
+            
+            # --- AGGREGATE MANUFACTURERS ---
+            if 'MFG' in df.columns:
+                mfgs_in_file = df['MFG'].dropna().unique()
+                for m in mfgs_in_file: global_mfgs.add(str(m).strip())
+                
+            # --- PRE-CALCULATE 1.67 TALLIES ---
             mat_col = 'Material' if 'Material' in df.columns else 'Description'
-            
-            # Safety fill to prevent NaN crash on `.str.contains`
             safe_desc = df[mat_col].fillna('')
-            
             mr7_count = int(safe_desc.str.contains('MR-7|MR7', case=False, na=False).sum())
             mr10_count = int(safe_desc.str.contains('MR-10|MR10', case=False, na=False).sum())
-            
             ambiguous_mask = safe_desc.str.contains('PU|1.67', case=False, na=False) & \
                              ~safe_desc.str.contains('MR-7|MR7|MR-10|MR10', case=False, na=False)
-                             
-            if ambiguous_mask.sum() > 0:
-                deduced_material = ""
-                # THE EXCEPTION RULE: If MR-10 is specifically labeled the most, the unmarked ones are cheap MR-7
-                if mr10_count > mr7_count: 
-                    deduced_material = "MR-7"
-                    vp_log("INFERENCE", f"MR-10 scored {mr10_count}. Ambiguous assigned to MR-7.", "ok")
-                elif mr7_count > mr10_count:
-                    deduced_material = "MR-10"
-                    vp_log("INFERENCE", f"MR-7 scored {mr7_count}. Ambiguous assigned to MR-10.", "ok")
-                else:
-                    # THE 0==0 TIE TRAP SHIELD
-                    if mr7_count == 0:
-                        deduced_material = "MR-7" # Industry standard fallback if nothing is labeled
-                        vp_log("INFERENCE", "No explicit 1.67 markers found. Defaulted to MR-7.", "ok")
-                    else:
-                        vp_log("AMBIGUITY", "1.67 Scoring tied. Requesting Human Fallback.", "err")
-                        ans = draw_modal("AMBIGUITY DETECTED", f"File '{fname}' has tied 1.67 materials. Type MR7 or MR10:", is_password=False)
-                        
-                        sys.stdout.write(f"{C_BG}\033[2J\033[H")
-                        draw_top_bar()
-                        for r in range(2, term_h - 1): draw_frame_line("", row=r)
-                        draw_frame_line(f"{C_SIZE}VCA REFINERY: DATA SANITIZATION & MATH{RESET}", row=2, align="center")
-                        draw_universal_footer()
-                        
-                        deduced_material = "MR-7" if ans and "7" in ans else "MR-10"
-                        vp_log("OVERRIDE", f"Forced ambiguity resolution to {deduced_material}", "warn")
-                
-                df.loc[ambiguous_mask, mat_col] = df.loc[ambiguous_mask, mat_col] + f" ({deduced_material})"
-
-            # --- OPTICAL MATH PLACEHOLDER ---
-            # vp_log("CALCULATING", "Processing Base True Curves...", "info")
-
-            vlp_filename = f"{base_name}.vlp"
-            import_path = os.path.join(IMPORT_DIR, vlp_filename)
             
-            # --- THE UNLOCK SHIELD ---
-            # If a locked file from a previous run exists, unlock it so we can overwrite it
-            if os.path.exists(import_path):
-                try: os.chmod(import_path, stat.S_IWRITE | stat.S_IREAD)
-                except: pass
-            
-            # Now Pandas can safely write the file
-            df.to_csv(import_path, index=False)
-            
-            # Re-lock the file to Read-Only to protect the new data
-            try: os.chmod(import_path, stat.S_IREAD | stat.S_IRGRP | stat.S_IROTH)
-            except: pass
-            
-            try:
-                dest_orig = os.path.join(ORIGINALS_DIR, fname)
-                if os.path.exists(dest_orig):
-                    os.remove(dest_orig)
-                shutil.move(tgt, dest_orig)
-                vp_log("DISPLACED", "Original routed to /originals/", "ok")
-            except Exception as e:
-                vp_log("WARNING", f"Could not move original: {str(e)}", "warn")
-                
-            vp_log("SUCCESS", f"Purified -> {vlp_filename}", "ok")
+            # Save everything to RAM
+            memory_bank.append({
+                'tgt': tgt, 'fname': fname, 'df': df, 
+                'mr7': mr7_count, 'mr10': mr10_count, 'amb_mask': ambiguous_mask, 'mat_col': mat_col
+            })
+            vp_log("BUFFERED", "File secured in Memory Bank.", "ok")
             
         except Exception as e:
-            vp_log("FATAL I/O", f"Failed to convert {fname}: {str(e)}", "err")
+            vp_log("FATAL I/O", f"Failed to ingest {fname}: {str(e)}", "err")
             
-        pct = ((idx + 1) / total_files) * 100.0
+        pct = ((idx + 1) / total_files) * 33.0 # Phase 1 is 33% of the progress
         draw_viewport(progress_pct=pct, active_file=fname, current_file_idx=idx+1, total_files=total_files)
-        time.sleep(0.1)
+        time.sleep(0.05)
+
+    # =========================================================================
+    # PHASE 2: THE HUMAN GATEKEEPER (Z-Modal Interruption)
+    # =========================================================================
+    draw_viewport(progress_pct=33.0, active_file="AWAITING USER INPUT", current_file_idx=total_files, total_files=total_files, is_interactive=False)
+    
+    # 1. Resolve Manufacturers
+    for abbr in global_mfgs:
+        if not abbr: continue
+        ans = draw_z_index_modal("TRANSLATE MANUFACTURER", f"What does '{abbr}' stand for?")
+        redraw_skeleton() # Clean up the modal box
         
-    # 6. FIXED INTERACTIVE SCROLL LOOP
+        if ans: mfg_translation_map[abbr] = ans.strip()
+        else: mfg_translation_map[abbr] = abbr # If they hit ESC or leave it blank, keep abbreviation
+        
+    # 2. Resolve 1.67 Ties
+    for mem in memory_bank:
+        has_ambiguity = mem['amb_mask'].sum() > 0
+        
+        if has_ambiguity:
+            if mem['mr10'] > mem['mr7']: 
+                mem['deduced_167'] = "MR-7" # Exception rule
+            elif mem['mr7'] > mem['mr10']: 
+                mem['deduced_167'] = "MR-10" # Exception rule
+            else:
+                # IT'S A TIE. 
+                if mem['mr7'] == 0:
+                    mem['deduced_167'] = "MR-7" # 0==0 Industry standard
+                else:
+                    ans = draw_z_index_modal("MATERIAL AMBIGUITY", f"Tie in '{mem['fname']}'. Type MR7 or MR10:")
+                    redraw_skeleton()
+                    mem['deduced_167'] = "MR-7" if ans and "7" in ans else "MR-10"
+    
+    # Re-draw the viewport so we can see the logs again after the modals
+    draw_viewport(progress_pct=50.0, active_file="Human Validation Complete", current_file_idx=total_files, total_files=total_files, is_interactive=False)
+
+    # =========================================================================
+    # PHASE 3 & 4: MATH APPLICATION & DISK I/O
+    # =========================================================================
+    for idx, mem in enumerate(memory_bank):
+        df = mem['df']
+        fname = mem['fname']
+        tgt = mem['tgt']
+        base_name = os.path.splitext(fname)[0]
+        
+        vp_log("PHASE 3", f"Applying rules & math to {fname}...", "info")
+        
+        # --- Apply Phase 2 Human Translations ---
+        if 'MFG' in df.columns:
+            df['MFG'] = df['MFG'].str.strip().map(mfg_translation_map).fillna(df['MFG'])
+            
+        if mem['amb_mask'].sum() > 0:
+            df.loc[mem['amb_mask'], mem['mat_col']] = df.loc[mem['amb_mask'], mem['mat_col']] + f" ({mem['deduced_167']})"
+            
+        # --- Optical Math Engine (Using Zero-Space Column Names) ---
+        if 'Class' not in df.columns: df['Class'] = 'SF'
+        sf_mask = df['Class'].str.strip().str.upper() == 'SF'
+        
+        if sf_mask.sum() == 0:
+            vp_log("BYPASS", "No SF blanks found. Math skipped.", "info")
+        else:
+            idx_val = pd.to_numeric(df['SafeIndex'], errors='coerce')
+            f_rad = pd.to_numeric(df['FrntRad'], errors='coerce')
+            b_rad = pd.to_numeric(df['BckRad'], errors='coerce')
+            
+            df.loc[sf_mask, 'ToolingFront(1.530)'] = (530.0 / f_rad[sf_mask]).round(2)
+            df.loc[sf_mask, 'TrueFrontCurve'] = (((idx_val[sf_mask] - 1.0) * 1000.0) / f_rad[sf_mask]).round(2)
+            
+            df.loc[sf_mask, 'ToolingBack(1.530)'] = (-530.0 / b_rad[sf_mask]).round(2)
+            df.loc[sf_mask, 'TrueBackCurve'] = (-((idx_val[sf_mask] - 1.0) * 1000.0) / b_rad[sf_mask]).round(2)
+            
+            y = 25.0 
+            df.loc[sf_mask, 'FrontSAG@50mm'] = np.where(f_rad[sf_mask] > y, f_rad[sf_mask] - np.sqrt(f_rad[sf_mask]**2 - y**2), np.nan)
+            df['FrontSAG@50mm'] = df['FrontSAG@50mm'].round(3)
+
+        # --- Phase 4: Vault Write ---
+        vlp_filename = f"{base_name}.vlp"
+        import_path = os.path.join(IMPORT_DIR, vlp_filename)
+        
+        if os.path.exists(import_path):
+            try: os.chmod(import_path, stat.S_IWRITE | stat.S_IREAD)
+            except: pass
+        
+        df.to_csv(import_path, index=False)
+        try: os.chmod(import_path, stat.S_IREAD | stat.S_IRGRP | stat.S_IROTH)
+        except: pass
+        
+        try:
+            dest_orig = os.path.join(ORIGINALS_DIR, fname)
+            if os.path.exists(dest_orig): os.remove(dest_orig)
+            shutil.move(tgt, dest_orig)
+        except Exception as e:
+            vp_log("WARNING", f"Could not move original: {str(e)}", "warn")
+            
+        vp_log("SUCCESS", f"Purified -> {vlp_filename}", "ok")
+        
+        pct = 50.0 + (((idx + 1) / total_files) * 50.0)
+        draw_viewport(progress_pct=pct, active_file=fname, current_file_idx=idx+1, total_files=total_files)
+        time.sleep(0.05)
+        
+    # =========================================================================
+    # END OF PIPELINE - INTERACTIVE SCROLL
+    # =========================================================================
     draw_viewport(progress_pct=100.0, active_file="Batch Complete", current_file_idx=total_files, total_files=total_files, is_interactive=True)
     
     while True:
