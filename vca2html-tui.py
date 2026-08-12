@@ -227,6 +227,35 @@ def reload_icons():
 
 reload_icons()
 
+CUSTOM_SCHEMA = [
+        "MFG", "Class", "Name", "Description", "Filter", "Coating", "Material", "Style", 
+        "Coating Brand", "Right OPC", "Left OPC", "Index", "Diameter", "SPH/BASE", 
+        "CYL/ADD", "Front RAD", "Back RAD", "Center Thick", "Edge Thick", "Inset", 
+        "Drop", "PRP Out", "PRP Up", "Abbe", "Seg Width", "Seg Thick", "Intermediate Ht", 
+        "Slab Off", "Carriage Rad", "Bowl Dia", "Ver Dia", "Dia Dia", "Seg Sep", "Up Add", 
+        "Special", "Cat Code", "Filter Brand", "DRP In", "DRP Up", "NRP In", "NRP Up", 
+        "Horizontal Dia", "Nominal Dia", "Obj Clear", "Obj Rad", "Front TC", "Back TC", "SAG", "Safe Index"
+]
+    
+VCA_TO_CUSTOM_MAP = {
+        "Frnt Rad": "Front RAD", "Bck Rad": "Back RAD", "Sph / Base": "SPH/BASE",
+        "Cyl / Add": "CYL/ADD", "C Thk": "Center Thick", "E Thk": "Edge Thick",
+        "Seg Wd": "Seg Width", "Seg Thk": "Seg Thick", "Int Ht": "Intermediate Ht",
+        "Bwl Diam": "Bowl Dia", "Ver Diam": "Ver Dia", "Hor Diam": "Horizontal Dia",
+        "Nom Diam": "Nominal Dia", "Product Name": "Name"
+}
+    
+STANDARD_VCA_HEADERS = [
+        "MFG", "Class", "Description", "Material", "Material Brand", "Product Name", 
+        "Style", "Filter", "Coating", "Coating Brand", "Right OPC", "Left OPC", 
+        "Diameter", "Sph / Base", "Cyl / Add", "Frnt Rad", "Bck Rad", "C Thk", 
+        "E Thk", "LRP In", "LRP Down", "d Index", "N Ref", "e Index", "Abbe", 
+        "Density", "PRP Out", "PRP Up", "Seg Wd", "Seg Thk", "Int Ht", "Slab", 
+        "Car Rad", "Bwl Diam", "Ver Diam", "Dia Diam", "Seg Sep", "Up Add", 
+        "Special", "Cat Code", "Filter Brand", "DRP In", "DRP Up", "NRP In", 
+        "NRP Up", "Hor Diam", "Nom Diam", "Obj Clear", "Obj Rad"
+]
+
 # --- INITIALIZATION & CONFIGURATION ---
 
 def preflight_dependency_check():
@@ -551,20 +580,23 @@ def draw_viewport(progress_pct=100.0, current_task_string="", active_file="", cu
     text_bl_1 = f" {total_types} TYPES "
     text_bl_2 = f" {total_lenses:,} LENSES "
     
-    # --- THE ACTION TEXT INJECTION ---
+# --- THE ACTION TEXT INJECTION ---
     raw_bot_l = ""
     bot_l_str = ""
     
     if action_text:
-        raw_bot_l += action_text
-        bot_l_str += f"{C_BGLIGHT}{C_PROMPT}{action_text}{RESET}{C_BORDER}"
+        # Strip () so we can color them as the outer border
+        clean_action = action_text.strip("() ")
+        text_act = f" {clean_action} "
+        raw_bot_l += f"({text_act})"
+        bot_l_str += f"{C_BORDER}({C_BGLIGHT}{C_PROMPT}{text_act}{RESET}{C_BORDER})"
         
     if total_types > 0:
         if raw_bot_l: # If action_text already printed, add a connecting line
             raw_bot_l += "─"
-            bot_l_str += f"─"
+            bot_l_str += "─"
         raw_bot_l += f"({text_bl_1}|{text_bl_2})"
-        bot_l_str += f"({C_BGLIGHT}{C_STAGED}{text_bl_1}{C_SUBTEXT}|{C_STAGED}{text_bl_2}{RESET}{C_BORDER})"
+        bot_l_str += f"{C_BORDER}({C_BGLIGHT}{C_STAGED}{text_bl_1}{C_SUBTEXT}|{C_STAGED}{text_bl_2}{RESET}{C_BORDER})"
 
     # DRAW PROGRESS BAR (Always draw hashes, never erase)
     pb_inner_w = box_w - 4
@@ -2607,7 +2639,7 @@ def robust_read_csv(filepath):
 
 def generate_hash_id(row_dict):
     raw_components = []
-    for col in VLP_SCHEMA:
+    for col in CUSTOM_SCHEMA:
         val = str(row_dict.get(col, '')).strip().lower()
         if val in ('nan', 'none', 'null', '<na>'): val = ''
         if val.endswith('.0'): val = val[:-2]
@@ -2918,35 +2950,6 @@ def execute_batch_convert():
     viewport_logs.clear()
     scroll_offset = 0
     
-    CUSTOM_SCHEMA = [
-        "MFG", "Class", "Name", "Description", "Filter", "Coating", "Material", "Style", 
-        "Coating Brand", "Right OPC", "Left OPC", "Index", "Diameter", "SPH/BASE", 
-        "CYL/ADD", "Front RAD", "Back RAD", "Center Thick", "Edge Thick", "Inset", 
-        "Drop", "PRP Out", "PRP Up", "Abbe", "Seg Width", "Seg Thick", "Intermediate Ht", 
-        "Slab Off", "Carriage Rad", "Bowl Dia", "Ver Dia", "Dia Dia", "Seg Sep", "Up Add", 
-        "Special", "Cat Code", "Filter Brand", "DRP In", "DRP Up", "NRP In", "NRP Up", 
-        "Horizontal Dia", "Nominal Dia", "Obj Clear", "Obj Rad", "Front TC", "Back TC", "SAG", "Safe Index"
-    ]
-    
-    VCA_TO_CUSTOM_MAP = {
-        "Frnt Rad": "Front RAD", "Bck Rad": "Back RAD", "Sph / Base": "SPH/BASE",
-        "Cyl / Add": "CYL/ADD", "C Thk": "Center Thick", "E Thk": "Edge Thick",
-        "Seg Wd": "Seg Width", "Seg Thk": "Seg Thick", "Int Ht": "Intermediate Ht",
-        "Bwl Diam": "Bowl Dia", "Ver Diam": "Ver Dia", "Hor Diam": "Horizontal Dia",
-        "Nom Diam": "Nominal Dia", "Product Name": "Name"
-    }
-    
-    STANDARD_VCA_HEADERS = [
-        "MFG", "Class", "Description", "Material", "Material Brand", "Product Name", 
-        "Style", "Filter", "Coating", "Coating Brand", "Right OPC", "Left OPC", 
-        "Diameter", "Sph / Base", "Cyl / Add", "Frnt Rad", "Bck Rad", "C Thk", 
-        "E Thk", "LRP In", "LRP Down", "d Index", "N Ref", "e Index", "Abbe", 
-        "Density", "PRP Out", "PRP Up", "Seg Wd", "Seg Thk", "Int Ht", "Slab", 
-        "Car Rad", "Bwl Diam", "Ver Diam", "Dia Diam", "Seg Sep", "Up Add", 
-        "Special", "Cat Code", "Filter Brand", "DRP In", "DRP Up", "NRP In", 
-        "NRP Up", "Hor Diam", "Nom Diam", "Obj Clear", "Obj Rad"
-    ]
-    
     memory_bank = []     
     global_mfgs = set()  
     mfg_translation_map = {}
@@ -3227,12 +3230,22 @@ def execute_add_database():
             vp_log("AUDIT", "Row integrity verified (0 critical nulls).", "ok")
             time.sleep(0.05)
             
+            # --- STRICT AUDIT 3: Math Verification (Upgraded Sniper) ---
             sf_mask = ~df['Class'].fillna('SF').str.upper().str.contains('FIN')
             if sf_mask.sum() > 0:
                 math_cols = ['Front TC', 'Back TC', 'SAG']
-                math_nulls = df.loc[sf_mask, math_cols].isnull().sum().sum()
-                if math_nulls > 0:
-                    failed_file = tgt; fail_reason = "Math verification failed. Missing computed values for SF blanks."; break
+                
+                # Check for ANY missing math on Semi-Finished blanks
+                bad_math_mask = sf_mask & df[math_cols].isnull().any(axis=1)
+                
+                if bad_math_mask.sum() > 0:
+                    # Find the exact row that killed the process
+                    first_bad_idx = df[bad_math_mask].index[0]
+                    bad_lens_name = df.loc[first_bad_idx, 'Name']
+                    
+                    failed_file = tgt
+                    fail_reason = f"Math Error on Row {first_bad_idx + 2} ({bad_lens_name}). Missing Radius or Index."
+                    break
             vp_log("AUDIT", "Cryptographic math validation passed.", "ok")
             time.sleep(0.05)
             
