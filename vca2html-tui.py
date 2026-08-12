@@ -459,7 +459,7 @@ def format_log(tag, msg, color, is_cmd=False):
         muted_colon = f"{C_SUBTEXT}:{color}"
         return f"{color}{tag_str}{muted_colon} {msg}{RESET}"
 
-def draw_viewport(progress_pct=100.0, current_task_string="", active_file="", current_file_idx=0, total_files=0, total_types=0, total_lenses=0, is_interactive=False):
+def draw_viewport(progress_pct=100.0, current_task_string="", active_file="", current_file_idx=0, total_files=0, total_types=0, total_lenses=0, is_interactive=False, action_text=""):
     global scroll_offset
     import re
     term_w, term_h = get_term_size()
@@ -550,10 +550,23 @@ def draw_viewport(progress_pct=100.0, current_task_string="", active_file="", cu
 
     text_bl_1 = f" {total_types} TYPES "
     text_bl_2 = f" {total_lenses:,} LENSES "
-    raw_bot_l = f"({text_bl_1}|{text_bl_2})" if total_types > 0 else ""
-    bot_l_str = f"({C_BGLIGHT}{C_STAGED}{text_bl_1}{C_SUBTEXT}|{C_STAGED}{text_bl_2}{RESET}{C_BORDER})" if total_types > 0 else ""
+    
+    # --- THE ACTION TEXT INJECTION ---
+    raw_bot_l = ""
+    bot_l_str = ""
+    
+    if action_text:
+        raw_bot_l += action_text
+        bot_l_str += f"{C_BGLIGHT}{C_PROMPT}{action_text}{RESET}{C_BORDER}"
+        
+    if total_types > 0:
+        if raw_bot_l: # If action_text already printed, add a connecting line
+            raw_bot_l += "─"
+            bot_l_str += f"─"
+        raw_bot_l += f"({text_bl_1}|{text_bl_2})"
+        bot_l_str += f"({C_BGLIGHT}{C_STAGED}{text_bl_1}{C_SUBTEXT}|{C_STAGED}{text_bl_2}{RESET}{C_BORDER})"
 
-# DRAW PROGRESS BAR (Always draw hashes, never erase)
+    # DRAW PROGRESS BAR (Always draw hashes, never erase)
     pb_inner_w = box_w - 4
     bar_str = ""
     
