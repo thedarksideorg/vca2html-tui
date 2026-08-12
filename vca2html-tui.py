@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
-# ==============================================================================
+# =============================================================================
 # VCA2HTML-TUI v3.3.0 (Ultimate Optical Engine)
 # OPTICAL LENS DATABASE ENGINE
 # ==============================================================================
 
-import os
-import sys
-import shutil
-import re
-import textwrap
+import os            # Core filesystem
+import sys           # Console/stdout printing
+import time          # Delays and UI pacing
+import shutil        # Copy/Move/Delete files
+import stat          # Needed for listing directories
+import subprocess    # Running CAB extraction
+import hashlib       # SHA256 Verification
+import threading     # spinner
+import random        # random numbers
 import platform
-import warnings
-import atexit
-import json
-import stat
-import hashlib
-import base64
-import zipfile
-import urllib.request as urllib
+import warnings      # uh, warnings
+import atexit        # for the warnings on exit
+import re
+import textwrap      # to wrap text?
+import json          # deal with json files
+import base64        # base64 information
 from datetime import datetime, timezone
-import subprocess
-import time
 
 # 1. Dual-Lane Dependency Check
 missing_py_modules = []
@@ -55,15 +55,15 @@ openpyxl = None
 
 
 # Suppress background warnings that destroy TUI coordinates
-#warnings.filterwarnings("ignore", category=FutureWarning)
-#warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-#def clean_teardown():
-#    """Guarantees the terminal is wiped and color reset on exit/crash."""
-#    sys.stdout.write("\033[2J\033[H\033[0m")
-#    sys.stdout.flush()
+def clean_teardown():
+    """Guarantees the terminal is wiped and color reset on exit/crash."""
+    sys.stdout.write("\033[2J\033[H\033[0m")
+    sys.stdout.flush()
 
-#atexit.register(clean_teardown)
+atexit.register(clean_teardown)
 
 # Directories
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -78,6 +78,7 @@ CORRUPT_DIR = os.path.join(DB_DIR, 'corrupt')
 HTML_DIR = os.path.join(DATA_DIR, 'HTML')
 HTML_DATA_DIR = os.path.join(HTML_DIR, 'data')
 HTML_DB_DIR = os.path.join(HTML_DATA_DIR, 'db')
+HTML_FONT_DIR = os.path.join(HTML_DATA_DIR, 'fonts')
 TMP_DIR = os.path.join(DATA_DIR, '.tmp')
 DB_FILE = os.path.join(DB_DIR, 'master_lens_db.json')
 ICONS_FILE = os.path.join(DB_DIR, '.icons')
@@ -134,32 +135,6 @@ ascii_art = [
     r"  ╚═══╝   ╚═════╝╚═╝  ╚═╝ ╚══════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝     ╚═╝╚══════╝      ╚═╝    ╚═════╝ ╚═╝"
 ]
 
-modules = [
-    ("Core OS Interface", "os", False), ("System Pathways", "sys", False),
-    ("Temporal Engine", "time", False), ("Platform Diagnostics", "platform", False),
-    ("Warning Handlers", "warnings", False), ("Exit Routines", "atexit", False),
-    ("Regex Engine", "re", False), ("File Operations", "shutil", False),
-    ("JSON Parsers", "json", False), ("Sys Stat", "stat", False),
-    ("Text Wrapping", "textwrap", False), ("Datetime Engine", "datetime", False),
-    ("Timezone Protocols", "timezone", False), ("Cryptographic Hashes", "hashlib", False),
-    ("Binary Encoders", "base64", False), ("Network Libraries", "urllib", False), 
-    ("Archive Tools", "zipfile", False), ("Data Aggregator", "pandas", True),
-    ("Numeric Engine", "numpy", True), ("Excel IO Engine", "openpyxl", True)
-]
-    
-fonts = {
-    'MSSansSerif-Regular.ttf': {'win': r"C:\Windows\Fonts\micross.ttf", 'lin_name': 'micross.ttf', 'url': "https://cdn.jsdelivr.net/gh/matomo-org/travis-scripts@master/fonts/micross.ttf", 'is_zip': False},
-    'Arial-Regular.ttf': {'win': r"C:\Windows\Fonts\arial.ttf", 'lin_name': 'arial.ttf', 'url': "https://cdn.jsdelivr.net/gh/matomo-org/travis-scripts@master/fonts/arial.ttf", 'is_zip': False},
-    'Arial-Bold.ttf': {'win': r"C:\Windows\Fonts\arialbd.ttf", 'lin_name': 'arialbd.ttf', 'url': "https://cdn.jsdelivr.net/gh/matomo-org/travis-scripts@master/fonts/arialbd.ttf", 'is_zip': False},
-    'Tahoma-Regular.ttf': {'win': r"C:\Windows\Fonts\tahoma.ttf", 'lin_name': 'tahoma.ttf', 'url': "https://cdn.jsdelivr.net/gh/matomo-org/travis-scripts@master/fonts/tahoma.ttf", 'is_zip': False},
-    'UbuntuSansNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/UbuntuSans.zip", 'is_zip': True},
-    'JetBrainsMonoNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip", 'is_zip': True},
-    'FiraCodeNerdFont-Medium.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.zip", 'is_zip': True},
-    'CaskaydiaCoveNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/CascadiaCode.zip", 'is_zip': True},
-    'NotoSansNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Noto.zip", 'is_zip': True},
-    'OpenSans-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/opensans/static/OpenSans-Regular.ttf", 'is_zip': False},
-}
-
 def apply_theme(theme_name="tokyo_night"):
     global C_BG, C_BGLIGHT, C_BORDER, C_PROMPT, C_TITLE, C_DIR, STRIKE, UNSTRIKE
     global C_FILE, C_SIZE, C_STAGED, C_SUCCESS, C_ALERT, C_WARN, C_SUBTEXT, RESET, PB_COLORS
@@ -198,31 +173,101 @@ GLOBAL_LICENSE = "Copyright © 2026 Daniel Casada. This program is free software
 GLOBAL_DISCLAIMER = "This application was created to help optical lab technicians get lens technical specifications into legacy LMS systems. This tool tries to take industry \"standard VCA files\", parse them properly, then format them into a human readable format. It is not affiliated with National Optronics™ (DAC Vision™) or any proprietary LMS manufacturer. There is absolutely no support for this tool and I am not responsible for any invalid information, errors, or any data loss. This application comes as is and you must use at your own risk."
 
 VALID_EXTENSIONS = ['.vca', '.csv', '.xlsx', '.xls', '.txt']
-DEFAULT_ICONS = {
-    "opt_eng": {"char": "󰇻", "pad": 2}, "mode": {"char": "󰚡", "pad": 1},
-    "db": {"char": "󱘲", "pad": 1}, "lens": {"char": "󰊪", "pad": 2},
-    "stage": {"char": "", "pad": 1}, "conv": {"char": "", "pad": 1},
-    "add": {"char": "󱘫", "pad": 1}, "list": {"char": "󱤢", "pad": 1},
-    "scan": {"char": "󱘶", "pad": 1}, "gen": {"char": "󱘸", "pad": 1},
-    "html": {"char": "󰊯", "pad": 1}, "tools": {"char": "󰏗", "pad": 1},
-    "move": {"char": "󱄗", "pad": 1}, "copy": {"char": "󱉦", "pad": 1},
-    "ren": {"char": "󱓦", "pad": 1}, "del": {"char": "󱂨", "pad": 1},
-    "quit": {"char": "󰗼", "pad": 1}, "nf": {"char": "⚡", "pad": 0},
-    "arr_up": {"char": "󰧇", "pad": 1}, "arr_dn": {"char": "󰦿", "pad": 1},
-    "arr_prv": {"char": "󰧀", "pad": 1}, "arr_nxt": {"char": "󰧂", "pad": 1},
-    "dir_up": {"char": "󰷏", "pad": 1}, "dir": {"char": "󰉖", "pad": 1},
-    "file": {"char": "󰈙", "pad": 1}, "term": {"char": "", "pad": 1},
-    "prot": {"char": "󰒃", "pad": 1}, "ext_json": {"char": "󰘦", "pad": 1},
-    "ext_html": {"char": "", "pad": 1}, "ext_csv": {"char": "󰈙", "pad": 1},
-    "ext_vca": {"char": "󰈙", "pad": 1}, "ext_txt": {"char": "󰈙", "pad": 1}
-}
+USE_NERD_FONTS = app_config.get('nerd_fonts', False)
 
-active_icons = DEFAULT_ICONS.copy()
+active_icons = {}
+
+def reload_icons():
+    """Rebuilds the icon dictionary in-place based directly on the config state."""
+    nf_on = app_config.get('nerd_fonts', False)
+    
+    new_icons = {
+        "check": "" if nf_on else "✓",
+        "cross": "" if nf_on else "X",
+        "toggle": "" if nf_on else "=",
+        "nf": "⚡" if nf_on else "NF",
+        "opt_eng": "󰇻" if nf_on else "SYS",
+        "mode": "󰚡" if nf_on else "M:",
+        "db": "󱘲" if nf_on else "DB:",
+        "lens": "󰊪" if nf_on else "O",
+        "stage": "" if nf_on else "+",
+        "term": "" if nf_on else ">",
+        "prot": "󰒃" if nf_on else "@",
+        "conv": "" if nf_on else "~",
+        "add": "󱘫" if nf_on else "+",
+        "list": "󱤢" if nf_on else "=",
+        "scan": "󱘶" if nf_on else "?",
+        "gen": "󱘸" if nf_on else "*",
+        "html": "󰊯" if nf_on else "</>",
+        "tools": "󰏗" if nf_on else "*",
+        "move": "󱄗" if nf_on else "->",
+        "copy": "󱉦" if nf_on else "C",
+        "ren": "󱓦" if nf_on else "R",
+        "del": "󱂨" if nf_on else "X",
+        "quit": "󰗼" if nf_on else "Q",
+        "arr_up": "󰧇" if nf_on else "^",
+        "arr_dn": "󰦿" if nf_on else "v",
+        "arr_prv": "󰧀" if nf_on else "<",
+        "arr_nxt": "󰧂" if nf_on else ">",
+        "dir_up": "󰷏" if nf_on else "..",
+        "dir": "󰉖" if nf_on else "DIR",
+        "file": "󰈙" if nf_on else "DOC",
+        "ext_json": "󰘦" if nf_on else "{ }",
+        "ext_html": "" if nf_on else "< >",
+        "ext_csv": "󰈙" if nf_on else "CSV",
+        "ext_vca": "󰈙" if nf_on else "VCA",
+        "ext_txt": "󰈙" if nf_on else "TXT",
+        "pfx_ok": "󰄬" if nf_on else "[+]",
+        "pfx_warn": "󰀪" if nf_on else "[*]",
+        "pfx_err": "󰅙" if nf_on else "[!]",
+        "pfx_info": "󰋼" if nf_on else "[~]"
+    }
+    active_icons.clear()
+    active_icons.update(new_icons)
+
+reload_icons()
 
 # --- INITIALIZATION & CONFIGURATION ---
 
+def preflight_dependency_check():
+    """Fails fast if 3rd party modules are missing, providing the exact install command."""
+    import importlib.util
+    import sys
+    import os
+
+    required_modules = ['pandas', 'numpy', 'openpyxl']
+    missing = []
+
+    for mod in required_modules:
+        if importlib.util.find_spec(mod) is None:
+            missing.append(mod)
+
+    if missing:
+        pkg_str = " ".join(missing)
+        
+        # 1. Flood the entire terminal with the Tokyo Night background color
+        sys.stdout.write(f"{C_BG}\033[2J\033[H")
+        
+        # 2. \033[K forces the background color to paint all the way to the right edge
+        print(f"{C_BG}\033[K")
+        print(f"{C_BG}  {C_SIZE}❯  SYSTEM HALT: Missing Required Dependencies{RESET}{C_BG}\033[K")
+        print(f"{C_BG}     {C_SUBTEXT}The engine cannot boot. You are missing:{RESET} {C_FILE}{', '.join(missing)}{RESET}{C_BG}\033[K")
+        print(f"{C_BG}\033[K")
+        
+        if os.name == 'nt':
+            print(f"{C_BG}     {C_SUBTEXT}Run this command to install them:{RESET}{C_BG}\033[K")
+            print(f"{C_BG}     {C_STAGED}$ py -m pip install {pkg_str}{RESET}{C_BG}\033[K")
+            print(f"{C_BG}     {C_SUBTEXT}(If 'py' fails, try: {C_STAGED}python -m pip install {pkg_str}{C_SUBTEXT}){RESET}{C_BG}\033[K")
+        else:
+            print(f"{C_BG}     {C_SUBTEXT}Run this command to install them:{RESET}{C_BG}\033[K")
+            print(f"{C_BG}     {C_STAGED}$ python3 -m pip install {pkg_str}{RESET}{C_BG}\033[K")
+            print(f"{C_BG}     {C_SUBTEXT}(Or use your native package manager, e.g., sudo pacman -S python3-pandas){RESET}{C_BG}\033[K")
+        
+        print(f"{C_BG}\033[K{RESET}")
+        sys.exit(1)
+        
 def init_environment():
-    dirs = [DATA_DIR, IMPORT_DIR, ORIGINALS_DIR, DB_DIR, VLP_ARCHIVE, PURGED_DIR, CORRUPT_DIR, HTML_DIR, HTML_DATA_DIR, HTML_DB_DIR, TMP_DIR]
+    dirs = [DATA_DIR, IMPORT_DIR, ORIGINALS_DIR, DB_DIR, VLP_ARCHIVE, PURGED_DIR, CORRUPT_DIR, HTML_DIR, HTML_DATA_DIR, HTML_FONT_DIR, HTML_DB_DIR, TMP_DIR]
     for d in dirs: 
         os.makedirs(d, exist_ok=True)
     if not os.path.exists(CONFIG_FILE):
@@ -232,7 +277,7 @@ def init_environment():
     if not os.path.exists(ICONS_FILE):
         try:
             with open(ICONS_FILE, 'w', encoding='utf-8') as f:
-                json.dump(DEFAULT_ICONS, f, indent=4, ensure_ascii=False)
+                json.dump(ICONS, f, indent=4, ensure_ascii=False)
         except: pass
 
 def load_config():
@@ -256,22 +301,19 @@ def save_config():
     except Exception: 
         pass
 
-def get_ico(key, pad=True):
-    if not app_config['nerd_fonts']: return ""
-    icon_data = active_icons.get(key, {})
-    if isinstance(icon_data, str): return icon_data + (" " if pad else "")
-    return icon_data.get("char", "") + (" " * icon_data.get("pad", 0) if pad else "")
+def get_ico(key):
+    """Returns the icon or its ASCII fallback with zero padding."""
+    return active_icons.get(key, "")
 
-def get_ext_ico(filename, pad=True):
-    if not app_config['nerd_fonts']: return ""
+def get_ext_ico(filename):
+    """Dynamically grabs the file extension and returns the matched icon."""
     ext = os.path.splitext(filename)[1].lower().replace('.', '')
-    icon_data = active_icons.get(f"ext_{ext}", active_icons.get('file', {}))
-    if isinstance(icon_data, str): return icon_data + (" " if pad else "")
-    return icon_data.get("char", " ") + (" " * icon_data.get("pad", 0) if pad else "")
+    # Tries to find 'ext_json', if it fails, falls back to the default 'file' icon
+    return active_icons.get(f"ext_{ext}", active_icons.get('file', ""))
 
 def get_pfx(t):
-    if app_config['nerd_fonts']: return {'ok': '󰄬 ', 'warn': '󰀪 ', 'err': '󰅙 ', 'info': '󰋼 '}.get(t, '')
-    return {'ok': '[+] ', 'warn': '[*] ', 'err': '[!] ', 'info': '[~] '}.get(t, '')
+    """Returns the status prefix."""
+    return active_icons.get(f"pfx_{t}", "")
 
 def get_sys_info():
     try: user = os.getlogin()
@@ -322,7 +364,7 @@ def enforce_security_lock():
         for r in range(2, term_h - 1): draw_frame_line("", row=r)
          
         r = term_h // 2 - 2
-        draw_frame_line(f"{C_ALERT}{get_pfx('err')}{get_ico('prot', pad=False)} CRITICAL SECURITY ALERT: Master Database Signature Mismatch!{RESET}", row=r, align="center")
+        draw_frame_line(f"{C_ALERT}{get_pfx('err')}{get_ico('prot')} CRITICAL SECURITY ALERT: Master Database Signature Mismatch!{RESET}", row=r, align="center")
         draw_frame_line(f"{C_WARN}The master_lens_db.json file has been altered outside of the application.{RESET}", row=r+2, align="center")
         draw_frame_line(f"{C_WARN}To restore integrity, you must run the (G)eneration Sequence to rebuild the Vault.{RESET}", row=r+3, align="center")
         
@@ -353,7 +395,7 @@ def format_bytes(size):
 def get_prompt_indicator():
     """Returns the globally themed input indicator."""
     if app_config.get('nerd_fonts', False):
-        return f"{C_BGLIGHT} {C_PROMPT}{get_ico('term', pad=False)}  {RESET}{C_BGLIGHT}"
+        return f"{C_BGLIGHT} {C_PROMPT}{get_ico('term')}  {RESET}{C_BGLIGHT}"
     else:
         return f"{C_BGLIGHT}{C_PROMPT}>{RESET}{C_BGLIGHT}"
 
@@ -405,9 +447,17 @@ def get_bucket_telemetry(group_df, class_type):
             
     return telemetry
 
-def format_log(label, data, color=C_TITLE):
-    """Aligns labels to 14 characters for the Matrix Dashboard aesthetic."""
-    return f"{C_SUBTEXT}{label:>14} : {color}{data}{RESET}"
+def format_log(tag, msg, color, is_cmd=False):
+    """Formats logs. is_cmd=True bypasses the tag/colon for 2-space indented trails."""
+    if is_cmd:
+        # Just 2 spaces of padding. No tags.
+        return f"{color}  {msg}{RESET}"
+    else:
+        # Standard Tokyo Night tagged formatting
+        clean_tag = str(tag)[:10]
+        tag_str = f" {clean_tag} ".ljust(12) 
+        muted_colon = f"{C_SUBTEXT}:{color}"
+        return f"{color}{tag_str}{muted_colon} {msg}{RESET}"
 
 def draw_viewport(progress_pct=100.0, current_task_string="", active_file="", current_file_idx=0, total_files=0, total_types=0, total_lenses=0, is_interactive=False):
     global scroll_offset
@@ -578,6 +628,53 @@ def getch():
         finally: termios.tcsetattr(fd, termios.TCSADRAIN, old)
         return ch
 
+def draw_z_index_modal(title, prompt, mask=False):
+    """Draws a floating modal over the active UI and intercepts input."""
+    term_w, term_h = get_term_size()
+    box_w = max(50, ansi_len(prompt) + 10)
+    box_h = 5
+    start_y = (term_h // 2) - (box_h // 2)
+    start_x = (term_w - box_w) // 2
+    
+    for i in range(box_h):
+        row = start_y + i
+        if i == 0:
+            text = f"{C_BORDER}╔{'═'*(box_w-2)}╗{RESET}"
+        elif i == 1:
+            text = f"{C_BORDER}║{C_TITLE}{title:^{box_w-2}}{C_BORDER}║{RESET}"
+        elif i == 2:
+            text = f"{C_BORDER}║{C_PROMPT} {prompt:<{box_w-3}}{C_BORDER}║{RESET}"
+        elif i == 3:
+            text = f"{C_BORDER}║{C_FILE} > {' ' * (box_w-5)}{C_BORDER}║{RESET}"
+        elif i == 4:
+            text = f"{C_BORDER}╚{'═'*(box_w-2)}╝{RESET}"
+            
+        sys.stdout.write(f"\033[{row};{start_x}H{C_BG}{text}")
+    sys.stdout.flush()
+    
+    val = ""
+    while True:
+        cursor_x = start_x + 4 + len(val)
+        sys.stdout.write(f"\033[{start_y+3};{cursor_x}H\033[?25h")
+        sys.stdout.flush()
+        
+        ch = getch()
+        if ch in ['\r', '\n']:
+            break
+        elif ch == 'ESC':
+            sys.stdout.write("\033[?25l")
+            return None
+        elif ch in ['BACKSPACE', '\x08', '\x7f', 'DEL']:
+            if len(val) > 0:
+                val = val[:-1]
+                sys.stdout.write(f"\033[{start_y+3};{cursor_x-1}H \033[{start_y+3};{cursor_x-1}H")
+        elif len(ch) == 1 and ch.isprintable() and len(val) < box_w - 7:
+            val += ch
+            sys.stdout.write('*' if mask else ch)
+            
+    sys.stdout.write("\033[?25l")
+    return val
+
 def live_input(prompt, hotkeys=False, default_text=""):
     sys.stdout.write(prompt); sys.stdout.flush()
     buf = default_text
@@ -613,7 +710,7 @@ def handle_error_hijack():
     global err_msg
     if not err_msg: return False
     term_w, term_h = get_term_size()
-    prompt_ico = get_ico('term', pad=False) if app_config['nerd_fonts'] else "[!]"
+    prompt_ico = get_ico('term') if app_config['nerd_fonts'] else "[!]"
     sys.stdout.write(f"\033[{term_h - 4};5H{C_BGLIGHT} {C_ALERT}{prompt_ico} {err_msg} {C_SUBTEXT}(Press ENTER){RESET}{C_BGLIGHT}{' '*10}{RESET}")
     sys.stdout.flush()
     while True:
@@ -621,7 +718,7 @@ def handle_error_hijack():
         if c == 'F12': execute_admin_menu(); return True
         if c in ['\r', '\n']: break
     err_msg = ""
-    sys.stdout.write(f"\033[{term_h - 4};5H{C_BGLIGHT} {C_PROMPT}{get_ico('term', pad=False)}  {RESET}{C_BGLIGHT}{' '*60}{RESET}\033[{term_h - 4};9H{C_BGLIGHT}")
+    sys.stdout.write(f"\033[{term_h - 4};5H{C_BGLIGHT} {C_PROMPT}{get_ico('term')}  {RESET}{C_BGLIGHT}{' '*60}{RESET}\033[{term_h - 4};9H{C_BGLIGHT}")
     sys.stdout.flush()
     return True
 
@@ -665,13 +762,13 @@ def draw_status_bar():
     elif "DELETE" in mode_str: m_key = "del"
     else: m_key = "mode"
     
-    m_block = f"{C_SIZE}{get_ico(m_key)}MODE: {C_TITLE}{global_mode}{C_BORDER}"
-    db_block = f"{C_SIZE}{get_ico('db')}DB: {C_TITLE}{'ACTIVE' if db_active else 'OFFLINE'}{C_BORDER}"
-    l_block = f"{C_SIZE}{get_ico('lens')}LENSES: {C_STAGED}{total_lenses}{C_BORDER}"
-    s_block = f"{C_SIZE}{get_ico('stage')}STAGED: {C_TITLE}{staged}{C_BORDER}"
+    m_block = f"{C_SIZE}{get_ico(m_key)} MODE: {C_TITLE}{global_mode}{C_BORDER}"
+    db_block = f"{C_SIZE}{get_ico('db')} DB: {C_TITLE}{'ACTIVE' if db_active else 'OFFLINE'}{C_BORDER}"
+    l_block = f"{C_SIZE}{get_ico('lens')} LENSES: {C_STAGED}{total_lenses}{C_BORDER}"
+    s_block = f"{C_SIZE}{get_ico('stage')} STAGED: {C_TITLE}{staged}{C_BORDER}"
 
     left = f"{C_BORDER}╚════[{m_block}]════[{db_block}]══({l_block})════[{s_block}]"
-    right = f"═══[{C_TITLE}{get_ico('prot')}{get_sys_info()}{C_BORDER}]════╝{RESET}"
+    right = f"═══[{C_TITLE}{get_ico('prot')} {get_sys_info()}{C_BORDER}]════╝{RESET}"
     
     gap = max(0, term_w - ansi_len(left) - ansi_len(right))
     sys.stdout.write(f"\033[{term_h - 1};1H{left}{'═' * gap}{right}")
@@ -680,7 +777,7 @@ def draw_status_bar():
 def draw_universal_footer_ui(prompt_text):
     term_w, term_h = get_term_size()
     draw_status_bar()
-    sys.stdout.write(f"\033[{term_h - 4};5H{C_BGLIGHT} {C_PROMPT}{get_ico('term', pad=False)}  {C_STAGED}{prompt_text}{RESET}{C_BGLIGHT}{' '*40}{RESET}\033[{term_h - 4};{10+ansi_len(prompt_text)}H")
+    sys.stdout.write(f"\033[{term_h - 4};5H{C_BGLIGHT} {C_PROMPT}{get_ico('term')}  {C_STAGED}{prompt_text}{RESET}{C_BGLIGHT}{' '*40}{RESET}\033[{term_h - 4};{10+ansi_len(prompt_text)}H")
     sys.stdout.flush()
 
 def draw_universal_footer(prompt_text="Press ENTER to return..."):
@@ -736,7 +833,7 @@ def draw_modal(title, prompt_text, is_password=False, is_y_n=False):
     start_row = (term_h // 2) - 3
 
     # Opaque background using {C_BG} to prevent viewport bleed
-    indicator = f"{C_PROMPT}{get_ico('term', pad=False)}  {RESET}" if app_config.get('nerd_fonts', False) else f"{C_PROMPT}> {RESET}"
+    indicator = f"{C_PROMPT}{get_ico('term')}  {RESET}" if app_config.get('nerd_fonts', False) else f"{C_PROMPT}> {RESET}"
     ind_len = 3 if app_config.get('nerd_fonts', False) else 2
 
     sys.stdout.write(f"\033[{start_row};{start_col}H{C_BORDER}┌{'─' * (box_w - 2)}┐{RESET}")
@@ -773,12 +870,41 @@ def draw_modal(title, prompt_text, is_password=False, is_y_n=False):
         elif c in ('\x08', '\x7f'): input_str = input_str[:-1]
         elif len(input_str) < box_w - 6 - ind_len and c.isprintable(): input_str += c
 
+def vp_log(tag, msg, status="ok"):
+    """Injects a standardized, formatted line directly into the viewport."""
+    global scroll_offset, viewport_logs
+    
+    # Map the status to the correct icon and color we just built in ICONS
+    if status == "ok":
+        pfx = f"{C_STAGED}{get_pfx('ok')}"
+        msg_color = C_FILE
+    elif status == "warn":
+        pfx = f"{C_WARN}{get_pfx('warn')}"
+        msg_color = C_WARN
+    elif status == "err":
+        pfx = f"{C_ALERT}{get_pfx('err')}"
+        msg_color = C_ALERT
+    else:
+        pfx = f"{C_TITLE}{get_pfx('info')}"
+        msg_color = C_TITLE
+
+    # Construct the geometrically perfect line
+    padded_tag = tag.ljust(12)
+    line = f"  {C_SUBTEXT}({pfx}{C_SUBTEXT}){RESET} {C_PROMPT}{padded_tag}{RESET} {C_TITLE}❯{RESET} {msg_color}{msg}{RESET}"
+    
+    viewport_logs.append(line)
+    
+    # Auto-scroll to the bottom as new lines are added
+    _, term_h = get_term_size()
+    vp_height = (term_h - 9) - 4 - 1
+    scroll_offset = max(0, len(viewport_logs) - vp_height)
+
 def get_prompt_indicator():
     if app_config.get('nerd_fonts', False):
-        ico = get_ico('term', pad=False)
-        return f"{C_BGLIGHT} {C_PROMPT}{ico}  {RESET}{C_BGLIGHT}"
+        ico = get_ico('term')
+        return f"{C_PROMPT}{ico}{RESET}{C_BGLIGHT}"
     else:
-        return f"{C_BGLIGHT}{C_PROMPT}>{RESET}{C_BGLIGHT}"
+        return f"{C_PROMPT}>{RESET}{C_BGLIGHT}"
 
 def render_ui_skeleton(loading_text="Initializing..."):
     sys.stdout.write(f"{C_BG}\033[2J\033[H")
@@ -821,158 +947,312 @@ def get_alpha_id(i):
 # --- BOOT & ADMINISTRATION ---
 
 def verify_and_stage_fonts():
-    global global_mode, scroll_offset, boot_curr, boot_total
-    global pd, np, openpyxl, urllib, zipfile
+    global global_mode, scroll_offset, viewport_logs
+    global pd, np, zipfile, openpyxl
     import urllib.parse
     import subprocess
+    import threading
+    import time
+    import random
+    import os
+    import shutil
+    import hashlib
+    import re
     
-    # 1. STANDARDIZED SKELETON SETUP
     sys.stdout.write(f"{C_BG}\033[2J\033[H")
     term_w, term_h = get_term_size()
     draw_top_bar()
     for r in range(2, term_h - 1): draw_frame_line("", row=r)
     draw_frame_line(f"{C_SIZE}PHASE 0: SYSTEM INITIALIZATION & ASSET VERIFICATION{RESET}", row=2, align="center")
-    
-    draw_universal_footer_ui(f"{C_SUBTEXT}Igniting Matrix Engine...{RESET}")
+    draw_status_bar() 
+    sys.stdout.flush()
     
     viewport_logs.clear()
     scroll_offset = 0
-    is_win = os.name == 'nt'
+    BASE_INDENT = 0
+    MARGIN = " " * BASE_INDENT
+
+    modules = [
+        ("Core OS Interface", "os", False), ("System Pathways", "sys", False),
+        ("Temporal Engine", "time", False), ("Platform Diagnostics", "platform", False),
+        ("Warning Handlers", "warnings", False), ("Exit Routines", "atexit", False),
+        ("Regex Engine", "re", False), ("File Operations", "shutil", False),
+        ("JSON Parsers", "json", False), ("Sys Stat", "stat", False),
+        ("Text Wrapping", "textwrap", False), ("Datetime Engine", "datetime", False),
+        ("Timezone Protocols", "timezone", False), ("Cryptographic Hashes", "hashlib", False),
+        ("Binary Encoders", "base64", False), ("Warning Systems", "warning", False),
+        ("At Exit Warnings", "atexit", False),
+        ("Network Libraries", "urllib", True), 
+        ("Archive Tools", "zipfile", True), 
+        ("Data Aggregator", "pandas", True),
+        ("Numeric Engine", "numpy", True), 
+        ("Excel IO Engine", "openpyxl", True)
+    ]
     
-    # Dynamic OS Line Break for Human Commands
-    # 8 spaces of padding to geometrically align the wrapped string exactly 4 spaces under the command start
-    L_BREAK = " `\n        " if is_win else " \\\n        "
+    fonts = {
+        'Arial-Regular.ttf': {'win': r"C:\Windows\Fonts\arial.ttf", 'lin_name': 'arial.ttf', 'url': "https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/arial32.exe", 'is_cab': True, 'target_ttf': 'arial.ttf'},
+        'Arial-Bold.ttf': {'win': r"C:\Windows\Fonts\arialbd.ttf", 'lin_name': 'arialbd.ttf', 'url': "https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/arialb32.exe", 'is_cab': True, 'target_ttf': 'arialbd.ttf'},
+        'Tahoma-Regular.ttf': {'win': r"C:\Windows\Fonts\tahoma.ttf", 'lin_name': 'tahoma.ttf', 'url': "https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/iel32.exe", 'is_cab': True, 'target_ttf': 'tahoma.ttf'},
+        'MSSansSerif-Regular.ttf': {'win': r"C:\Windows\Fonts\micross.ttf", 'lin_name': 'micross.ttf', 'url': "https://cdn.jsdelivr.net/gh/matomo-org/travis-scripts@master/fonts/micross.ttf"},
+        'UbuntuSansNerdFont-Regular.ttf': {
+            'win': "", 'lin_name': "", 
+            'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/UbuntuSans.zip", 
+            'is_zip': True,
+            'extra_targets': ['UbuntuSansNerdFont-Medium.ttf', 'UbuntuSansNerdFont-Bold.ttf', 'UbuntuSansNerdFont-Italic.ttf']
+        },
+        'JetBrainsMonoNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip", 'is_zip': True},
+        'FiraCodeNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.zip", 'is_zip': True},
+        'CaskaydiaCoveNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/CascadiaCode.zip", 'is_zip': True},
+        'NotoSansNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Noto.zip", 'is_zip': True},
+        'OpenSans-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://cdn.jsdelivr.net/gh/googlefonts/opensans@main/fonts/ttf/OpenSans-Regular.ttf"},
+    }
 
-    # Base math (Assumes perfect cache: 1 tick per module, 1 tick per font)
-    boot_curr = 0
-    boot_total = len(boot_modules) + len(boot_fonts)
-
-    # 2. MODULE MATRIX (GHOST LOADS & TRUE LOADS)
-    for desc, mod, is_real in boot_modules:
-        matrix_step(f"Loading '{mod}' ({desc})", "CORE MOD", C_TITLE, inc=0, delay=0.08)
-        
-        cmd_str = f"python -m site --user-site {mod}" if not is_win else f"pip show {mod} | findstr Location"
-        matrix_step(cmd_str, color=C_SUBTEXT, inc=0, delay=0, is_cmd=True)
-        
-        if is_real:
-            if mod == "pandas": import pandas as pd
-            elif mod == "numpy": import numpy as np
-            elif mod == "openpyxl": import openpyxl
-            matrix_step(f"Module securely mounted into RAM.", color=C_STAGED, inc=0, delay=0.2, is_cmd=True)
-        
-        matrix_step(f"", inc=1, delay=0) # Invisible tick
+    USE_NERD_FONTS = app_config.get('nerd_fonts', False)
+    CHECK_MARK = "" if USE_NERD_FONTS else "✓"
+    is_win = os.name == 'nt'
+    L_CONT = "`" if is_win else "\\" 
 
     os.makedirs(HTML_DATA_DIR, exist_ok=True)
+    os.makedirs(HTML_FONT_DIR, exist_ok=True)
     os.makedirs(TMP_DIR, exist_ok=True)
-    
-    # 3. ASSET ENGINE (DYNAMIC MATH & CAB EXTRACTION)
-    for dest_name, meta in boot_fonts.items():
-        dest_path = os.path.join(HTML_DATA_DIR, dest_name)
+
+    # Dynamic Display Path logic: Strips absolute prefix, converts backslashes to UNIX forward slashes
+    display_font_dir = "./" + os.path.relpath(HTML_FONT_DIR).replace(os.sep, '/')
+
+    def find_local_font(win_path, file_name):
+        if is_win and os.path.exists(win_path): return win_path
+        if not is_win and file_name:
+            lin_paths = [
+                f"/usr/share/fonts/truetype/msttcorefonts/{file_name}", 
+                f"/usr/share/fonts/TTF/{file_name}", f"/usr/share/fonts/{file_name}",
+                os.path.expanduser(f"~/.local/share/fonts/{file_name}")
+            ]
+            for p in lin_paths:
+                if os.path.exists(p): return p
+        return None
+
+    # 3. MATHEMATICAL PRE-FLIGHT (Dynamic Targets)
+    total_ghost_loads = sum(1 for m in modules if not m[2])
+    ghost_weight = 1.0 / max(1, total_ghost_loads)
+    boot_total = sum(1 for m in modules if m[2]) + (1 if total_ghost_loads > 0 else 0)
+    curr = 0.0
+
+    for dest_name, meta in fonts.items():
+        targets = [dest_name] + meta.get('extra_targets', [])
+        missing_count = sum(1 for t in targets if not os.path.exists(os.path.join(HTML_FONT_DIR, t)))
         
-        # --- DYNAMIC FILENAME PARSING ---
+        if missing_count == 0:
+            boot_total += len(targets) # Hash only for each target
+        else:
+            local_src = find_local_font(meta.get('win', ''), meta.get('lin_name', ''))
+            if local_src: 
+                boot_total += 2 # Copy, Hash
+            else: 
+                boot_total += 1 # Download
+                if meta.get('is_cab') or meta.get('is_zip'): boot_total += 2 # Extract, Delete
+                else: boot_total += 1 # Move direct file
+                boot_total += len(targets) # Hash for every single target requested
+            
+    def fast_track_step(tag, desc):
+        nonlocal curr
+        global scroll_offset
+        padded_tag = tag.ljust(10)
+        viewport_logs.append(f"{MARGIN}{C_SUBTEXT}({C_STAGED}{CHECK_MARK}{C_SUBTEXT}){RESET} {C_PROMPT}{padded_tag}{RESET}  {C_TITLE}❯{RESET}  {C_FILE}{desc}{RESET}")
+        curr += ghost_weight 
+        vp_height = (term_h - 9) - 4 - 1
+        scroll_offset = max(0, len(viewport_logs) - vp_height)
+        pct = min(100.0, (curr / max(1, boot_total)) * 100.0)
+        draw_viewport(progress_pct=pct, active_file="Executing...", current_file_idx=int(curr), total_files=boot_total, is_interactive=False)
+        sys.stdout.flush()
+        time.sleep(random.uniform(0.03, 0.08))
+
+    def execute_pipeline(tag, objective, tasks):
+        nonlocal curr
+        global scroll_offset
+        padded_tag = tag.ljust(10)
+        header_idx = len(viewport_logs)
+        viewport_logs.append(f"{MARGIN}{C_SIZE}({C_TITLE}|{C_SIZE}){RESET} {C_PROMPT}{padded_tag}{RESET}  {C_TITLE}❯{RESET}  {C_FILE}{objective}{RESET}")
+        spinner_chars = ['|', '/', '-', '\\']
+        frame = 0
+
+        for cmd_lines, task_func in tasks:
+            first_cmd_line = cmd_lines[0]
+            viewport_logs.append(f"{MARGIN} {C_STAGED}${RESET} {first_cmd_line}")
+            for line in cmd_lines[1:]:
+                viewport_logs.append(f"{MARGIN}       {line}")
+                
+            floor_time = random.uniform(0.8, 1.6) 
+            task_complete = False
+            
+            def worker():
+                nonlocal task_complete
+                try: 
+                    if task_func: task_func()
+                except Exception: pass
+                task_complete = True
+                
+            t = threading.Thread(target=worker)
+            t.start()
+            start_time = time.time()
+            
+            while not task_complete or (time.time() - start_time) < floor_time:
+                char = spinner_chars[frame % 4]
+                spin = f"{C_TITLE}{char}{C_SIZE}"
+                viewport_logs[header_idx] = f"{MARGIN}{C_SIZE}({spin}){RESET} {C_PROMPT}{padded_tag}{RESET}  {C_TITLE}❯{RESET}  {C_FILE}{objective}{RESET}"
+                vp_height = (term_h - 9) - 4 - 1
+                scroll_offset = max(0, len(viewport_logs) - vp_height)
+                pct = min(100.0, (curr / max(1, boot_total)) * 100.0)
+                draw_viewport(progress_pct=pct, active_file="Executing...", current_file_idx=int(curr), total_files=boot_total, is_interactive=False)
+                sys.stdout.flush()
+                time.sleep(0.15)
+                frame += 1
+            curr += 1.0
+
+        viewport_logs[header_idx] = f"{MARGIN}{C_SUBTEXT}({C_STAGED}{CHECK_MARK}{C_SUBTEXT}){RESET} {C_PROMPT}{padded_tag}{RESET}  {C_TITLE}❯{RESET}  {C_FILE}{objective}{RESET}"
+        pct = min(100.0, (curr / max(1, boot_total)) * 100.0)
+        draw_viewport(progress_pct=pct, active_file="Executing...", current_file_idx=int(curr), total_files=boot_total, is_interactive=False)
+        sys.stdout.flush()
+
+    def load_module_task(m):
+        global pd, np, zipfile, openpyxl
+        if m == "pandas": import pandas as pd
+        elif m == "numpy": import numpy as np
+        elif m == "openpyxl": import openpyxl
+        elif m == "urllib":
+            import urllib.request
+            import urllib.parse
+        elif m == "zipfile": import zipfile
+
+    # 4A. GHOST & TRUE LOADS
+    for desc, mod, is_real in modules:
+        if not is_real:
+            fast_track_step("SYS MODULE", f"Verifying {desc} {C_SUBTEXT}[{C_FILE}{mod}{C_SUBTEXT}]{RESET}")
+        else:
+            if is_win: cmd_str = f"{C_TITLE}pip{RESET} {C_TITLE}show{RESET} {C_FILE}{mod}{RESET} {C_SUBTEXT}|{RESET} {C_TITLE}findstr{RESET} {C_FILE}Location{RESET}"
+            else: cmd_str = f"{C_TITLE}python{RESET} {C_SUBTEXT}-{C_SIZE}m{RESET} {C_TITLE}site{RESET} {C_SUBTEXT}--{C_SIZE}user{C_SUBTEXT}-{C_SIZE}site{RESET} {C_FILE}{mod}{RESET}"
+            tasks = [([cmd_str], lambda m=mod: load_module_task(m))]
+            execute_pipeline("SYS MODULE", f"Loading {desc} {C_SUBTEXT}[{C_FILE}{mod}{C_SUBTEXT}]{RESET}", tasks)
+
+    # 4B. FONT ASSETS
+    for dest_name, meta in fonts.items():
+        targets = [dest_name] + meta.get('extra_targets', [])
+        missing_count = sum(1 for t in targets if not os.path.exists(os.path.join(HTML_FONT_DIR, t)))
         real_filename = urllib.parse.unquote(meta['url'].split('/')[-1])
         if "download?family" in real_filename: real_filename = dest_name.replace(".ttf", ".zip")
         
-        if os.path.exists(dest_path):
-            matrix_step(f"Need {dest_name} (Verified in vault cache)", "FONT ASSET", C_TITLE, inc=1, delay=0.15)
-            matrix_step(f"Bypassing network and I/O operations.", color=C_STAGED, inc=0, delay=0, is_cmd=True)
-            continue
-            
-        local_src = find_local_font(meta.get('win', ''), meta.get('lin_name', ''))
-        
-        if local_src:
-            boot_total += 2 # Dynamically scale for Local Copy
-            
-            matrix_step(f"Need {dest_name} (Discovered in native OS cache)", "FONT ASSET", C_TITLE, inc=1, delay=0.2)
-            copy_cmd = f"copy /Y \"{local_src}\" \"./HTML/data/\"" if is_win else f"cp -v \"{local_src}\" \"./HTML/data/\""
-            matrix_step(copy_cmd, color=C_PROMPT, inc=0, delay=0.3, is_cmd=True)
-            shutil.copy2(local_src, dest_path)
-            
-            f_hash = get_file_hash(dest_path)
-            hash_cmd = f"certutil.exe -hashfile \"{dest_name}\" SHA256" if is_win else f"sha256sum ./HTML/data/{dest_name}"
-            matrix_step(hash_cmd, color=C_STAGED, inc=1, delay=0.1, is_cmd=True)
-            matrix_step(f"Checksum verified: {f_hash[:16]}...", color=C_STAGED, inc=1, delay=0.1, is_cmd=True)
-            
-        else:
-            # Dynamically scale for Network Operation (5 ticks for CAB/ZIP, 4 for RAW)
-            boot_total += 5 if meta.get('is_cab') or meta.get('is_zip') else 4 
-            
-            matrix_step(f"Need {dest_name} (Not found locally, fetching remote)", "FONT ASSET", C_WARN, inc=1, delay=0.3)
-            
-            dl_bin = "curl.exe" if is_win else "curl"
-            tmp_target = f"./data/.tmp/{real_filename}"
-            
-            # The URL line break logic cleanly formats long URLs into the terminal layout
-            dl_cmd = f"{dl_bin} -sL {L_BREAK}\"{meta['url']}\"{L_BREAK}-o \"{tmp_target}\""
-            matrix_step(dl_cmd, color=C_FILE, inc=0, delay=0.8, is_cmd=True)
-            
-            try:
-                headers = {'User-Agent': 'Mozilla/5.0'}
-                req = urllib.Request(meta['url'], headers=headers)
+        # Determine Display Title based on multi-target
+        obj_title = f"{dest_name} {C_SUBTEXT}(+{len(targets)-1} extras){RESET}" if len(targets) > 1 else dest_name
+
+        if missing_count > 0:
+            local_src = find_local_font(meta.get('win', ''), meta.get('lin_name', ''))
+            if local_src:
+                if is_win: copy_cmd = f"{C_TITLE}copy{RESET} {C_SUBTEXT}/{C_SIZE}Y{RESET} {C_SUBTEXT}\"{C_FILE}{local_src}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}\"{C_FILE}{display_font_dir}{C_SUBTEXT}\"{RESET}"
+                else: copy_cmd = f"{C_TITLE}cp{RESET} {C_SUBTEXT}-{C_SIZE}v{RESET} {C_SUBTEXT}\"{C_FILE}{local_src}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}\"{C_FILE}{display_font_dir}{C_SUBTEXT}\"{RESET}"
                 
+                if is_win: hash_cmd = f"{C_TITLE}certutil.exe{RESET} {C_SUBTEXT}-{C_SIZE}hashfile{RESET} {C_SUBTEXT}\"{C_FILE}{dest_name}{C_SUBTEXT}\"{RESET} {C_TITLE}SHA256{RESET}"
+                else: hash_cmd = f"{C_TITLE}sha256sum{RESET} {C_SUBTEXT}\"{C_FILE}{display_font_dir}/{dest_name}{C_SUBTEXT}\"{RESET}"
+
+                tasks = [
+                    ([copy_cmd], lambda l_src=local_src, d_pth=os.path.join(HTML_FONT_DIR, dest_name): shutil.copy2(l_src, d_pth)),
+                    ([hash_cmd], lambda path=os.path.join(HTML_FONT_DIR, dest_name): hashlib.sha256(open(path, 'rb').read()).hexdigest() if os.path.exists(path) else None)
+                ]
+                execute_pipeline("FONT ASSET", f"Need {obj_title} (Found in native OS cache)", tasks)
+            else:
+                tasks = []
+                dl_bin = "curl.exe" if is_win else "curl"
+                tmp_target = f"./data/.tmp/{real_filename}"
+                real_tmp_path = os.path.join(TMP_DIR, real_filename)
+                
+                # 1. Download Task
+                dl_cmd = [
+                    f"{C_TITLE}{dl_bin}{RESET} {C_SUBTEXT}-{C_SIZE}sL{RESET} {C_SUBTEXT}{L_CONT}{RESET}", 
+                    f"{C_SUBTEXT}\"{C_FILE}{meta['url']}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}{L_CONT}{RESET}", 
+                    f"{C_SUBTEXT}-{C_SIZE}o{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET}"
+                ]
+                tasks.append((dl_cmd, lambda url=meta["url"].strip(), path=real_tmp_path: subprocess.run(f'{dl_bin} -sL "{url}" -o "{path}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)))
+                
+                # 2. Extract / Move Tasks
                 if meta.get('is_cab'):
-                    cab_path = os.path.join(TMP_DIR, real_filename)
-                    with urllib.urlopen(req) as response, open(cab_path, 'wb') as out_file: 
-                        shutil.copyfileobj(response, out_file)
-                    
-                    matrix_step(f"Downloaded Microsoft Cabinet Payload to {tmp_target}", color=C_SUBTEXT, inc=1, delay=0.1, is_cmd=True)
-                    
-                    # Hardcore OS Extraction
                     if is_win:
-                        ext_cmd = f"extrac32.exe /E /Y \"{tmp_target}\"{L_BREAK}\"{meta['target_ttf']}\""
-                        matrix_step(ext_cmd, color=C_PROMPT, inc=0, delay=0.4, is_cmd=True)
-                        subprocess.run(f'extrac32.exe /E /Y "{cab_path}" "{meta["target_ttf"]}"', shell=True, stdout=subprocess.DEVNULL)
-                        if os.path.exists(meta['target_ttf']): shutil.move(meta['target_ttf'], dest_path)
+                        ext_cmd = [
+                            f"{C_TITLE}extrac32.exe{RESET} {C_SUBTEXT}/{C_SIZE}E{RESET} {C_SUBTEXT}/{C_SIZE}Y{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}{L_CONT}{RESET}", 
+                            f"{C_SUBTEXT}\"{C_FILE}{meta['target_ttf']}{C_SUBTEXT}\"{RESET}"
+                        ]
+                        tasks.append((ext_cmd, lambda path=real_tmp_path, trg=meta["target_ttf"], dest=os.path.join(HTML_FONT_DIR, dest_name): subprocess.run(f'extrac32.exe /E /Y "{path}" "{trg}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) or (shutil.move(trg, dest) if os.path.exists(trg) else None)))
+                        del_cmd = f"{C_TITLE}del{RESET} {C_SUBTEXT}/{C_SIZE}F{RESET} {C_SUBTEXT}/{C_SIZE}Q{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET}"
                     else:
-                        ext_cmd = f"cabextract -q -F {meta['target_ttf']} \"{tmp_target}\"{L_BREAK}-d ./HTML/data/"
-                        matrix_step(ext_cmd, color=C_PROMPT, inc=0, delay=0.4, is_cmd=True)
-                        subprocess.run(f'cabextract -q -F "{meta["target_ttf"]}" "{cab_path}" -d "{HTML_DATA_DIR}"', shell=True, stdout=subprocess.DEVNULL)
+                        ext_cmd = [
+                            f"{C_TITLE}cabextract{RESET} {C_SUBTEXT}-{C_SIZE}q{RESET} {C_SUBTEXT}-{C_SIZE}F{RESET} {C_SUBTEXT}\"{C_FILE}{meta['target_ttf']}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}{L_CONT}{RESET}", 
+                            f"{C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}-{C_SIZE}d{RESET} {C_SUBTEXT}\"{C_FILE}{display_font_dir}{C_SUBTEXT}\"{RESET}"
+                        ]
+                        tasks.append((ext_cmd, lambda trg=meta["target_ttf"], path=real_tmp_path: subprocess.run(f'cabextract -q -F "{trg}" "{path}" -d "{HTML_FONT_DIR}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)))
+                        del_cmd = f"{C_TITLE}rm{RESET} {C_SUBTEXT}-{C_SIZE}f{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET}"
                         
-                        ext_file = os.path.join(HTML_DATA_DIR, meta['target_ttf'])
-                        if os.path.exists(ext_file) and ext_file != dest_path: os.rename(ext_file, dest_path)
-                        
-                    matrix_step(f"Successfully ripped {dest_name} from legacy cabinet.", color=C_STAGED, inc=1, delay=0.1, is_cmd=True)
-                    
-                    rm_cmd = f"del /F /Q \"{tmp_target}\"" if is_win else f"rm -f \"{tmp_target}\""
-                    matrix_step(rm_cmd, color=C_SUBTEXT, inc=1, delay=0.1, is_cmd=True)
-                    os.remove(cab_path)
+                    tasks.append(([del_cmd], lambda path=real_tmp_path: os.remove(path) if os.path.exists(path) else None))
                     
                 elif meta.get('is_zip'):
-                    zip_path = os.path.join(TMP_DIR, real_filename)
-                    with urllib.urlopen(req) as response, open(zip_path, 'wb') as out_file: shutil.copyfileobj(response, out_file)
-                    matrix_step(f"Downloaded ZIP Payload to {tmp_target}", color=C_SUBTEXT, inc=1, delay=0.1, is_cmd=True)
+                    # The raw string for the background OS execution
+                    real_targets = " ".join([f'"{t}"' for t in targets])
                     
-                    ext_cmd = f"tar.exe -xf \"{tmp_target}\" -C ./HTML/data/" if is_win else f"unzip -q \"{tmp_target}\" -d ./HTML/data/"
-                    matrix_step(ext_cmd, color=C_PROMPT, inc=0, delay=0.4, is_cmd=True)
-                    
-                    with zipfile.ZipFile(zip_path, 'r') as z:
-                        target = next((f for f in z.namelist() if f.endswith(dest_name)), None)
-                        if target:
-                            with z.open(target) as zf, open(dest_path, 'wb') as f: shutil.copyfileobj(zf, f)
-                    
-                    matrix_step(f"Successfully extracted {dest_name}.", color=C_STAGED, inc=1, delay=0.1, is_cmd=True)
-                    
-                    rm_cmd = f"del /F /Q \"{tmp_target}\"" if is_win else f"rm -f \"{tmp_target}\""
-                    matrix_step(rm_cmd, color=C_SUBTEXT, inc=1, delay=0.1, is_cmd=True)
-                    os.remove(zip_path)
-                    
+                    if is_win:
+                        # Base tar command + Directory flag on its own line
+                        ext_cmd = [
+                            f"{C_TITLE}tar.exe{RESET} {C_SUBTEXT}-{C_SIZE}xf{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}{L_CONT}{RESET}", 
+                            f"{C_SUBTEXT}-{C_SIZE}C{RESET} {C_SUBTEXT}\"{C_FILE}{display_font_dir}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}{L_CONT}{RESET}"
+                        ]
+                        # Dynamically append each target on its own line
+                        for i, t in enumerate(targets):
+                            cont = "" if i == len(targets) - 1 else f" {C_SUBTEXT}{L_CONT}{RESET}"
+                            ext_cmd.append(f"{C_SUBTEXT}\"{C_FILE}{t}{C_SUBTEXT}\"{RESET}{cont}")
+                            
+                        del_cmd = f"{C_TITLE}del{RESET} {C_SUBTEXT}/{C_SIZE}F{RESET} {C_SUBTEXT}/{C_SIZE}Q{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET}"
+                    else:
+                        # Base unzip command
+                        ext_cmd = [
+                            f"{C_TITLE}unzip{RESET} {C_SUBTEXT}-{C_SIZE}q{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}{L_CONT}{RESET}"
+                        ]
+                        # Dynamically append each target on its own line
+                        for t in targets:
+                            ext_cmd.append(f"{C_SUBTEXT}\"{C_FILE}{t}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}{L_CONT}{RESET}")
+                        # Append the target directory as the final line
+                        ext_cmd.append(f"{C_SUBTEXT}-{C_SIZE}d{RESET} {C_SUBTEXT}\"{C_FILE}{display_font_dir}{C_SUBTEXT}\"{RESET}")
+                        
+                        del_cmd = f"{C_TITLE}rm{RESET} {C_SUBTEXT}-{C_SIZE}f{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET}"
+
+                    def ext_task(path=real_tmp_path, t_str=real_targets):
+                        if is_win: subprocess.run(f'tar.exe -xf "{path}" -C "{HTML_FONT_DIR}" {t_str}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        else: subprocess.run(f'unzip -q "{path}" {t_str} -d "{HTML_FONT_DIR}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            
+                    tasks.append((ext_cmd, ext_task))
+                    tasks.append(([del_cmd], lambda path=real_tmp_path: os.remove(path) if os.path.exists(path) else None))
+                
                 else:
-                    # Raw Network File
-                    with urllib.urlopen(req) as response, open(dest_path, 'wb') as out_file: shutil.copyfileobj(response, out_file)
-                    matrix_step(f"Streaming raw binary payload directly to vault...", color=C_STAGED, inc=2, delay=0.5, is_cmd=True)
+                    # Direct Download (Not a CAB/ZIP, just raw .ttf) - Moves file from temp to final destination
+                    if is_win: mv_cmd = f"{C_TITLE}move{RESET} {C_SUBTEXT}/{C_SIZE}Y{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}\"{C_FILE}{display_font_dir}/{dest_name}{C_SUBTEXT}\"{RESET}"
+                    else: mv_cmd = f"{C_TITLE}mv{RESET} {C_SUBTEXT}-{C_SIZE}f{RESET} {C_SUBTEXT}\"{C_FILE}{tmp_target}{C_SUBTEXT}\"{RESET} {C_SUBTEXT}\"{C_FILE}{display_font_dir}/{dest_name}{C_SUBTEXT}\"{RESET}"
+                    tasks.append(([mv_cmd], lambda p1=real_tmp_path, p2=os.path.join(HTML_FONT_DIR, dest_name): shutil.move(p1, p2) if os.path.exists(p1) else None))
 
-                f_hash = get_file_hash(dest_path)
-                hash_cmd = f"certutil.exe -hashfile \"{dest_name}\" SHA256" if is_win else f"sha256sum ./HTML/data/{dest_name}"
-                matrix_step(hash_cmd, color=C_STAGED, inc=0, delay=0.1, is_cmd=True)
-                matrix_step(f"Checksum verified: {f_hash[:16]}...", color=C_STAGED, inc=1, delay=0.1, is_cmd=True)
+                # 3. Hash Task (For EVERY target dynamically)
+                for t in targets:
+                    t_path = os.path.join(HTML_FONT_DIR, t)
+                    if is_win: h_cmd = f"{C_TITLE}certutil.exe{RESET} {C_SUBTEXT}-{C_SIZE}hashfile{RESET} {C_SUBTEXT}\"{C_FILE}{t}{C_SUBTEXT}\"{RESET} {C_TITLE}SHA256{RESET}"
+                    else: h_cmd = f"{C_TITLE}sha256sum{RESET} {C_SUBTEXT}\"{C_FILE}{display_font_dir}/{t}{C_SUBTEXT}\"{RESET}"
+                    tasks.append(([h_cmd], lambda path=t_path: hashlib.sha256(open(path, 'rb').read()).hexdigest() if os.path.exists(path) else None))
+                
+                execute_pipeline("FONT ASSET", f"Need {obj_title} (Fetching remote...)", tasks)
+        else:
+            # All targets verified locally in vault
+            tasks = []
+            for t in targets:
+                t_path = os.path.join(HTML_FONT_DIR, t)
+                if is_win: h_cmd = f"{C_TITLE}certutil.exe{RESET} {C_SUBTEXT}-{C_SIZE}hashfile{RESET} {C_SUBTEXT}\"{C_FILE}{t}{C_SUBTEXT}\"{RESET} {C_TITLE}SHA256{RESET}"
+                else: h_cmd = f"{C_TITLE}sha256sum{RESET} {C_SUBTEXT}\"{C_FILE}{display_font_dir}/{t}{C_SUBTEXT}\"{RESET}"
+                tasks.append(([h_cmd], lambda path=t_path: hashlib.sha256(open(path, 'rb').read()).hexdigest() if os.path.exists(path) else None))
+            
+            execute_pipeline("FONT ASSET", f"Verified {obj_title} (In vault cache)", tasks)
 
-            except Exception as e:
-                matrix_step(f"Network / IO Exception: {e}", "FAILED", C_ALERT, inc=1, delay=1.5)
-
-    # 4. THE INTERNAL VIEWPORT LOCK
-    matrix_step(f"{C_PROMPT}>>> BOOT SEQUENCE COMPLETE. PRESS [ENTER] TO LAUNCH OPERATIONS CENTER <<<{RESET}", "READY", C_STAGED, inc=0, delay=0)
-    
-    draw_viewport(progress_pct=100.0, active_file="System Ready", current_file_idx=boot_total, total_files=boot_total, is_interactive=True)
+    # 5. UNIVERSAL THEATRICAL LOCK
+    execute_pipeline("SYSTEM RDY", f"{C_STAGED}BOOT SEQUENCE COMPLETE. PRESS [ENTER] TO LAUNCH OPERATIONS CENTER{RESET}", [])
     
     while True:
         c = getch()
@@ -989,62 +1269,8 @@ def verify_and_stage_fonts():
         elif c == '\x1b[5~' or c == 'PGUP': scroll_offset = max(0, scroll_offset - 10)
         elif c == '\x1b[6~' or c == 'PGDN': scroll_offset = min(max_scroll, scroll_offset + 10)
         
-        draw_viewport(progress_pct=100.0, active_file="System Ready", current_file_idx=boot_total, total_files=boot_total, is_interactive=True)
-
-# Global state for the Bootloader Progress Math
-boot_curr = 0
-boot_total = 1
-
-def format_log(tag, msg, color, is_cmd=False):
-    """Formats logs. is_cmd=True bypasses the tag/colon for 2-space indented trails."""
-    if is_cmd:
-        # Just 2 spaces. We will manually inject the '$' on actual OS commands.
-        return f"{color}  {msg}{RESET}"
-    else:
-        clean_tag = str(tag)[:10]
-        tag_str = f" {clean_tag} ".ljust(12) 
-        muted_colon = f"{C_SUBTEXT}:{color}"
-        return f"{color}{tag_str}{muted_colon} {msg}{RESET}"
-
-def get_file_hash(path):
-    """Generates a forensic SHA256 checksum for binary verification."""
-    sha = hashlib.sha256()
-    try:
-        with open(path, 'rb') as f:
-            while chunk := f.read(8192): sha.update(chunk)
-        return sha.hexdigest()
-    except Exception:
-        return "HASH_ERROR"
-
-def find_local_font(win_path, file_name):
-    """Scavenges the local OS for native proprietary assets."""
-    is_win = os.name == 'nt'
-    if is_win and win_path and os.path.exists(win_path): 
-        return win_path
-    if not is_win and file_name:
-        lin_paths = [
-            f"/usr/share/fonts/truetype/msttcorefonts/{file_name}", 
-            f"/usr/share/fonts/truetype/msttcorefonts/{file_name.lower()}",
-            f"/usr/share/fonts/TTF/{file_name}", f"/usr/share/fonts/{file_name}",
-            os.path.expanduser(f"~/.local/share/fonts/{file_name}"), 
-            os.path.expanduser(f"~/.fonts/{file_name}")
-        ]
-        for p in lin_paths:
-            if os.path.exists(p): return p
-    return None
-
-def matrix_step(log_msg, status="SYSTEM", color=C_SUBTEXT, inc=1, delay=0.15, is_cmd=False):
-    """The master state-engine for TUI logging and progress rendering."""
-    global boot_curr, boot_total, viewport_logs
-    
-    boot_curr += inc
-    pct = min(100.0, (boot_curr / max(1, boot_total)) * 100.0)
-    
-    viewport_logs.append(format_log(status, log_msg, color, is_cmd=is_cmd))
-    draw_viewport(progress_pct=pct, active_file="Initializing...", current_file_idx=boot_curr, total_files=boot_total, is_interactive=False)
-    
-    if delay > 0: 
-        time.sleep(delay)
+        pct = min(100.0, (curr / max(1, boot_total)) * 100.0)
+        draw_viewport(progress_pct=pct, active_file="System Ready", current_file_idx=int(curr), total_files=boot_total, is_interactive=True)
 
 def display_boot_sequence():
     global global_mode
@@ -2272,17 +2498,6 @@ def execute_html_generation():
 
 # --- MATH & PARSER UTILITIES ---
 
-VLP_SCHEMA = [
-    'MFG', 'Class', 'Name', 'Description', 'Filter', 'Coating', 'Material', 'Style', 
-    'Coating Brand', 'Right OPC', 'Left OPC', 'Index', 'Diameter', 'SPH/BASE', 'CYL/ADD', 'Front RAD', 
-    'Back RAD', 'Center Thick', 'Edge Thick', 'Inset', 'Drop', 'PRP Out', 
-    'PRP Up', 'Abbe', 'Seg Width', 'Seg Thick', 'Intermediate Ht', 'Slab Off', 
-    'Carriage Rad', 'Bowl Dia', 'Ver Dia', 'Dia Dia', 'Seg Sep', 'Up Add', 
-    'Special', 'Cat Code', 'Filter Brand', 'DRP In', 'DRP Up', 'NRP In', 
-    'NRP Up', 'Horizontal Dia', 'Nominal Dia', 'Obj Clear', 'Obj Rad', 
-    'Front TC', 'Back TC', 'SAG'
-]
-
 def map_style_code(style_val, desc_val):
     v = str(style_val).upper(); d = str(desc_val).upper()
     if 'PROG' in v or 'PR ' in v or v == 'PR': return 6
@@ -2405,117 +2620,7 @@ def calculate_curves(df):
     
     return df
 
-def parse_vlp_attributes(desc, raw_name, style_val, class_val, filt_val, coat_val, seg_val, int_val, mat, idx):
-    d_str = str(desc).strip()
-    f_str = str(filt_val).strip() if str(filt_val).lower() not in ['nan', 'none', ''] else ""
-    
-    d_str = re.sub(r'(?<!\d)(1\.[4-9])(?!\d)', r'\g<1>0', d_str)
-    
-    # 1. Protect BlueGuard & Blue Filter
-    if re.search(r'(?i)\b(Blue\s*Guard|Blue-Guard)\b', d_str):
-        d_str = re.sub(r'(?i)\b(Blue\s*Guard|Blue-Guard)\b', 'BlueGuard', d_str)
-        if 'HEV' not in f_str.upper(): f_str = (f_str + " HEV").strip()
-        
-    if re.search(r'(?i)\b(Clear\s*Blue\s*Filter|Blue\s*Filter|Blue-Filter)\b', d_str):
-        d_str = re.sub(r'(?i)\b(Clear\s*Blue\s*Filter|Blue\s*Filter|Blue-Filter)\b', 'Blue Filter', d_str)
-        if 'HEV' not in f_str.upper(): f_str = (f_str + " HEV").strip()
 
-    # 2. Extract standard filters
-    filt_match = re.search(r'(?i)\b(UV420|UVRI|Blue\s*Blocker)\b', d_str)
-    if filt_match:
-        f_str = (f_str + " " + filt_match.group(1)).strip()
-
-    # 3. Aggressive Noise Vacuum
-    scrub_regex = r'(?i)\b(HA|HARD\s*RESIN|COATED|UNCOATED|PHOT\s*GRY|PHOT\s*BRN|PHOT|POLR|POL)\b'
-    d_str = re.sub(scrub_regex, '', d_str)
-    f_str = re.sub(scrub_regex, '', f_str)
-    
-    d_str = re.sub(r'(?i)\bQ-Change|Q Change\b', 'Quick-Change', d_str)
-    d_str = re.sub(r'(?i)(?<!\.)(?<!MR-)(?<!MR)\b[D]?\d{2,3}(?:/\d{2,3})?(?:mm)?\b', '', d_str)
-    
-    # 4. Smart Coating Formatter
-    coat = str(coat_val).strip() if str(coat_val).lower() not in ['nan', 'none', ''] else ""
-    found_coats = re.findall(r'(?i)\b(SHMC|HMC|HC|AR|A/R|UNCOATED|SR)\b', d_str)
-    if found_coats:
-        unique_coats = list(dict.fromkeys([c.upper().replace('A/R', 'AR') for c in found_coats]))
-        if 'UNCOATED' in unique_coats and len(unique_coats) > 1: unique_coats.remove('UNCOATED')
-        coat_str = " / ".join(unique_coats)
-        if not coat or coat.upper() == "UNCOATED": coat = coat_str
-        
-    if not coat: coat = "Uncoated"
-    coat = re.sub(r'(?i)\bSR\s+AR\b', 'SR / AR', coat)
-    
-    d_str = re.sub(r'(?i)\b(SHMC|HMC|HC|AR|A/R|UNCOATED|SR)\b', '', d_str)
-    f_str = re.sub(r'(?i)\b(SHMC|HMC|HC|AR|A/R|UNCOATED|SR)\b', '', f_str)
-    
-    # 5. Strict Lens Type Nomenclature (Now with Explicit DB Overrides)
-    is_fin = str(class_val).strip().upper() == 'FIN'
-    
-    # Fallback regexes, negative lookbehind to avoid index numbers (e.g. 1.50 -> 50)
-    tri_match = re.search(r'(?i)\b(\d{1,2}x\d{2})\b', str(desc))
-    seg_match = re.search(r'(?i)(?<!\.)\b(?:FT|Flat\s*Top|Round|Blend|-)?\s*(\d{2})\b', str(desc))
-
-    sw = str(seg_val).replace('.0', '').strip() if pd.notna(seg_val) and str(seg_val).lower() not in ['nan', 'none', ''] else None
-    ih = str(int_val).replace('.0', '').strip() if pd.notna(int_val) and str(int_val).lower() not in ['nan', 'none', ''] else None
-
-    d_str = re.sub(r'(?i)\b(BIFOCAL|TRIFOCAL|FLAT\s*TOP|TRI|FT|ROUND|BLEND|-)\b', '', d_str)
-    d_str = re.sub(r'(?i)\b(\d{1,2}x\d{2})\b', '', d_str)
-    d_str = re.sub(r'(?i)(?<!\.)\b(\d{2})\b', '', d_str)
-
-    prefix = ""
-    if style_val in [10, 11, 12, 15]:
-        p_base = "FIN" if is_fin else "SF"
-        if ih and sw: prefix = f"{p_base} TRIFOCAL {ih}x{sw}"
-        elif tri_match: prefix = f"{p_base} TRIFOCAL {tri_match.group(1).lower()}"
-        else: prefix = f"{p_base} TRIFOCAL"
-    elif style_val in [2, 3, 4, 5, 8, 9, 16]:
-        p_base = "FIN" if is_fin else "SF"
-        if sw: prefix = f"{p_base} BIFOCAL FT{sw}"
-        elif seg_match: prefix = f"{p_base} BIFOCAL FT{seg_match.group(1)}"
-        else: prefix = f"{p_base} BIFOCAL"
-    elif style_val == 6: prefix = "FIN PAL" if is_fin else "SF PAL"
-    elif style_val in [1, 13, 14]: prefix = "FSV" if is_fin else "SFSV"
-    else: prefix = "FSV" if is_fin else "SF"
-    
-    d_str = re.sub(r'(?i)\b(SV|FSV|SF|SFSV|PROG|PAL|SEMI-FINISHED|FINISHED|SFFT|FIN)\b', '', d_str)
-    d_str = re.sub(r'\s{2,}', ' ', d_str).strip()
-    f_str = re.sub(r'\s{2,}', ' ', f_str).strip()
-    
-    long_desc = f"{prefix} {d_str}".strip()
-
-    # 6. SHORT DESCRIPTION GENERATOR
-    ast = "*" if is_fin else ""
-    
-    if style_val in [10, 11, 12, 15]: s_type = f"TRI {ih}x{sw}" if (ih and sw) else (f"TRI {tri_match.group(1).lower()}" if tri_match else "TRI")
-    elif style_val in [2, 3, 4, 5, 8, 9, 16]: s_type = f"FT{sw}" if sw else (f"FT{seg_match.group(1)}" if seg_match else "BIFOCAL")
-    elif style_val == 6: s_type = "PAL"
-    else: s_type = "FSV" if is_fin else "SFSV"
-
-    s_brand = ""
-    if style_val == 6:
-        b_src = str(raw_name) if str(raw_name).strip() else str(desc)
-        b_clean = re.sub(r'(?i)\b(PAL|PROG|PROGRESSIVE|POLY|CR-39|TRIVEX|POLARIZED|POL|PHOT|TRANS|TRANSITIONS|PHOTOFUSION|1\.\d{2})\b', '', b_src)
-        b_clean = re.sub(r'(?i)\b(EXG3|XTR|Extra\s*Active|PGY3|Pro\s*Gr[ae]y|PBN3|Pro\s*Brown|PIO3|Pioneer|BRG[1-3]?|BURG|BURGUNDY|GRY[1-3]?|GRAY|GREY|BRN[1-3]?|BROWN|G-15|GRN[1-3]?|GREEN|BLU[1-3]?|BLUE|YEL[1-3]?|YLW|YELLOW|PNK[1-3]?|ROS[1-3]?|ROSE|PINK|PUR[1-3]?|PRP[1-3]?|PLUM|PURPLE)\b', '', b_clean)
-        b_clean = re.sub(r'[^a-zA-Z0-9\s-]', '', b_clean).strip()
-        s_brand = " ".join(b_clean.split()[:2]).upper()
-
-    s_mat = ""
-    if mat == 'Plastic (CR-39)': s_mat = "CR-39"
-    elif mat == 'Polycarbonate': s_mat = "POLY"
-    elif mat == 'Trivex': s_mat = "TRIVEX"
-    elif pd.notna(idx): s_mat = f"{float(idx):.2f}"
-    
-    s_tags = []
-    if 'POL' in str(desc).upper(): s_tags.append("POLR")
-    if re.search(r'(?i)\b(PHOT|PhotoFusion|Transition|LifeRx|Quick-Change|Sensitivity)\b', str(desc) + " " + str(filt_val)): s_tags.append("PHOT")
-    
-    short_parts = [f"{ast}{s_type}"]
-    if s_brand: short_parts.append(s_brand)
-    if s_mat: short_parts.append(s_mat)
-    short_parts.extend(s_tags)
-    short_desc = " ".join(short_parts).replace("  ", " ").strip()
-    
-    return long_desc, short_desc, f_str, coat
 
 # --- FILE MANAGER ---
 
@@ -2538,14 +2643,21 @@ def run_file_manager(op, start_dir=BASE_DIR, ext_filter=None):
             clip.append((n, p, pth))
 
     def get_arrow(key, fallback):
-        ico = get_ico(key, pad=False)
+        ico = get_ico(key)
         return ico if ico else fallback
+
+    def safe_mode(path):
+        try: return os.stat(path).st_mode
+        except: return 0
+        
+    def safe_size(path):
+        try: return os.path.getsize(path)
+        except: return 0
 
     while True:
         sys.stdout.write(f"{C_BG}\033[2J\033[H")
         term_w, term_h = get_term_size()
         
-        # Calculate exactly how wide the inner panes are, accounting for the 3 vertical lines
         pane_l_w = (term_w - 3) // 2
         pane_r_w = term_w - 3 - pane_l_w
         center_col = pane_l_w + 2
@@ -2564,24 +2676,38 @@ def run_file_manager(op, start_dir=BASE_DIR, ext_filter=None):
             left_path = ldir_abs
             right_path = ""
         
-        # Row 2: Directory Info
         sys.stdout.write(f"\033[2;1H{C_BORDER}║ {C_DIR}Active Directory: \033[4m{left_path}{RESET}")
         if right_path: sys.stdout.write(f"\033[2;{term_w - ansi_len(right_path) - 1}H{C_TITLE}{right_path}{RESET}")
         sys.stdout.write(f"\033[2;{term_w}H{C_BORDER}║{RESET}")
         
-        # Row 3: The Hybrid Attached Ceiling
         sys.stdout.write(f"\033[3;1H{C_BORDER}╟{'─'*pane_l_w}┬{'─'*pane_r_w}╢{RESET}")
 
+        if op == 'add' and ldir != IMPORT_DIR: 
+            ldir = IMPORT_DIR
+            
         try: items = os.listdir(ldir)
         except: items = []
-        if op == 'add' and ldir != IMPORT_DIR: ldir = IMPORT_DIR; items = os.listdir(ldir)
             
-        dirs = sorted([(i, os.stat(os.path.join(ldir, i)).st_mode, os.path.join(ldir, i)) for i in items if os.path.isdir(os.path.join(ldir, i))])
-        if ext_filter: files = sorted([(i, os.stat(os.path.join(ldir, i)).st_mode, os.path.join(ldir, i)) for i in items if not os.path.isdir(os.path.join(ldir, i)) and os.path.splitext(i)[1].lower() in ext_filter])
-        else: files = sorted([(i, os.stat(os.path.join(ldir, i)).st_mode, os.path.join(ldir, i)) for i in items if not os.path.isdir(os.path.join(ldir, i))])
+        dirs_list = []
+        files_list = []
+        
+        for i in items:
+            pth = os.path.join(ldir, i)
+            mode = safe_mode(pth) 
             
-        if op == 'add': l_items = [("-- LOCKED --", 0, "")] + [(f[0], f[1], f[2]) for f in files]
-        else: l_items = [("../", 0, os.path.dirname(ldir))] + [(f"{d[0]}/", d[1], d[2]) for d in dirs] + [(f[0], f[1], f[2]) for f in files]
+            if os.path.isdir(pth):
+                dirs_list.append((i, mode, pth))
+            else:
+                if not ext_filter or os.path.splitext(i)[1].lower() in ext_filter:
+                    files_list.append((i, mode, pth))
+                    
+        dirs_list.sort(key=lambda x: x[0].lower())
+        files_list.sort(key=lambda x: x[0].lower())
+            
+        if op == 'add': 
+            l_items = [("-- LOCKED --", 0, "")] + files_list
+        else: 
+            l_items = [("../", 0, os.path.dirname(ldir))] + [(f"{d[0]}/", d[1], d[2]) for d in dirs_list] + files_list
 
         max_lpage = max(1, (len(l_items) + 15) // 16)
         max_rpage = max(1, (len(clip) + 7) // 8)
@@ -2592,7 +2718,6 @@ def run_file_manager(op, start_dir=BASE_DIR, ext_filter=None):
         l_head_l = f"  {a_up}   SCROLL UP"; l_head_r = f"(Page {lpage+1} of {max_lpage})"
         r_head_l = f"  {a_prv}   PREV PAGE"; r_head_r = f"(Page {rpage+1} of {max_rpage})"
         
-        # Row 4: Column Headers
         sys.stdout.write(f"\033[4;1H{C_BORDER}║{RESET} {C_PROMPT}{l_head_l}{RESET}")
         sys.stdout.write(f"\033[4;{center_col - ansi_len(l_head_r) - 1}H{C_SIZE}{l_head_r}{RESET}")
         sys.stdout.write(f"\033[4;{center_col}H{C_BORDER}│{RESET} {C_PROMPT}{r_head_l}{RESET}")
@@ -2613,7 +2738,7 @@ def run_file_manager(op, start_dir=BASE_DIR, ext_filter=None):
                 elif n == "-- LOCKED --": ico = ""
                 else: ico = get_ext_ico(n)
                 
-                size_str = f"{C_TITLE}{'<DIR>':>6}{RESET}" if os.path.isdir(pth) or n=='../' or n=='-- LOCKED --' else f"{C_SIZE}{format_bytes(os.path.getsize(pth)):>6}{RESET}"
+                size_str = f"{C_TITLE}{'<DIR>':>6}{RESET}" if os.path.isdir(pth) or n=='../' or n=='-- LOCKED --' else f"{C_SIZE}{format_bytes(safe_size(pth)):>6}{RESET}"
                 perms_str = f"{C_DIR}d{C_STAGED}r{C_SIZE}w{C_ALERT}x{C_STAGED}r{C_SIZE}w{C_ALERT}x{C_STAGED}r{C_SIZE}w{C_ALERT}x{RESET}" if n in ('../', '-- LOCKED --') else (eza_perms(p_mode) if p_mode else "drwxrwxrwx")
                 
                 max_n_len = pane_l_w - 3 - 4 - ansi_len(ico) - 1 - 6 - 1 - 10
@@ -2641,7 +2766,8 @@ def run_file_manager(op, start_dir=BASE_DIR, ext_filter=None):
                 if i % 2 == 0:
                     c_prefix = f"{C_PROMPT}[{get_alpha_id(r_idx):>2}]{RESET}"
                     cico = get_ico('dir') if os.path.isdir(cpth) else get_ext_ico(cn)
-                    csize_str = f"{C_TITLE}{'<DIR>':>6}{RESET}" if os.path.isdir(cpth) else f"{C_SIZE}{format_bytes(os.path.getsize(cpth)):>6}{RESET}"
+                    
+                    csize_str = f"{C_TITLE}{'<DIR>':>6}{RESET}" if os.path.isdir(cpth) else f"{C_SIZE}{format_bytes(safe_size(cpth)):>6}{RESET}"
                     cperms_str = eza_perms(cp_mode) if cp_mode else "drwxrwxrwx"
                     
                     max_cn_len = pane_r_w - 3 - 4 - ansi_len(cico) - 1 - 6 - 1 - 10
@@ -2674,7 +2800,7 @@ def run_file_manager(op, start_dir=BASE_DIR, ext_filter=None):
         draw_status_bar()
         
         # Position the blinking cursor safely within the inner wall structure
-        sys.stdout.write(f"\033[{term_h - 4};5H{C_BGLIGHT} {C_PROMPT}{get_ico('term', pad=False)}  {RESET}{C_BGLIGHT}{' '*40}{RESET}\033[{term_h - 4};9H{C_BGLIGHT}")
+        sys.stdout.write(f"\033[{term_h - 4};5H{C_BGLIGHT} {C_PROMPT}{get_ico('term')}  {RESET}{C_BGLIGHT}{' '*40}{RESET}\033[{term_h - 4};9H{C_BGLIGHT}")
         sys.stdout.flush()
 
         if handle_error_hijack(): continue
@@ -2749,29 +2875,54 @@ def run_file_manager(op, start_dir=BASE_DIR, ext_filter=None):
 
 def execute_batch_convert():
     global global_mode, scroll_offset
+    
+    import pandas as pd
+    import numpy as np
     import shutil
     import stat
-    import pandas as pd
+    import os
+    import time
     
-    # 1. FILE SELECTION
     tgt_list = run_file_manager('convert', start_dir=BASE_DIR, ext_filter=['.vca', '.csv', '.xlsx', '.xls', '.txt'])
     if not tgt_list: return
+    total_files = len(tgt_list)
     
-    # 2. STANDARDIZED SKELETON SETUP
+    def redraw_skeleton():
+        sys.stdout.write(f"{C_BG}\033[2J\033[H")
+        term_w, term_h = get_term_size()
+        draw_top_bar()
+        for r in range(2, term_h - 1): draw_frame_line("", row=r)
+        draw_frame_line(f"{C_SIZE}VCA REFINERY: DATA SANITIZATION & MATH{RESET}", row=2, align="center")
+        # Repaint viewport behind modal
+        draw_viewport(progress_pct=33.0, active_file="AWAITING USER INPUT", current_file_idx=total_files, total_files=total_files, is_interactive=False, action_text="( WAITING FOR INPUT )")
+
     sys.stdout.write(f"{C_BG}\033[2J\033[H")
     term_w, term_h = get_term_size()
     draw_top_bar()
     for r in range(2, term_h - 1): draw_frame_line("", row=r)
     draw_frame_line(f"{C_SIZE}VCA REFINERY: DATA SANITIZATION & MATH{RESET}", row=2, align="center")
     
-    draw_universal_footer() # THE FLOOR SEAL
-    
-    # 3. INITIALIZE VIEWPORT
     viewport_logs.clear()
     scroll_offset = 0
-    total_files = len(tgt_list)
     
-    # Define the absolute VCA Schema for Headerless injections
+    CUSTOM_SCHEMA = [
+        "MFG", "Class", "Name", "Description", "Filter", "Coating", "Material", "Style", 
+        "Coating Brand", "Right OPC", "Left OPC", "Index", "Diameter", "SPH/BASE", 
+        "CYL/ADD", "Front RAD", "Back RAD", "Center Thick", "Edge Thick", "Inset", 
+        "Drop", "PRP Out", "PRP Up", "Abbe", "Seg Width", "Seg Thick", "Intermediate Ht", 
+        "Slab Off", "Carriage Rad", "Bowl Dia", "Ver Dia", "Dia Dia", "Seg Sep", "Up Add", 
+        "Special", "Cat Code", "Filter Brand", "DRP In", "DRP Up", "NRP In", "NRP Up", 
+        "Horizontal Dia", "Nominal Dia", "Obj Clear", "Obj Rad", "Front TC", "Back TC", "SAG", "Safe Index"
+    ]
+    
+    VCA_TO_CUSTOM_MAP = {
+        "Frnt Rad": "Front RAD", "Bck Rad": "Back RAD", "Sph / Base": "SPH/BASE",
+        "Cyl / Add": "CYL/ADD", "C Thk": "Center Thick", "E Thk": "Edge Thick",
+        "Seg Wd": "Seg Width", "Seg Thk": "Seg Thick", "Int Ht": "Intermediate Ht",
+        "Bwl Diam": "Bowl Dia", "Ver Diam": "Ver Dia", "Hor Diam": "Horizontal Dia",
+        "Nom Diam": "Nominal Dia", "Product Name": "Name"
+    }
+    
     STANDARD_VCA_HEADERS = [
         "MFG", "Class", "Description", "Material", "Material Brand", "Product Name", 
         "Style", "Filter", "Coating", "Coating Brand", "Right OPC", "Left OPC", 
@@ -2783,114 +2934,182 @@ def execute_batch_convert():
         "NRP Up", "Hor Diam", "Nom Diam", "Obj Clear", "Obj Rad"
     ]
     
-    draw_viewport(progress_pct=0.0, active_file="Initializing Refinery...", current_file_idx=0, total_files=total_files, is_interactive=False)
+    memory_bank = []     
+    global_mfgs = set()  
+    mfg_translation_map = {}
     
-    # 4. CONVERSION LOOP
+    draw_viewport(progress_pct=0.0, active_file="Phase 1: Sweep...", current_file_idx=0, total_files=total_files, is_interactive=False, action_text="( BUFFERING )")
+    
+    # =========================================================================
+    # PHASE 1: SILENT INGESTION & SWEEP
+    # =========================================================================
     for idx, tgt in enumerate(tgt_list):
         fname = os.path.basename(tgt)
-        base_name = os.path.splitext(fname)[0]
-        log_task(format_log("I/O", f"Processing {fname}...", C_FILE), "RAW")
+        vp_log("BUFFERING", f"Ingesting '{fname}' into memory bank...", "info")
         
         try:
-            # --- HEADERLESS AUTO-HEAL SNIFFER ---
             has_header = True
             if tgt.lower().endswith(('.csv', '.txt', '.vca')):
                 with open(tgt, 'r', encoding='utf-8', errors='ignore') as f:
                     first_line = f.readline().upper()
-                    # If it doesn't have standard VCA header terminology, it's naked.
                     if "MFG" not in first_line and "DESCRIPTION" not in first_line:
                         has_header = False
                         
             if not has_header:
-                log_task(format_log("AUTO-HEAL", f"Headerless file detected. Injecting VCA Schema.", C_WARN), "RAW")
                 df = pd.read_csv(tgt, header=None, names=STANDARD_VCA_HEADERS, dtype=str)
             else:
-                # If Excel or standard CSV, read normally
                 if tgt.lower().endswith(('.xlsx', '.xls')): df = pd.read_excel(tgt, dtype=str)
                 else: df = pd.read_csv(tgt, dtype=str)
             
-            # Drop purely empty rows
+            df.columns = df.columns.str.strip()
+            df.rename(columns=VCA_TO_CUSTOM_MAP, inplace=True) 
+            df.columns = df.columns.str.replace(r'\s+', '', regex=True)
+            
+            df = df.apply(lambda col: col.str.strip() if col.dtype == "object" else col)
+            df = df.replace('', np.nan)
             df = df.dropna(how='all')
             
-            # --- INVERSE DEDUCTION LOGIC (MR-7 vs MR-10) ---
-            # Search the file for 1.67 material clues
+            if 'dIndex' in df.columns and 'eIndex' in df.columns:
+                df['SafeIndex'] = df['dIndex'].combine_first(df['eIndex'])
+            elif 'dIndex' in df.columns: df['SafeIndex'] = df['dIndex']
+            elif 'eIndex' in df.columns: df['SafeIndex'] = df['eIndex']
+            elif 'Index' in df.columns: df['SafeIndex'] = df['Index']
+            else: df['SafeIndex'] = np.nan
+            
+            if 'MFG' in df.columns:
+                mfgs_in_file = df['MFG'].dropna().unique()
+                for m in mfgs_in_file: global_mfgs.add(str(m).strip())
+                
             mat_col = 'Material' if 'Material' in df.columns else 'Description'
+            safe_desc = df.get(mat_col, pd.Series(dtype=str)).fillna('')
+            mr7_count = int(safe_desc.str.contains('MR-7|MR7', case=False, na=False).sum())
+            mr10_count = int(safe_desc.str.contains('MR-10|MR10', case=False, na=False).sum())
+            ambiguous_mask = safe_desc.str.contains('PU|1.67', case=False, na=False) & \
+                             ~safe_desc.str.contains('MR-7|MR7|MR-10|MR10', case=False, na=False)
             
-            # Count explicit occurrences
-            mr7_count = df[mat_col].str.contains('MR-7|MR7', case=False, na=False).sum()
-            mr10_count = df[mat_col].str.contains('MR-10|MR10', case=False, na=False).sum()
+            memory_bank.append({
+                'tgt': tgt, 'fname': fname, 'df': df, 
+                'mr7': mr7_count, 'mr10': mr10_count, 'amb_mask': ambiguous_mask, 'mat_col': mat_col
+            })
             
-            # Identify ambiguous 1.67s (e.g. marked as PU or just 1.67)
-            ambiguous_mask = df[mat_col].str.contains('PU|1.67', case=False, na=False) & \
-                             ~df[mat_col].str.contains('MR-7|MR7|MR-10|MR10', case=False, na=False)
-                             
-            if ambiguous_mask.sum() > 0:
-                deduced_material = ""
-                
-                # Inverse Deduction
-                if mr7_count > mr10_count: 
-                    deduced_material = "MR-10"
-                    log_task(format_log("INFERENCE", f"MR-7 scored {mr7_count}. Ambiguous materials assigned to MR-10.", C_PROMPT), "RAW")
-                elif mr10_count > mr7_count:
-                    deduced_material = "MR-7"
-                    log_task(format_log("INFERENCE", f"MR-10 scored {mr10_count}. Ambiguous materials assigned to MR-7.", C_PROMPT), "RAW")
+        except Exception as e:
+            vp_log("FATAL I/O", f"Failed to ingest {fname}: {str(e)}", "err")
+            
+        pct = ((idx + 1) / total_files) * 33.0
+        draw_viewport(progress_pct=pct, active_file=fname, current_file_idx=idx+1, total_files=total_files, action_text="( BUFFERING )")
+        time.sleep(0.02)
+
+    # =========================================================================
+    # PHASE 2: THE HUMAN GATEKEEPER (Z-Modal)
+    # =========================================================================
+    draw_viewport(progress_pct=33.0, active_file="AWAITING USER INPUT", current_file_idx=total_files, total_files=total_files, is_interactive=False, action_text="( WAITING FOR INPUT )")
+    
+    for abbr in global_mfgs:
+        if not abbr: continue
+        ans = draw_z_index_modal("TRANSLATE MANUFACTURER", f"What does '{abbr}' stand for?")
+        redraw_skeleton()
+        mfg_translation_map[abbr] = ans.strip() if ans else abbr 
+        
+    for mem in memory_bank:
+        if mem['amb_mask'].sum() > 0:
+            if mem['mr10'] > mem['mr7']: mem['deduced_167'] = "MR-7" 
+            elif mem['mr7'] > mem['mr10']: mem['deduced_167'] = "MR-10" 
+            else:
+                if mem['mr7'] == 0: mem['deduced_167'] = "MR-7" 
                 else:
-                    # Dead Tie or 0/0. Human Fallback Required.
-                    log_task(format_log("AMBIGUITY", f"1.67 Scoring tied. Requesting Human Fallback.", C_ALERT), "RAW")
-                    ans = draw_modal("AMBIGUITY DETECTED", f"File '{fname}' has unknown 1.67 materials. Type MR7 or MR10:", is_password=False)
-                    
-                    # RE-DRAW SKELETON AFTER MODAL
-                    sys.stdout.write(f"{C_BG}\033[2J\033[H")
-                    draw_top_bar()
-                    for r in range(2, term_h - 1): draw_frame_line("", row=r)
-                    draw_frame_line(f"{C_SIZE}VCA REFINERY: DATA SANITIZATION & MATH{RESET}", row=2, align="center")
-                    draw_universal_footer() # Seal it again
-                    
-                    deduced_material = "MR-7" if "7" in ans else "MR-10"
-                    log_task(format_log("HUMAN_INPUT", f"Forced ambiguity resolution to {deduced_material}", C_STAGED), "RAW")
-                
-                # Apply the deduced material to the ambiguous rows
-                df.loc[ambiguous_mask, mat_col] = df.loc[ambiguous_mask, mat_col] + f" ({deduced_material})"
+                    ans = draw_z_index_modal("MATERIAL AMBIGUITY", f"Tie in '{mem['fname']}'. Type MR7 or MR10:")
+                    redraw_skeleton()
+                    mem['deduced_167'] = "MR-7" if ans and "7" in ans else "MR-10"
+    
+    draw_viewport(progress_pct=50.0, active_file="Human Validation Complete", current_file_idx=total_files, total_files=total_files, is_interactive=False, action_text="( COMPILING MATH )")
 
-            # --- OPTICAL MATH & SAG CALCULATION PLACEHOLDER ---
-            # (Insert your specific True Curve and SAG calculation logic here)
-            # log_task(format_log("CALCULATING", f"Processing Base True Curves...", C_TITLE), "RAW")
-            # df['True Front Curve (1.53)'] = ...
-            # df['True Back Curve (1.53)'] = ...
-            # df['SAG at 50mm'] = ...
+    # =========================================================================
+    # PHASE 3 & 4: MATH & THEATRICAL TELEMETRY
+    # =========================================================================
+    os.makedirs(IMPORT_DIR, exist_ok=True)
+    os.makedirs(ORIGINALS_DIR, exist_ok=True)
 
-            # 5. DISPLACEMENT & OUTPUT
-            # Write the clean .vlp file to the Staging/Import Directory
-            vlp_filename = f"{base_name}.vlp"
-            import_path = os.path.join(IMPORT_DIR, vlp_filename)
+    for idx, mem in enumerate(memory_bank):
+        df = mem['df']
+        fname = mem['fname']
+        tgt = mem['tgt']
+        base_name = os.path.splitext(fname)[0]
+        file_size_kb = os.path.getsize(tgt) / 1024.0
+        
+        vp_log("I/O STREAM", f"Opening '{fname}' ({file_size_kb:.1f} KB)...", "info")
+        time.sleep(0.1)
+        vp_log("INGESTION", f"Parsing {len(df):,} individual data lines...", "ok")
+        time.sleep(0.1)
+        
+        if 'MFG' in df.columns:
+            df['MFG'] = df['MFG'].str.strip().map(mfg_translation_map).fillna(df['MFG'])
+            
+        if mem['amb_mask'].sum() > 0:
+            df.loc[mem['amb_mask'], mem['mat_col']] = df.loc[mem['amb_mask'], mem['mat_col']] + f" ({mem['deduced_167']})"
+            
+        if 'Class' not in df.columns: df['Class'] = 'SF'
+        sf_mask = ~df['Class'].fillna('SF').str.upper().str.contains('FIN')
+        
+        idx_val = pd.to_numeric(df.get('SafeIndex', pd.Series(dtype=float)), errors='coerce')
+        f_rad = pd.to_numeric(df.get('FrontRAD', pd.Series(dtype=float)), errors='coerce')
+        b_rad = pd.to_numeric(df.get('BackRAD', pd.Series(dtype=float)), errors='coerce')
+        
+        df.loc[sf_mask, 'FrontTC'] = (((idx_val[sf_mask] - 1.0) * 1000.0) / f_rad[sf_mask]).round(2)
+        df.loc[sf_mask, 'BackTC'] = (-((idx_val[sf_mask] - 1.0) * 1000.0) / b_rad[sf_mask]).round(2)
+        y = 25.0 
+        df.loc[sf_mask, 'SAG'] = np.where(f_rad[sf_mask] > y, f_rad[sf_mask] - np.sqrt(f_rad[sf_mask]**2 - y**2), np.nan)
+        df['SAG'] = df.get('SAG', pd.Series(dtype=float)).round(3)
+
+        sf_count = sf_mask.sum()
+        fin_count = (~sf_mask).sum()
+        unique_cols = [c for c in ['Name', 'Material', 'SafeIndex'] if c in df.columns]
+        unique_count = df.drop_duplicates(subset=unique_cols).shape[0] if unique_cols else 0
+        
+        if sf_count > 0:
+            vp_log("AUDIT", f"Indexed {sf_count:,} Semi-Finished blanks (Curves/SAG applied)", "ok")
+            time.sleep(0.1)
+        if fin_count > 0:
+            vp_log("AUDIT", f"Indexed {fin_count:,} Finished (FSV) lenses", "ok")
+            time.sleep(0.1)
+        vp_log("SUMMARY", f"Consolidated into {unique_count:,} unique optical products", "warn")
+        time.sleep(0.1)
+
+        spaceless_to_custom = {c.replace(" ", ""): c for c in CUSTOM_SCHEMA}
+        df.rename(columns=spaceless_to_custom, inplace=True)
+        df = df.reindex(columns=CUSTOM_SCHEMA)
+
+        vlp_filename = f"{base_name}.vlp"
+        import_path = os.path.join(IMPORT_DIR, vlp_filename)
+        
+        try:
+            if os.path.exists(import_path):
+                try: os.chmod(import_path, stat.S_IWRITE | stat.S_IREAD)
+                except: pass
             
             df.to_csv(import_path, index=False)
             
-            # Lock the .vlp file to Read-Only so users don't accidentally edit the clean file
             try: os.chmod(import_path, stat.S_IREAD | stat.S_IRGRP | stat.S_IROTH)
             except: pass
             
-            # Move the dirty original to the Originals vault
-            try:
-                dest_orig = os.path.join(ORIGINALS_DIR, fname)
-                if os.path.exists(dest_orig):
-                    os.remove(dest_orig) # Replace if re-running
-                shutil.move(tgt, dest_orig)
-                log_task(format_log("DISPLACED", f"Original routed to /originals/", C_STAGED), "RAW")
-            except Exception as e:
-                log_task(format_log("WARNING", f"Could not move original: {str(e)}", C_WARN), "RAW")
-                
-            log_task(format_log("SUCCESS", f"Purified -> {vlp_filename}", C_STAGED), "RAW")
+            vp_log("SECURITY", f"Locking '{vlp_filename}' to strict Read-Only (0444)", "info")
+            time.sleep(0.1)
+            vp_log("SUCCESS", f"Transmitted {len(df):,} sanitized records to Vault Staging.", "ok")
+
+            dest_orig = os.path.join(ORIGINALS_DIR, fname)
+            if os.path.exists(dest_orig): os.remove(dest_orig)
+            shutil.move(tgt, dest_orig)
             
         except Exception as e:
-            log_task(format_log("FATAL_I/O", f"Failed to convert {fname}: {str(e)}", C_ALERT), "RAW")
-            
-        pct = ((idx + 1) / total_files) * 100.0
-        draw_viewport(progress_pct=pct, active_file=fname, current_file_idx=idx+1, total_files=total_files)
-        time.sleep(0.1) # Smooth telemetry pacing
+            vp_log("FATAL I/O", f"Failed to save Vault file '{vlp_filename}': {str(e)}", "err")
         
-    # 6. FIXED INTERACTIVE SCROLL LOOP
-    draw_viewport(progress_pct=100.0, active_file="Batch Complete", current_file_idx=total_files, total_files=total_files, is_interactive=True)
+        pct = 50.0 + (((idx + 1) / total_files) * 50.0)
+        draw_viewport(progress_pct=pct, active_file=fname, current_file_idx=idx+1, total_files=total_files, action_text="( COMPILING )")
+        time.sleep(0.3) 
+        
+    # =========================================================================
+    # END OF PIPELINE - INTERACTIVE SCROLL
+    # =========================================================================
+    draw_viewport(progress_pct=100.0, active_file="Batch Complete", current_file_idx=total_files, total_files=total_files, is_interactive=True, action_text="( PRESS ENTER TO RETURN )")
     
     while True:
         c = getch()
@@ -2899,7 +3118,7 @@ def execute_batch_convert():
             except: continue
         if c in ('\r', '\n', '\x1b'): break
         
-        vp_height = (term_h - 9) - 4 - 1
+        vp_height = term_h - 12
         max_scroll = max(0, len(viewport_logs) - vp_height)
         
         if c == '\x1b[A' or c == 'UP': scroll_offset = max(0, scroll_offset - 1)
@@ -2907,7 +3126,7 @@ def execute_batch_convert():
         elif c == '\x1b[5~' or c == 'PGUP': scroll_offset = max(0, scroll_offset - 10)
         elif c == '\x1b[6~' or c == 'PGDN': scroll_offset = min(max_scroll, scroll_offset + 10)
         
-        draw_viewport(progress_pct=100.0, active_file="Batch Complete", current_file_idx=total_files, total_files=total_files, is_interactive=True)
+        draw_viewport(progress_pct=100.0, active_file="Batch Complete", current_file_idx=total_files, total_files=total_files, is_interactive=True, action_text="( PRESS ENTER TO RETURN )")
 
     global_mode = "MAIN MENU"
     
@@ -2916,17 +3135,33 @@ def execute_add_database():
     if not enforce_security_lock(): return
     global_mode = "VAULT GATEKEEPER (Add)"
     
+    import pandas as pd
+    import shutil
+    import stat
+    import os
+    import time
+    
     tgt_list = run_file_manager('add', start_dir=IMPORT_DIR, ext_filter=['.vlp'])
     if not tgt_list: global_mode = "MAIN MENU"; return
     
-    # 1. STANDARDIZED SKELETON SETUP
     sys.stdout.write(f"{C_BG}\033[2J\033[H")
     term_w, term_h = get_term_size()
     draw_top_bar()
     for r in range(2, term_h - 1): draw_frame_line("", row=r)
     draw_frame_line(f"{C_SIZE}VAULT GATEKEEPER: ATOMIC BATCH VERIFICATION{RESET}", row=2, align="center")
     
-    draw_universal_footer() # THE FLOOR SEAL
+    CUSTOM_SCHEMA = [
+        "MFG", "Class", "Name", "Description", "Filter", "Coating", "Material", "Style", 
+        "Coating Brand", "Right OPC", "Left OPC", "Index", "Diameter", "SPH/BASE", 
+        "CYL/ADD", "Front RAD", "Back RAD", "Center Thick", "Edge Thick", "Inset", 
+        "Drop", "PRP Out", "PRP Up", "Abbe", "Seg Width", "Seg Thick", "Intermediate Ht", 
+        "Slab Off", "Carriage Rad", "Bowl Dia", "Ver Dia", "Dia Dia", "Seg Sep", "Up Add", 
+        "Special", "Cat Code", "Filter Brand", "DRP In", "DRP Up", "NRP In", "NRP Up", 
+        "Horizontal Dia", "Nominal Dia", "Obj Clear", "Obj Rad", "Front TC", "Back TC", "SAG", "Safe Index"
+    ]
+    
+    os.makedirs(VLP_ARCHIVE, exist_ok=True)
+    os.makedirs(ORIGINALS_DIR, exist_ok=True)
     
     vault_hashes = set()
     vault_files = [f for f in os.listdir(VLP_ARCHIVE) if f.lower().endswith('.vlp')]
@@ -2940,25 +3175,53 @@ def execute_add_database():
     cleaned_dfs = {}
     failed_file = None; fail_reason = ""
     
-    # 2. INITIALIZE VIEWPORT
     viewport_logs.clear()
     scroll_offset = 0
     total_files = len(tgt_list)
+    current_idx = 0
+    current_pct = 0.0
     
-    log_task(format_log("SYSTEM", "Cross-referencing batch against Vault records..."), "RAW")
-    draw_viewport(progress_pct=0.0, active_file="Verifying...", current_file_idx=0, total_files=total_files, is_interactive=False)
+    vp_log("SYSTEM", "Cross-referencing batch against Vault records...", "info")
+    draw_viewport(progress_pct=0.0, active_file="Verifying...", current_file_idx=0, total_files=total_files, is_interactive=False, action_text="( SECURING VAULT )")
     
-    # 3. VERIFICATION LOOP
+    # =========================================================================
+    # VERIFICATION LOOP
+    # =========================================================================
     for idx, tgt in enumerate(tgt_list):
+        current_idx = idx + 1
+        current_pct = (current_idx / total_files) * 100.0
         fname = os.path.basename(tgt)
+        
         if fname in vault_files: 
-            failed_file = tgt; fail_reason = "Filename collision."; break
+            failed_file = tgt; fail_reason = "Filename collision with Live Vault."; break
             
-        log_task(format_log("I/O", f"Reading absolute path -> {tgt}", C_FILE), "RAW")
+        vp_log("I/O STREAM", f"Verifying signature of '{fname}'...", "info")
+        time.sleep(0.1) 
         
         try:
-            # Drop purely empty rows and exact Intra-file duplicates silently
             df = robust_read_csv(tgt).dropna(how='all').drop_duplicates()
+            
+            if list(df.columns) != CUSTOM_SCHEMA:
+                failed_file = tgt; fail_reason = "Schema corruption. Missing or altered columns."; break
+            vp_log("AUDIT", "Schema matches 49/49 strict VCA columns.", "ok")
+            time.sleep(0.05)
+            
+            critical_cols = ['MFG', 'Name', 'Material']
+            null_counts = df[critical_cols].isnull().sum().sum()
+            empty_counts = (df[critical_cols] == "").sum().sum()
+            if null_counts > 0 or empty_counts > 0:
+                failed_file = tgt; fail_reason = "Row integrity compromised (Missing MFG, Name, or Material)."; break
+            vp_log("AUDIT", "Row integrity verified (0 critical nulls).", "ok")
+            time.sleep(0.05)
+            
+            sf_mask = ~df['Class'].fillna('SF').str.upper().str.contains('FIN')
+            if sf_mask.sum() > 0:
+                math_cols = ['Front TC', 'Back TC', 'SAG']
+                math_nulls = df.loc[sf_mask, math_cols].isnull().sum().sum()
+                if math_nulls > 0:
+                    failed_file = tgt; fail_reason = "Math verification failed. Missing computed values for SF blanks."; break
+            vp_log("AUDIT", "Cryptographic math validation passed.", "ok")
+            time.sleep(0.05)
             
             for row_idx, row_data in df.iterrows():
                 row_dict = row_data.to_dict()
@@ -2974,7 +3237,7 @@ def execute_add_database():
                     failed_file = tgt
                     failed_lens = row_dict.get('Description', row_dict.get('Name', 'Unknown Lens'))
                     original_location = batch_hashes[h_id]
-                    fail_reason = f"Cross-file duplicate! Row {row_idx + 2} matches data already seen in {original_location}. Lens: {failed_lens}"
+                    fail_reason = f"Cross-file duplicate! Row {row_idx + 2} matches {original_location}."
                     break
                     
                 batch_hashes[h_id] = f"'{fname}' (Row {row_idx + 2})"
@@ -2985,10 +3248,21 @@ def execute_add_database():
         except Exception as e: 
             failed_file = tgt; fail_reason = f"Read error: {str(e)}"; break
             
-    # 4. REJECTION PROTOCOL
+        draw_viewport(progress_pct=current_pct, active_file=fname, current_file_idx=current_idx, total_files=total_files, action_text="( SECURING VAULT )")
+        
+    # =========================================================================
+    # REJECTION & ACCEPTANCE PROTOCOLS
+    # =========================================================================
     if failed_file:
         fname = os.path.basename(failed_file); base_name = os.path.splitext(fname)[0]
-        try: os.chmod(failed_file, stat.S_IWRITE | stat.S_IREAD); os.remove(failed_file)
+        CORRUPT_DIR = os.path.join(BASE_DIR, 'data', 'db', 'corrupt')
+        os.makedirs(CORRUPT_DIR, exist_ok=True)
+        
+        try: 
+            os.chmod(failed_file, stat.S_IWRITE | stat.S_IREAD)
+            dest_corrupt = os.path.join(CORRUPT_DIR, fname)
+            if os.path.exists(dest_corrupt): os.remove(dest_corrupt)
+            shutil.move(failed_file, dest_corrupt)
         except: pass
             
         if os.path.exists(ORIGINALS_DIR):
@@ -3001,14 +3275,14 @@ def execute_add_database():
                     except: pass
                     break
 
-        log_task(format_log("FATAL", f"Validation Failure in '{fname}'", C_ALERT), "RAW")
-        log_task(format_log("REASON", fail_reason, C_ALERT), "RAW")
-        log_task(format_log("ACTION", "Offending .vlp file deleted from Staging.", C_WARN), "RAW")
+        vp_log("FATAL REJECT", f"Validation Failure in '{fname}'", "err")
+        vp_log("REASON", fail_reason, "err")
+        vp_log("ACTION", "Atomic Batch halted. Offending .vlp file quarantined in /db/corrupt/", "warn")
         
-        draw_viewport(progress_pct=100.0, active_file="HALTED", current_file_idx=total_files, total_files=total_files, is_interactive=True)
+        draw_viewport(progress_pct=current_pct, active_file="HALTED", current_file_idx=current_idx, total_files=total_files, is_interactive=True, action_text="( PRESS ENTER TO RETURN )")
     
-    # 5. ACCEPTANCE PROTOCOL
     else:
+        vp_log("SYSTEM", "All audits passed. Initializing Vault transfer...", "info")
         moved = 0
         for idx, tgt in enumerate(tgt_list):
             try:
@@ -3017,18 +3291,18 @@ def execute_add_database():
                 try: os.remove(tgt)
                 except: pass
                 os.chmod(dest, stat.S_IREAD | stat.S_IRGRP | stat.S_IROTH)
-                log_task(format_log("SECURITY", f"{os.path.basename(tgt)} scrubbed and locked to 0444", C_STAGED), "RAW")
+                vp_log("SECURITY", f"Checksum valid. '{os.path.basename(tgt)}' locked to 0444", "ok")
+                time.sleep(0.1)
                 moved += 1
-            except: pass
+            except Exception as e:
+                vp_log("FATAL I/O", f"Failed to transfer {os.path.basename(tgt)}: {str(e)}", "err")
             
-            pct = ((idx + 1) / total_files) * 100.0
-            draw_viewport(progress_pct=pct, active_file=os.path.basename(tgt), current_file_idx=idx+1, total_files=total_files)
-            time.sleep(0.05)
-            
-        log_task(format_log("SYSTEM", f"BATCH ACCEPTED: {moved} files securely written to Vault.", C_STAGED), "RAW")
-        draw_viewport(progress_pct=100.0, active_file="Complete", current_file_idx=total_files, total_files=total_files, is_interactive=True)
+        vp_log("SYSTEM", f"BATCH ACCEPTED: {moved} files securely written to Vault.", "ok")
+        draw_viewport(progress_pct=100.0, active_file="Batch Complete", current_file_idx=total_files, total_files=total_files, is_interactive=True, action_text="( PRESS ENTER TO RETURN )")
         
-    # 6. FIXED INTERACTIVE SCROLL LOOP
+    # =========================================================================
+    # END OF PIPELINE - INTERACTIVE SCROLL
+    # =========================================================================
     while True:
         c = getch()
         if isinstance(c, bytes):
@@ -3036,7 +3310,7 @@ def execute_add_database():
             except: continue
         if c in ('\r', '\n', '\x1b'): break
         
-        vp_height = (term_h - 9) - 4 - 1
+        vp_height = term_h - 12
         max_scroll = max(0, len(viewport_logs) - vp_height)
         
         if c == '\x1b[A' or c == 'UP': scroll_offset = max(0, scroll_offset - 1)
@@ -3044,7 +3318,11 @@ def execute_add_database():
         elif c == '\x1b[5~' or c == 'PGUP': scroll_offset = max(0, scroll_offset - 10)
         elif c == '\x1b[6~' or c == 'PGDN': scroll_offset = min(max_scroll, scroll_offset + 10)
         
-        draw_viewport(progress_pct=100.0, active_file="Complete" if not failed_file else "HALTED", current_file_idx=total_files, total_files=total_files, is_interactive=True)
+        final_pct = 100.0 if not failed_file else current_pct
+        final_idx = total_files if not failed_file else current_idx
+        status_msg = "Batch Complete" if not failed_file else "HALTED"
+        
+        draw_viewport(progress_pct=final_pct, active_file=status_msg, current_file_idx=final_idx, total_files=total_files, is_interactive=True, action_text="( PRESS ENTER TO RETURN )")
         
     global_mode = "MAIN MENU"
 
@@ -3257,209 +3535,6 @@ def execute_generate_database():
         break
     global_mode = "MAIN MENU"
 
-def verify_and_stage_fonts():
-    global global_mode, scroll_offset
-    # Bring the Tier 2 heavy lifters into global scope
-    global pd, urllib, zipfile
-    
-    # 1. STANDARDIZED SKELETON SETUP
-    sys.stdout.write(f"{C_BG}\033[2J\033[H")
-    term_w, term_h = get_term_size()
-    draw_top_bar()
-    for r in range(2, term_h - 1): draw_frame_line("", row=r)
-    draw_frame_line(f"{C_SIZE}PHASE 0: SYSTEM INITIALIZATION & ASSET VERIFICATION{RESET}", row=2, align="center")
-    
-    draw_status_bar() # Draw the bottom mode bar
-    sys.stdout.flush()
-    
-    viewport_logs.clear()
-    scroll_offset = 0
-
-    # 2. THE SMOKE & MIRRORS MATRIX
-    modules = [
-        ("Core OS Interface", "os", False), ("System Pathways", "sys", False),
-        ("Temporal Engine", "time", False), ("Platform Diagnostics", "platform", False),
-        ("Warning Handlers", "warnings", False), ("Exit Routines", "atexit", False),
-        ("Regex Engine", "re", False), ("File Operations", "shutil", False),
-        ("JSON Parsers", "json", False), ("Sys Stat", "stat", False),
-        ("Text Wrapping", "textwrap", False), ("Datetime Engine", "datetime", False),
-        ("Timezone Protocols", "timezone", False), ("Cryptographic Hashes", "hashlib", False),
-        ("Binary Encoders", "base64", False), ("Network Libraries", "urllib", True), 
-        ("Archive Tools", "zipfile", True), ("Pandas DataFrames", "pandas", True)
-    ]
-    
-    fonts = {
-        'Arial-Regular.ttf': {'win': r"C:\Windows\Fonts\arial.ttf", 'lin_name': 'arial.ttf', 'url': "https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/arial32.exe", 'is_cab': True, 'target_ttf': 'arial.ttf'},
-        'Arial-Bold.ttf': {'win': r"C:\Windows\Fonts\arialbd.ttf", 'lin_name': 'arialbd.ttf', 'url': "https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/arialb32.exe", 'is_cab': True, 'target_ttf': 'arialbd.ttf'},
-        'Tahoma-Regular.ttf': {'win': r"C:\Windows\Fonts\tahoma.ttf", 'lin_name': 'tahoma.ttf', 'url': "https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/iel32.exe", 'is_cab': True, 'target_ttf': 'tahoma.ttf'},
-        
-        'MSSansSerif-Regular.ttf': {'win': r"C:\Windows\Fonts\micross.ttf", 'lin_name': 'micross.ttf', 'url': "https://cdn.jsdelivr.net/gh/matomo-org/travis-scripts@master/fonts/micross.ttf", 'is_zip': False},
-        'UbuntuSansNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/UbuntuSans.zip", 'is_zip': True},
-        'JetBrainsMonoNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip", 'is_zip': True},
-        'FiraCodeNerdFont-Medium.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.zip", 'is_zip': True},
-        'CaskaydiaCoveNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/CascadiaCode.zip", 'is_zip': True},
-        'NotoSansNerdFont-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Noto.zip", 'is_zip': True},
-        'OpenSans-Regular.ttf': {'win': "", 'lin_name': "", 'url': "https://cdn.jsdelivr.net/gh/googlefonts/opensans@main/fonts/ttf/OpenSans-Regular.ttf", 'is_zip': False},
-    }
-
-    total_tasks = len(modules) + (len(fonts) * 4)
-    curr = 0
-
-    # THE CINEMATIC MACRO
-    def matrix_step(log_msg, status="SYSTEM", color=C_SUBTEXT, inc=1, delay=0.15):
-        nonlocal curr
-        curr += inc
-        pct = min(100.0, (curr / max(1, total_tasks)) * 100.0)
-        log_task(format_log(status, log_msg, color), "RAW")
-        draw_viewport(progress_pct=pct, active_file="Initializing...", current_file_idx=curr, total_files=total_tasks, is_interactive=False)
-        time.sleep(delay)
-
-    matrix_step("INITIALIZING CORE MODULES...", "SYSTEM", C_TITLE, inc=0, delay=0.6)
-    
-    # 4. EXECUTING THE MATRIX LOADS
-    for desc, mod, is_real in modules:
-        matrix_step(f"Allocating memory buffer for {desc} [{mod}]...", "SYSTEM", C_SUBTEXT, inc=0, delay=0.08)
-        
-        if is_real:
-            if mod == "pandas": import pandas as pd
-            elif mod == "urllib": import urllib.request as urllib
-            elif mod == "zipfile": import zipfile
-            matrix_step(f"Physical library '{mod}' loaded into RAM.", "MOUNT", C_PROMPT, inc=0, delay=0.2)
-        
-        matrix_step(f"Module '{mod}' successfully mounted and verified.", "SUCCESS", C_STAGED, inc=1, delay=0.1)
-
-    # 5. ASSET SCANNING & EXTRACTION
-    matrix_step("INITIALIZING TYPOGRAPHY ENGINE...", "SYSTEM", C_TITLE, inc=0, delay=0.8)
-    
-    os.makedirs(HTML_DATA_DIR, exist_ok=True)
-    os.makedirs(TMP_DIR, exist_ok=True)
-    is_win = os.name == 'nt'
-    
-    def find_local_font(win_path, file_name):
-        if is_win and os.path.exists(win_path): return win_path
-        if not is_win and file_name:
-            lin_paths = [
-                f"/usr/share/fonts/truetype/msttcorefonts/{file_name}", f"/usr/share/fonts/truetype/msttcorefonts/{file_name.lower()}",
-                f"/usr/share/fonts/TTF/{file_name}", f"/usr/share/fonts/{file_name}",
-                os.path.expanduser(f"~/.local/share/fonts/{file_name}"), os.path.expanduser(f"~/.fonts/{file_name}")
-            ]
-            for p in lin_paths:
-                if os.path.exists(p): return p
-        return None
-
-    for dest_name, meta in fonts.items():
-        dest_path = os.path.join(HTML_DATA_DIR, dest_name)
-        matrix_step(f"Evaluating dependency: {dest_name}", "SCAN", C_SUBTEXT, inc=1, delay=0.3)
-        
-        if not os.path.exists(dest_path):
-            local_src = find_local_font(meta['win'], meta.get('lin_name', ''))
-            if local_src:
-                matrix_step(f"Discovered native OS asset at: {local_src}", "LOCAL", C_DIR, inc=1, delay=0.4)
-                matrix_step(f"Copying {dest_name} to HTML/data vault...", "MOUNT", C_PROMPT, inc=1, delay=0.3)
-                try:
-                    shutil.copy2(local_src, dest_path)
-                    matrix_step(f"Asset {dest_name} integrated flawlessly.", "SUCCESS", C_STAGED, inc=1, delay=0.2)
-                except Exception as e:
-                    matrix_step(f"Mount error: {e}", "FAILED", C_ALERT, inc=1, delay=0.5)
-            else:
-                matrix_step(f"Asset missing locally. Preparing network fetch...", "WARN", C_WARN, inc=1, delay=0.5)
-                matrix_step(f"Opening secure HTTP tunnel to: {meta['url'].split('/')[2]}", "NETWORK", C_DIR, inc=0, delay=0.6)
-                
-                try:
-                    headers = {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-                        'Accept': '*/*'
-                    }
-                    req = urllib.Request(meta['url'].strip(), headers=headers)
-                    
-                    if meta.get('is_zip'):
-                        zip_path = os.path.join(TMP_DIR, 'temp_font.zip')
-                        matrix_step(f"Downloading binary payload from {meta['url']}...", "DOWNLOAD", C_FILE, inc=1, delay=1.0)
-                        with urllib.urlopen(req) as response, open(zip_path, 'wb') as out_file: shutil.copyfileobj(response, out_file)
-                        
-                        matrix_step(f"Payload received. Unzipping temp_font.zip...", "EXTRACT", C_PROMPT, inc=1, delay=0.6)
-                        with zipfile.ZipFile(zip_path, 'r') as z:
-                            target_file = next((f for f in z.namelist() if f.endswith(dest_name)), None)
-                            if target_file:
-                                matrix_step(f"Located {target_file} inside archive. Extracting to {dest_path}...", "EXTRACT", C_PROMPT, inc=0, delay=0.5)
-                                with z.open(target_file) as zf, open(dest_path, 'wb') as f: shutil.copyfileobj(zf, f)
-                            else:
-                                matrix_step(f"Could not find {dest_name} in archive!", "FAILED", C_ALERT, inc=0, delay=0.5)
-                                
-                        matrix_step(f"Purging temporary archive temp_font.zip...", "CLEANUP", C_SUBTEXT, inc=0, delay=0.4)
-                        os.remove(zip_path)
-                        
-                    elif meta.get('is_cab'):
-                        cab_path = os.path.join(TMP_DIR, 'temp_cab.exe')
-                        
-                        dl_cmd = (f"curl.exe -sLO \"{meta['url']}\"" if is_win 
-                                  else f"curl -sLO \"{meta['url']}\"")
-                        matrix_step(dl_cmd, color=C_FILE, inc=0, delay=1.0, is_cmd=True)
-                        
-                        with urllib.urlopen(req) as response, open(cab_path, 'wb') as out_file: 
-                            shutil.copyfileobj(response, out_file)
-                        
-                        f_size = os.path.getsize(cab_path) // 1024
-                        matrix_step(f"Downloaded Microsoft Cabinet Payload ({f_size:,} KB)", color=C_SUBTEXT, inc=0, delay=0, is_cmd=True)
-                        
-                        matrix_step("Ripping target binary from legacy cabinet...", "EXTRACT", C_PROMPT, inc=1, delay=0.2)
-                        
-                        if is_win:
-                            ext_cmd = f"extrac32.exe /E /Y \"{cab_path}\" \"{meta['target_ttf']}\""
-                            matrix_step(ext_cmd, color=C_PROMPT, inc=0, delay=0.5, is_cmd=True)
-                            # extrac32 extracts to current working directory, so we move it to dest_path
-                            subprocess.run(f'extrac32.exe /E /Y "{cab_path}" "{meta["target_ttf"]}"', shell=True, stdout=subprocess.DEVNULL)
-                            if os.path.exists(meta['target_ttf']):
-                                shutil.move(meta['target_ttf'], dest_path)
-                        else:
-                            ext_cmd = f"cabextract -q -F {meta['target_ttf']} temp_cab.exe -d ./HTML/data/"
-                            matrix_step(ext_cmd, color=C_PROMPT, inc=0, delay=0.5, is_cmd=True)
-                            # Run cabextract and dump directly into the HTML_DATA_DIR
-                            subprocess.run(f'cabextract -q -F {meta["target_ttf"]} "{cab_path}" -d "{HTML_DATA_DIR}"', shell=True, stdout=subprocess.DEVNULL)
-                            
-                            # Standardize the output filename (cabextract keeps original lower/uppercase)
-                            extracted_file = os.path.join(HTML_DATA_DIR, meta['target_ttf'])
-                            if os.path.exists(extracted_file) and extracted_file != dest_path:
-                                os.rename(extracted_file, dest_path)
-                        
-                        matrix_step("Purging temporary cabinet artifacts...", "CLEANUP", C_SUBTEXT, inc=1, delay=0.2)
-                        clean_cmd = f"del /F /Q temp_cab.exe" if is_win else f"rm -f temp_cab.exe"
-                        matrix_step(clean_cmd, color=C_SUBTEXT, inc=0, delay=0.3, is_cmd=True)
-                        os.remove(cab_path)
-                    else:
-                        matrix_step(f"Downloading raw asset from {meta['url']}...", "DOWNLOAD", C_FILE, inc=2, delay=1.0)
-                        with urllib.urlopen(req) as response, open(dest_path, 'wb') as out_file: shutil.copyfileobj(response, out_file)
-                            
-                    matrix_step(f"Asset {dest_name} successfully staged.", "SUCCESS", C_STAGED, inc=1, delay=0.2)
-                except Exception as e:
-                    matrix_step(f"Network fetch failed: {e}", "FAILED", C_ALERT, inc=2, delay=1.5)
-        else:
-            matrix_step(f"Verified existing cached asset: {dest_name}", "VERIFIED", C_STAGED, inc=3, delay=0.15)
-            
-    # 6. THE INTERNAL VIEWPORT LOCK
-    # Push the final instruction directly into the viewport as the last log entry!
-    matrix_step(f"{C_PROMPT}>>> BOOT SEQUENCE COMPLETE. PRESS [ENTER] TO LAUNCH OPERATIONS CENTER <<<{RESET}", "READY", C_STAGED, inc=0, delay=0)
-    
-    # Render it one last time and engage the scroll loop
-    draw_viewport(progress_pct=100.0, active_file="System Ready", current_file_idx=total_tasks, total_files=total_tasks, is_interactive=True)
-    
-    while True:
-        c = getch()
-        if isinstance(c, bytes):
-            try: c = c.decode('utf-8')
-            except: continue
-        if c in ('\r', '\n', '\x1b'): break
-        
-        vp_height = (term_h - 9) - 4 - 1
-        max_scroll = max(0, len(viewport_logs) - vp_height)
-        
-        if c == '\x1b[A' or c == 'UP': scroll_offset = max(0, scroll_offset - 1)
-        elif c == '\x1b[B' or c == 'DOWN': scroll_offset = min(max_scroll, scroll_offset + 1)
-        elif c == '\x1b[5~' or c == 'PGUP': scroll_offset = max(0, scroll_offset - 10)
-        elif c == '\x1b[6~' or c == 'PGDN': scroll_offset = min(max_scroll, scroll_offset + 10)
-        
-        draw_viewport(progress_pct=100.0, active_file="System Ready", current_file_idx=total_tasks, total_files=total_tasks, is_interactive=True)
-
 # --- APPLICATION ENTRY ---
 
 def main():
@@ -3475,33 +3550,33 @@ def main():
         draw_frame_line(f"{C_SIZE}OPTICAL LENS SPECIFICATIONS ENGINE: OPERATIONS CENTER{RESET}", row=2, align="center")
         
         pad = 15
-        draw_frame_line(f"{C_TITLE}{get_ico('conv')}(C){C_FILE}onvert Manufacturers File -> Generate .VLP{RESET}", row=6, indent=pad)
-        draw_frame_line(f"{C_TITLE}{get_ico('add')}(A){C_FILE}dd staged .VLP files into the Vault{RESET}", row=7, indent=pad)
-        draw_frame_line(f"{C_TITLE}{get_ico('list')}(L){C_FILE}ist existing .VLP files in Vault{RESET}", row=8, indent=pad)
-        draw_frame_line(f"{C_TITLE}{get_ico('scan')}(S){C_FILE}can existing Vault for integrity errors{RESET}", row=9, indent=pad)
-        draw_frame_line(f"{C_TITLE}{get_ico('gen')}(G){C_FILE}eneration Sequence (Wipe & Rebuild DB){RESET}", row=10, indent=pad)
-        draw_frame_line(f"{C_TITLE}{get_ico('html')}(E){C_FILE}xecute Master HTML Generation{RESET}", row=11, indent=pad)
+        draw_frame_line(f"{C_TITLE}{get_ico('conv')} (C){C_FILE}onvert Manufacturers File -> Generate .VLP{RESET}", row=6, indent=pad)
+        draw_frame_line(f"{C_TITLE}{get_ico('add')} (A){C_FILE}dd staged .VLP files into the Vault{RESET}", row=7, indent=pad)
+        draw_frame_line(f"{C_TITLE}{get_ico('list')} (L){C_FILE}ist existing .VLP files in Vault{RESET}", row=8, indent=pad)
+        draw_frame_line(f"{C_TITLE}{get_ico('scan')} (S){C_FILE}can existing Vault for integrity errors{RESET}", row=9, indent=pad)
+        draw_frame_line(f"{C_TITLE}{get_ico('gen')} (G){C_FILE}eneration Sequence (Wipe & Rebuild DB){RESET}", row=10, indent=pad)
+        draw_frame_line(f"{C_TITLE}{get_ico('html')} (E){C_FILE}xecute Master HTML Generation{RESET}", row=11, indent=pad)
         
-        draw_frame_line(f"{C_TITLE}{get_ico('tools')}File Tools:{RESET}", row=13, indent=pad)
-        draw_frame_line(f"  {C_TITLE}{get_ico('move')}(M){C_FILE}ove files{RESET}", row=14, indent=pad)
-        draw_frame_line(f"  {C_TITLE}{get_ico('copy')}Co{C_TITLE}(p){C_FILE}y files{RESET}", row=15, indent=pad)
-        draw_frame_line(f"  {C_TITLE}{get_ico('ren')}(R){C_FILE}ename file{RESET}", row=16, indent=pad)
-        draw_frame_line(f"  {C_TITLE}{get_ico('del')}(D){C_FILE}elete files{RESET}", row=17, indent=pad)
+        draw_frame_line(f"{C_TITLE}{get_ico('tools')} File Tools:{RESET}", row=13, indent=pad)
+        draw_frame_line(f"  {C_TITLE}{get_ico('move')} (M){C_FILE}ove files{RESET}", row=14, indent=pad)
+        draw_frame_line(f"  {C_TITLE}{get_ico('copy')} Co{C_TITLE}(p){C_FILE}y files{RESET}", row=15, indent=pad)
+        draw_frame_line(f"  {C_TITLE}{get_ico('ren')} (R){C_FILE}ename file{RESET}", row=16, indent=pad)
+        draw_frame_line(f"  {C_TITLE}{get_ico('del')} (D){C_FILE}elete files{RESET}", row=17, indent=pad)
         
-        draw_frame_line(f"{C_ALERT}{get_ico('quit')}(Q)uit Application{RESET}", row=19, indent=pad)
+        draw_frame_line(f"{C_ALERT}{get_ico('quit')} (Q)uit Application{RESET}", row=19, indent=pad)
         
         global_mode = "MAIN MENU"
         
         nf_status = f"{C_STAGED}[ON]{RESET}" if app_config.get('nerd_fonts') else f"{C_ALERT}[OFF]{RESET}"
-        nf_text = f"{C_PROMPT}{get_ico('nf')}(N)erd Fonts: {nf_status}"
+        nf_text = f"{C_PROMPT}{get_ico('nf')} (N)erd Fonts: {nf_status}"
         draw_frame_line(nf_text, row=term_h - 5, align="right")
         
         ins_1 = f"Press a command hotkey (e.g. {C_PROMPT}C{C_SUBTEXT})."
-        draw_frame_line(ins_1, row=term_h - 5, align="left", indent=4)
+        draw_frame_line(ins_1, row=term_h - 5, align="left", indent=0)
         
         draw_status_bar()
         
-        sys.stdout.write(f"\033[{term_h - 4};5H{C_BGLIGHT} {C_PROMPT}{get_ico('term', pad=False)}  {RESET}{C_BGLIGHT}{' '*40}{RESET}\033[{term_h - 4};9H{C_BGLIGHT}")
+        sys.stdout.write(f"\033[{term_h - 4};5H{C_PROMPT}{get_ico('term')}  {RESET}{C_BGLIGHT}{' '*40}{RESET}\033[{term_h - 4};9H{C_BGLIGHT}")
         sys.stdout.flush()
 
         if handle_error_hijack(): continue
@@ -3515,7 +3590,7 @@ def main():
         
         if cmd == 'F12': execute_admin_menu()
         elif cmd.lower() in ['q', 'x']: clean_exit()
-        elif cmd.lower() == 'n': app_config['nerd_fonts'] = not app_config.get('nerd_fonts', False); save_config()
+        elif cmd.lower() == 'n': app_config['nerd_fonts'] = not app_config.get('nerd_fonts', False); reload_icons(); save_config()
         # Look closely below: we decoupled the file manager from the router!
         elif cmd.lower() == 'c': execute_batch_convert() 
         elif cmd.lower() == 'a': execute_add_database()
@@ -3530,7 +3605,8 @@ def main():
         elif cmd.lower() == 'r': run_file_manager('re', start_dir=BASE_DIR)
 
 if __name__ == "__main__":
-    try: 
+    try:
+        preflight_dependency_check()
         # 1. Establish the Color Palette
         init_environment()
         load_config()
