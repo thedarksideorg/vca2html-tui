@@ -580,12 +580,12 @@ def draw_viewport(progress_pct=100.0, current_task_string="", active_file="", cu
     text_bl_1 = f" {total_types} TYPES "
     text_bl_2 = f" {total_lenses:,} LENSES "
     
-# --- THE ACTION TEXT INJECTION ---
+    # --- THE ACTION TEXT INJECTION ---
     raw_bot_l = ""
     bot_l_str = ""
     
     if action_text:
-        # Strip () so we can color them as the outer border
+        # Strip () so we can color them as the outer border, keeping the text bright inside
         clean_action = action_text.strip("() ")
         text_act = f" {clean_action} "
         raw_bot_l += f"({text_act})"
@@ -2591,23 +2591,38 @@ def resolve_material(mat_code, idx, desc, brand, explicit_mr_map=None, global_co
     return mat_code
 
 def heal_vca_format(filepath):
-    if not str(filepath).lower().endswith(('.vca', '.txt')): return filepath
+    if not str(filepath).lower().endswith(('.vca', '.txt', '.csv')): return filepath
     try:
-        with open(filepath, 'r', encoding='utf-8-sig') as f: lines = f.readlines()
+
+        with open(filepath, 'r', encoding='utf-8-sig', errors='ignore') as f:
+            raw_text = f.read()
+            
+        lines = raw_text.splitlines()
         if not lines: return filepath
+        
         target_commas = lines[0].count(',')
-        healed_lines = []; buffer = ""
+        healed_lines = []
+        buffer = ""
+        
         for line in lines:
-            line_str = line.strip('\n\r')
+            line_str = line.strip()
             if buffer: buffer += " " + line_str
             else: buffer = line_str
+            
             if buffer.count(',') >= target_commas: 
-                healed_lines.append(buffer + '\n'); buffer = ""
+                healed_lines.append(buffer + '\n')
+                buffer = ""
+                
         if len(healed_lines) == len(lines): return filepath
+        
+        os.makedirs(TMP_DIR, exist_ok=True)
         tmp_path = os.path.join(TMP_DIR, "healed_" + os.path.basename(filepath))
-        with open(tmp_path, 'w', encoding='utf-8-sig') as tf: tf.writelines(healed_lines)
+        with open(tmp_path, 'w', encoding='utf-8-sig') as tf: 
+            tf.writelines(healed_lines)
+            
         return tmp_path
-    except: return filepath
+    except: 
+        return filepath
 
 def get_fuzzy_col(df, target_name, default_val=float('nan')):
     clean_target = re.sub(r'[^a-zA-Z0-9]', '', target_name).lower()
@@ -2938,7 +2953,7 @@ def execute_batch_convert():
         draw_top_bar()
         for r in range(2, term_h - 1): draw_frame_line("", row=r)
         draw_frame_line(f"{C_SIZE}VCA REFINERY: DATA SANITIZATION & MATH{RESET}", row=2, align="center")
-        # Repaint viewport behind modal
+        draw_status_bar() # SEAL THE UI FLOOR
         draw_viewport(progress_pct=33.0, active_file="AWAITING USER INPUT", current_file_idx=total_files, total_files=total_files, is_interactive=False, action_text="( WAITING FOR INPUT )")
 
     sys.stdout.write(f"{C_BG}\033[2J\033[H")
@@ -2946,9 +2961,39 @@ def execute_batch_convert():
     draw_top_bar()
     for r in range(2, term_h - 1): draw_frame_line("", row=r)
     draw_frame_line(f"{C_SIZE}VCA REFINERY: DATA SANITIZATION & MATH{RESET}", row=2, align="center")
+    draw_status_bar() # SEAL THE UI FLOOR
     
     viewport_logs.clear()
     scroll_offset = 0
+    
+    CUSTOM_SCHEMA = [
+        "MFG", "Class", "Name", "Description", "Filter", "Coating", "Material", "Style", 
+        "Coating Brand", "Right OPC", "Left OPC", "Index", "Diameter", "SPH/BASE", 
+        "CYL/ADD", "Front RAD", "Back RAD", "Center Thick", "Edge Thick", "Inset", 
+        "Drop", "PRP Out", "PRP Up", "Abbe", "Seg Width", "Seg Thick", "Intermediate Ht", 
+        "Slab Off", "Carriage Rad", "Bowl Dia", "Ver Dia", "Dia Dia", "Seg Sep", "Up Add", 
+        "Special", "Cat Code", "Filter Brand", "DRP In", "DRP Up", "NRP In", "NRP Up", 
+        "Horizontal Dia", "Nominal Dia", "Obj Clear", "Obj Rad", "Front TC", "Back TC", "SAG", "Safe Index"
+    ]
+    
+    VCA_TO_CUSTOM_MAP = {
+        "Frnt Rad": "Front RAD", "Bck Rad": "Back RAD", "Sph / Base": "SPH/BASE",
+        "Cyl / Add": "CYL/ADD", "C Thk": "Center Thick", "E Thk": "Edge Thick",
+        "Seg Wd": "Seg Width", "Seg Thk": "Seg Thick", "Int Ht": "Intermediate Ht",
+        "Bwl Diam": "Bowl Dia", "Ver Diam": "Ver Dia", "Hor Diam": "Horizontal Dia",
+        "Nom Diam": "Nominal Dia", "Product Name": "Name"
+    }
+    
+    STANDARD_VCA_HEADERS = [
+        "MFG", "Class", "Description", "Material", "Material Brand", "Product Name", 
+        "Style", "Filter", "Coating", "Coating Brand", "Right OPC", "Left OPC", 
+        "Diameter", "Sph / Base", "Cyl / Add", "Frnt Rad", "Bck Rad", "C Thk", 
+        "E Thk", "LRP In", "LRP Down", "d Index", "N Ref", "e Index", "Abbe", 
+        "Density", "PRP Out", "PRP Up", "Seg Wd", "Seg Thk", "Int Ht", "Slab", 
+        "Car Rad", "Bwl Diam", "Ver Diam", "Dia Diam", "Seg Sep", "Up Add", 
+        "Special", "Cat Code", "Filter Brand", "DRP In", "DRP Up", "NRP In", 
+        "NRP Up", "Hor Diam", "Nom Diam", "Obj Clear", "Obj Rad"
+    ]
     
     memory_bank = []     
     global_mfgs = set()  
@@ -2982,6 +3027,10 @@ def execute_batch_convert():
             df.columns = df.columns.str.replace(r'\s+', '', regex=True)
             
             df = df.apply(lambda col: col.str.strip() if col.dtype == "object" else col)
+            
+            # --- THE AUTO-HEALER: Cures double-decimal math crash bugs natively ---
+            df = df.replace(r'\.\.', '.', regex=True)
+            
             df = df.replace('', np.nan)
             df = df.dropna(how='all')
             
@@ -3165,6 +3214,7 @@ def execute_add_database():
     draw_top_bar()
     for r in range(2, term_h - 1): draw_frame_line("", row=r)
     draw_frame_line(f"{C_SIZE}VAULT GATEKEEPER: ATOMIC BATCH VERIFICATION{RESET}", row=2, align="center")
+    draw_status_bar() # SEAL THE UI FLOOR
     
     CUSTOM_SCHEMA = [
         "MFG", "Class", "Name", "Description", "Filter", "Coating", "Material", "Style", 
@@ -3241,8 +3291,7 @@ def execute_add_database():
                 if bad_math_mask.sum() > 0:
                     # Find the exact row that killed the process
                     first_bad_idx = df[bad_math_mask].index[0]
-                    bad_lens_name = df.loc[first_bad_idx, 'Name']
-                    
+                    bad_lens_name = df.loc[first_bad_idx, 'Name'] if 'Name' in df.columns else "Unknown"
                     failed_file = tgt
                     fail_reason = f"Math Error on Row {first_bad_idx + 2} ({bad_lens_name}). Missing Radius or Index."
                     break
