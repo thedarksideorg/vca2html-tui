@@ -227,35 +227,6 @@ def reload_icons():
 
 reload_icons()
 
-CUSTOM_SCHEMA = [
-        "MFG", "Class", "Name", "Description", "Filter", "Coating", "Material", "Style", 
-        "Coating Brand", "Right OPC", "Left OPC", "Index", "Diameter", "SPH/BASE", 
-        "CYL/ADD", "Front RAD", "Back RAD", "Center Thick", "Edge Thick", "Inset", 
-        "Drop", "PRP Out", "PRP Up", "Abbe", "Seg Width", "Seg Thick", "Intermediate Ht", 
-        "Slab Off", "Carriage Rad", "Bowl Dia", "Ver Dia", "Dia Dia", "Seg Sep", "Up Add", 
-        "Special", "Cat Code", "Filter Brand", "DRP In", "DRP Up", "NRP In", "NRP Up", 
-        "Horizontal Dia", "Nominal Dia", "Obj Clear", "Obj Rad", "Front TC", "Back TC", "SAG", "Safe Index"
-]
-    
-VCA_TO_CUSTOM_MAP = {
-        "Frnt Rad": "Front RAD", "Bck Rad": "Back RAD", "Sph / Base": "SPH/BASE",
-        "Cyl / Add": "CYL/ADD", "C Thk": "Center Thick", "E Thk": "Edge Thick",
-        "Seg Wd": "Seg Width", "Seg Thk": "Seg Thick", "Int Ht": "Intermediate Ht",
-        "Bwl Diam": "Bowl Dia", "Ver Diam": "Ver Dia", "Hor Diam": "Horizontal Dia",
-        "Nom Diam": "Nominal Dia", "Product Name": "Name"
-}
-    
-STANDARD_VCA_HEADERS = [
-        "MFG", "Class", "Description", "Material", "Material Brand", "Product Name", 
-        "Style", "Filter", "Coating", "Coating Brand", "Right OPC", "Left OPC", 
-        "Diameter", "Sph / Base", "Cyl / Add", "Frnt Rad", "Bck Rad", "C Thk", 
-        "E Thk", "LRP In", "LRP Down", "d Index", "N Ref", "e Index", "Abbe", 
-        "Density", "PRP Out", "PRP Up", "Seg Wd", "Seg Thk", "Int Ht", "Slab", 
-        "Car Rad", "Bwl Diam", "Ver Diam", "Dia Diam", "Seg Sep", "Up Add", 
-        "Special", "Cat Code", "Filter Brand", "DRP In", "DRP Up", "NRP In", 
-        "NRP Up", "Hor Diam", "Nom Diam", "Obj Clear", "Obj Rad"
-]
-
 # --- INITIALIZATION & CONFIGURATION ---
 
 def preflight_dependency_check():
@@ -2559,7 +2530,7 @@ def resolve_material(mat_code, idx, desc, brand, explicit_mr_map=None, global_co
     desc_upper = str(desc).upper()
     brand_upper = str(brand).upper()
     
-    if mat in ['TR', 'PNX'] or 'TRIVEX' in mat or 'TRIVEX' in desc_upper: return 'Trivex'
+    if mat in ['TR', 'TRX', 'PNX'] or 'TRIVEX' in mat or 'TRIVEX' in desc_upper: return 'Trivex'
     if mat == 'PL': return 'Plastic (CR-39)'
     if mat == 'PY': return 'Polycarbonate'
     if mat == 'PM' or (pd.notna(idx) and 1.54 <= float(idx) <= 1.56): return 'Mid-Index (1.56)'
@@ -2571,7 +2542,7 @@ def resolve_material(mat_code, idx, desc, brand, explicit_mr_map=None, global_co
             return 'High-Index 1.60 (MR-8)'
         return 'High-Index 1.60'
         
-    if mat == 'PU':
+    if 'PU' in mat:
         if pd.notna(idx):
             idx_val = float(idx)
             if idx_val >= 1.73: return 'High-Index 1.74'
@@ -2933,6 +2904,37 @@ def run_file_manager(op, start_dir=BASE_DIR, ext_filter=None):
 
 # --- CORE ETL OPERATIONS ---
 
+CUSTOM_SCHEMA = [
+        "MFG", "Class", "Name", "Description", "Filter", "Coating", "Material", "Style", 
+        "Coating Brand", "Right OPC", "Left OPC", "Index", "Diameter", "SPH/BASE", 
+        "CYL/ADD", "Front RAD", "Back RAD", "Center Thick", "Edge Thick", "Inset", 
+        "Drop", "PRP Out", "PRP Up", "Abbe", "Seg Width", "Seg Thick", "Intermediate Ht", 
+        "Slab Off", "Carriage Rad", "Bowl Dia", "Ver Dia", "Dia Dia", "Seg Sep", "Up Add", 
+        "Special", "Cat Code", "Filter Brand", "DRP In", "DRP Up", "NRP In", "NRP Up", 
+        "Horizontal Dia", "Nominal Dia", "Obj Clear", "Obj Rad", "Front TC", "Back TC", "SAG", "Safe Index"
+]
+    
+STANDARD_VCA_HEADERS = [
+        "MFG", "Class", "Description", "Material", "Material Brand", "Product Name", 
+        "Style", "Filter", "Coating", "Coating Brand", "Right OPC", "Left OPC", 
+        "Diameter", "Sph / Base", "Cyl / Add", "Frnt Rad", "Bck Rad", "C Thk", 
+        "E Thk", "LRP In", "LRP Down", "d Index", "N Ref", "e Index", "Abbe", 
+        "Density", "PRP Out", "PRP Up", "Seg Wd", "Seg Thk", "Int Ht", "Slab", 
+        "Car Rad", "Bwl Diam", "Ver Diam", "Dia Diam", "Seg Sep", "Up Add", 
+        "Special", "Cat Code", "Filter Brand", "DRP In", "DRP Up", "NRP In", 
+        "NRP Up", "Hor Diam", "Nom Diam", "Obj Clear", "Obj Rad"
+]
+
+VCA_ALIAS_MAP = {
+        "FRNT RAD": "FRONT RAD", "BCK RAD": "BACK RAD", 
+        "C THK": "CENTER THICK", "E THK": "EDGE THICK",
+        "SEG WD": "SEG WIDTH", "SEG THK": "SEG THICK", 
+        "INT HT": "INTERMEDIATE HT", "BWL DIAM": "BOWL DIA", 
+        "VER DIAM": "VER DIA", "HOR DIAM": "HORIZONTAL DIA",
+        "NOM DIAM": "NOMINAL DIA", "DIA DIAM": "DIA DIA",
+        "PRODUCT NAME": "NAME", "LRP IN": "INSET", "LRP DOWN": "DROP"
+}
+
 def execute_batch_convert():
     global global_mode, scroll_offset
     
@@ -2953,7 +2955,7 @@ def execute_batch_convert():
         draw_top_bar()
         for r in range(2, term_h - 1): draw_frame_line("", row=r)
         draw_frame_line(f"{C_SIZE}VCA REFINERY: DATA SANITIZATION & MATH{RESET}", row=2, align="center")
-        draw_status_bar() # SEAL THE UI FLOOR
+        draw_status_bar()
         draw_viewport(progress_pct=33.0, active_file="AWAITING USER INPUT", current_file_idx=total_files, total_files=total_files, is_interactive=False, action_text="( WAITING FOR INPUT )")
 
     sys.stdout.write(f"{C_BG}\033[2J\033[H")
@@ -2961,45 +2963,17 @@ def execute_batch_convert():
     draw_top_bar()
     for r in range(2, term_h - 1): draw_frame_line("", row=r)
     draw_frame_line(f"{C_SIZE}VCA REFINERY: DATA SANITIZATION & MATH{RESET}", row=2, align="center")
-    draw_status_bar() # SEAL THE UI FLOOR
+    draw_status_bar()
     
     viewport_logs.clear()
     scroll_offset = 0
-    
-    CUSTOM_SCHEMA = [
-        "MFG", "Class", "Name", "Description", "Filter", "Coating", "Material", "Style", 
-        "Coating Brand", "Right OPC", "Left OPC", "Index", "Diameter", "SPH/BASE", 
-        "CYL/ADD", "Front RAD", "Back RAD", "Center Thick", "Edge Thick", "Inset", 
-        "Drop", "PRP Out", "PRP Up", "Abbe", "Seg Width", "Seg Thick", "Intermediate Ht", 
-        "Slab Off", "Carriage Rad", "Bowl Dia", "Ver Dia", "Dia Dia", "Seg Sep", "Up Add", 
-        "Special", "Cat Code", "Filter Brand", "DRP In", "DRP Up", "NRP In", "NRP Up", 
-        "Horizontal Dia", "Nominal Dia", "Obj Clear", "Obj Rad", "Front TC", "Back TC", "SAG", "Safe Index"
-    ]
-    
-    VCA_TO_CUSTOM_MAP = {
-        "Frnt Rad": "Front RAD", "Bck Rad": "Back RAD", "Sph / Base": "SPH/BASE",
-        "Cyl / Add": "CYL/ADD", "C Thk": "Center Thick", "E Thk": "Edge Thick",
-        "Seg Wd": "Seg Width", "Seg Thk": "Seg Thick", "Int Ht": "Intermediate Ht",
-        "Bwl Diam": "Bowl Dia", "Ver Diam": "Ver Dia", "Hor Diam": "Horizontal Dia",
-        "Nom Diam": "Nominal Dia", "Product Name": "Name"
-    }
-    
-    STANDARD_VCA_HEADERS = [
-        "MFG", "Class", "Description", "Material", "Material Brand", "Product Name", 
-        "Style", "Filter", "Coating", "Coating Brand", "Right OPC", "Left OPC", 
-        "Diameter", "Sph / Base", "Cyl / Add", "Frnt Rad", "Bck Rad", "C Thk", 
-        "E Thk", "LRP In", "LRP Down", "d Index", "N Ref", "e Index", "Abbe", 
-        "Density", "PRP Out", "PRP Up", "Seg Wd", "Seg Thk", "Int Ht", "Slab", 
-        "Car Rad", "Bwl Diam", "Ver Diam", "Dia Diam", "Seg Sep", "Up Add", 
-        "Special", "Cat Code", "Filter Brand", "DRP In", "DRP Up", "NRP In", 
-        "NRP Up", "Hor Diam", "Nom Diam", "Obj Clear", "Obj Rad"
-    ]
     
     memory_bank = []     
     global_mfgs = set()  
     mfg_translation_map = {}
     
     draw_viewport(progress_pct=0.0, active_file="Phase 1: Sweep...", current_file_idx=0, total_files=total_files, is_interactive=False, action_text="( BUFFERING )")
+    sys.stdout.flush() 
     
     # =========================================================================
     # PHASE 1: SILENT INGESTION & SWEEP
@@ -3007,6 +2981,10 @@ def execute_batch_convert():
     for idx, tgt in enumerate(tgt_list):
         fname = os.path.basename(tgt)
         vp_log("BUFFERING", f"Ingesting '{fname}' into memory bank...", "info")
+        
+        pct = ((idx + 1) / total_files) * 33.0
+        draw_viewport(progress_pct=pct, active_file=f"Reading {fname}...", current_file_idx=idx+1, total_files=total_files, action_text="( BUFFERING )")
+        sys.stdout.flush() 
         
         try:
             has_header = True
@@ -3022,52 +3000,69 @@ def execute_batch_convert():
                 if tgt.lower().endswith(('.xlsx', '.xls')): df = pd.read_excel(tgt, dtype=str)
                 else: df = pd.read_csv(tgt, dtype=str)
             
-            df.columns = df.columns.str.strip()
-            df.rename(columns=VCA_TO_CUSTOM_MAP, inplace=True) 
-            df.columns = df.columns.str.replace(r'\s+', '', regex=True)
+            # --- THE ADVANCED HEADER HEALER ---
+            df.columns = df.columns.str.strip().str.upper()
+            df.columns = [c.replace(' ', '') if '/' in c else c for c in df.columns]
+            
+            index_candidates = ['D INDEX', 'E INDEX', 'N REF', 'INDEX', 'SAFE INDEX']
+            found_idx_cols = [c for c in index_candidates if c in df.columns]
+            
+            if found_idx_cols:
+                extracted_index = df[found_idx_cols].bfill(axis=1).iloc[:, 0]
+                df.drop(columns=found_idx_cols, inplace=True, errors='ignore')
+                df['SAFE INDEX'] = extracted_index
+                df['INDEX'] = extracted_index
+            else:
+                df['SAFE INDEX'] = np.nan
+                df['INDEX'] = np.nan
+                
+            df.rename(columns=VCA_ALIAS_MAP, inplace=True)
+            
+            upper_to_schema = {c.upper(): c for c in CUSTOM_SCHEMA}
+            df.rename(columns=upper_to_schema, inplace=True)
+            df = df.loc[:, ~df.columns.duplicated()]
             
             df = df.apply(lambda col: col.str.strip() if col.dtype == "object" else col)
-            
-            # --- THE AUTO-HEALER: Cures double-decimal math crash bugs natively ---
             df = df.replace(r'\.\.', '.', regex=True)
-            
             df = df.replace('', np.nan)
             df = df.dropna(how='all')
             
-            if 'dIndex' in df.columns and 'eIndex' in df.columns:
-                df['SafeIndex'] = df['dIndex'].combine_first(df['eIndex'])
-            elif 'dIndex' in df.columns: df['SafeIndex'] = df['dIndex']
-            elif 'eIndex' in df.columns: df['SafeIndex'] = df['eIndex']
-            elif 'Index' in df.columns: df['SafeIndex'] = df['Index']
-            else: df['SafeIndex'] = np.nan
+            if 'Safe Index' in df.columns and 'Index' in df.columns:
+                df['Safe Index'] = df['Safe Index'].combine_first(df['Index'])
+                df['Index'] = df['Safe Index']
+            elif 'Index' in df.columns: df['Safe Index'] = df['Index']
+            elif 'Safe Index' in df.columns: df['Index'] = df['Safe Index']
+            else: df['Safe Index'] = np.nan; df['Index'] = np.nan
             
             if 'MFG' in df.columns:
                 mfgs_in_file = df['MFG'].dropna().unique()
                 for m in mfgs_in_file: global_mfgs.add(str(m).strip())
                 
-            mat_col = 'Material' if 'Material' in df.columns else 'Description'
-            safe_desc = df.get(mat_col, pd.Series(dtype=str)).fillna('')
-            mr7_count = int(safe_desc.str.contains('MR-7|MR7', case=False, na=False).sum())
-            mr10_count = int(safe_desc.str.contains('MR-10|MR10', case=False, na=False).sum())
-            ambiguous_mask = safe_desc.str.contains('PU|1.67', case=False, na=False) & \
-                             ~safe_desc.str.contains('MR-7|MR7|MR-10|MR10', case=False, na=False)
+            # Scan both Material and Description for strict MR-7/10 accuracy
+            safe_mat = df.get('Material', pd.Series(dtype=str)).fillna('')
+            safe_desc = df.get('Description', pd.Series(dtype=str)).fillna('')
+            combined_text = safe_mat + " " + safe_desc
+            
+            mr7_count = int(combined_text.str.contains('MR-7|MR7', case=False, na=False).sum())
+            mr10_count = int(combined_text.str.contains('MR-10|MR10', case=False, na=False).sum())
+            ambiguous_mask = combined_text.str.contains('PU|1.67', case=False, na=False) & \
+                             ~combined_text.str.contains('MR-7|MR7|MR-10|MR10', case=False, na=False)
             
             memory_bank.append({
                 'tgt': tgt, 'fname': fname, 'df': df, 
-                'mr7': mr7_count, 'mr10': mr10_count, 'amb_mask': ambiguous_mask, 'mat_col': mat_col
+                'mr7': mr7_count, 'mr10': mr10_count, 'amb_mask': ambiguous_mask
             })
             
         except Exception as e:
             vp_log("FATAL I/O", f"Failed to ingest {fname}: {str(e)}", "err")
             
-        pct = ((idx + 1) / total_files) * 33.0
-        draw_viewport(progress_pct=pct, active_file=fname, current_file_idx=idx+1, total_files=total_files, action_text="( BUFFERING )")
         time.sleep(0.02)
 
     # =========================================================================
     # PHASE 2: THE HUMAN GATEKEEPER (Z-Modal)
     # =========================================================================
     draw_viewport(progress_pct=33.0, active_file="AWAITING USER INPUT", current_file_idx=total_files, total_files=total_files, is_interactive=False, action_text="( WAITING FOR INPUT )")
+    sys.stdout.flush()
     
     for abbr in global_mfgs:
         if not abbr: continue
@@ -3087,6 +3082,7 @@ def execute_batch_convert():
                     mem['deduced_167'] = "MR-7" if ans and "7" in ans else "MR-10"
     
     draw_viewport(progress_pct=50.0, active_file="Human Validation Complete", current_file_idx=total_files, total_files=total_files, is_interactive=False, action_text="( COMPILING MATH )")
+    sys.stdout.flush()
 
     # =========================================================================
     # PHASE 3 & 4: MATH & THEATRICAL TELEMETRY
@@ -3109,25 +3105,33 @@ def execute_batch_convert():
         if 'MFG' in df.columns:
             df['MFG'] = df['MFG'].str.strip().map(mfg_translation_map).fillna(df['MFG'])
             
-        if mem['amb_mask'].sum() > 0:
-            df.loc[mem['amb_mask'], mem['mat_col']] = df.loc[mem['amb_mask'], mem['mat_col']] + f" ({mem['deduced_167']})"
+        # --- MATERIAL RESOLVER ENGINE ---
+        df['Material'] = df.apply(
+            lambda row: resolve_material(
+                mat_code=row.get('Material'), 
+                idx=row.get('Safe Index'), 
+                desc=row.get('Description', ''), 
+                brand=row.get('MFG', ''),
+                global_context={'fallback': mem.get('deduced_167')}
+            ), axis=1
+        )
             
         if 'Class' not in df.columns: df['Class'] = 'SF'
         sf_mask = ~df['Class'].fillna('SF').str.upper().str.contains('FIN')
         
-        idx_val = pd.to_numeric(df.get('SafeIndex', pd.Series(dtype=float)), errors='coerce')
-        f_rad = pd.to_numeric(df.get('FrontRAD', pd.Series(dtype=float)), errors='coerce')
-        b_rad = pd.to_numeric(df.get('BackRAD', pd.Series(dtype=float)), errors='coerce')
+        idx_val = pd.to_numeric(df.get('Safe Index', pd.Series(dtype=float)), errors='coerce')
+        f_rad = pd.to_numeric(df.get('Front RAD', pd.Series(dtype=float)), errors='coerce')
+        b_rad = pd.to_numeric(df.get('Back RAD', pd.Series(dtype=float)), errors='coerce')
         
-        df.loc[sf_mask, 'FrontTC'] = (((idx_val[sf_mask] - 1.0) * 1000.0) / f_rad[sf_mask]).round(2)
-        df.loc[sf_mask, 'BackTC'] = (-((idx_val[sf_mask] - 1.0) * 1000.0) / b_rad[sf_mask]).round(2)
+        df.loc[sf_mask, 'Front TC'] = (((idx_val[sf_mask] - 1.0) * 1000.0) / f_rad[sf_mask]).round(2)
+        df.loc[sf_mask, 'Back TC'] = (-((idx_val[sf_mask] - 1.0) * 1000.0) / b_rad[sf_mask]).round(2)
         y = 25.0 
         df.loc[sf_mask, 'SAG'] = np.where(f_rad[sf_mask] > y, f_rad[sf_mask] - np.sqrt(f_rad[sf_mask]**2 - y**2), np.nan)
         df['SAG'] = df.get('SAG', pd.Series(dtype=float)).round(3)
 
         sf_count = sf_mask.sum()
         fin_count = (~sf_mask).sum()
-        unique_cols = [c for c in ['Name', 'Material', 'SafeIndex'] if c in df.columns]
+        unique_cols = [c for c in ['Name', 'Material', 'Safe Index'] if c in df.columns]
         unique_count = df.drop_duplicates(subset=unique_cols).shape[0] if unique_cols else 0
         
         if sf_count > 0:
@@ -3139,8 +3143,6 @@ def execute_batch_convert():
         vp_log("SUMMARY", f"Consolidated into {unique_count:,} unique optical products", "warn")
         time.sleep(0.1)
 
-        spaceless_to_custom = {c.replace(" ", ""): c for c in CUSTOM_SCHEMA}
-        df.rename(columns=spaceless_to_custom, inplace=True)
         df = df.reindex(columns=CUSTOM_SCHEMA)
 
         vlp_filename = f"{base_name}.vlp"
@@ -3214,17 +3216,7 @@ def execute_add_database():
     draw_top_bar()
     for r in range(2, term_h - 1): draw_frame_line("", row=r)
     draw_frame_line(f"{C_SIZE}VAULT GATEKEEPER: ATOMIC BATCH VERIFICATION{RESET}", row=2, align="center")
-    draw_status_bar() # SEAL THE UI FLOOR
-    
-    CUSTOM_SCHEMA = [
-        "MFG", "Class", "Name", "Description", "Filter", "Coating", "Material", "Style", 
-        "Coating Brand", "Right OPC", "Left OPC", "Index", "Diameter", "SPH/BASE", 
-        "CYL/ADD", "Front RAD", "Back RAD", "Center Thick", "Edge Thick", "Inset", 
-        "Drop", "PRP Out", "PRP Up", "Abbe", "Seg Width", "Seg Thick", "Intermediate Ht", 
-        "Slab Off", "Carriage Rad", "Bowl Dia", "Ver Dia", "Dia Dia", "Seg Sep", "Up Add", 
-        "Special", "Cat Code", "Filter Brand", "DRP In", "DRP Up", "NRP In", "NRP Up", 
-        "Horizontal Dia", "Nominal Dia", "Obj Clear", "Obj Rad", "Front TC", "Back TC", "SAG", "Safe Index"
-    ]
+    draw_status_bar()
     
     os.makedirs(VLP_ARCHIVE, exist_ok=True)
     os.makedirs(ORIGINALS_DIR, exist_ok=True)
@@ -3249,6 +3241,7 @@ def execute_add_database():
     
     vp_log("SYSTEM", "Cross-referencing batch against Vault records...", "info")
     draw_viewport(progress_pct=0.0, active_file="Verifying...", current_file_idx=0, total_files=total_files, is_interactive=False, action_text="( SECURING VAULT )")
+    sys.stdout.flush()
     
     # =========================================================================
     # VERIFICATION LOOP
@@ -3280,16 +3273,12 @@ def execute_add_database():
             vp_log("AUDIT", "Row integrity verified (0 critical nulls).", "ok")
             time.sleep(0.05)
             
-            # --- STRICT AUDIT 3: Math Verification (Upgraded Sniper) ---
             sf_mask = ~df['Class'].fillna('SF').str.upper().str.contains('FIN')
             if sf_mask.sum() > 0:
                 math_cols = ['Front TC', 'Back TC', 'SAG']
-                
-                # Check for ANY missing math on Semi-Finished blanks
                 bad_math_mask = sf_mask & df[math_cols].isnull().any(axis=1)
                 
                 if bad_math_mask.sum() > 0:
-                    # Find the exact row that killed the process
                     first_bad_idx = df[bad_math_mask].index[0]
                     bad_lens_name = df.loc[first_bad_idx, 'Name'] if 'Name' in df.columns else "Unknown"
                     failed_file = tgt
@@ -3363,8 +3352,16 @@ def execute_add_database():
             try:
                 dest = os.path.join(VLP_ARCHIVE, os.path.basename(tgt))
                 cleaned_dfs[tgt].to_csv(dest, index=False)
-                try: os.remove(tgt)
+                
+                # --- VERBOSE TELEMETRY & STAGING PURGE ---
+                try: 
+                    vp_log("SECURITY", f"Unlocking '{os.path.basename(tgt)}' (0777) for migration...", "warn")
+                    time.sleep(0.05)
+                    os.chmod(tgt, stat.S_IWRITE | stat.S_IREAD)
+                    os.remove(tgt)
+                    vp_log("CLEANUP", f"Purged staging copy from /data/import/.", "ok")
                 except: pass
+                
                 os.chmod(dest, stat.S_IREAD | stat.S_IRGRP | stat.S_IROTH)
                 vp_log("SECURITY", f"Checksum valid. '{os.path.basename(tgt)}' locked to 0444", "ok")
                 time.sleep(0.1)
@@ -3479,30 +3476,48 @@ def execute_generate_database():
     global global_mode, scroll_offset
     global_mode = "MASTER COMPILER (Generate)"
     render_ui_skeleton("Master Compiler Initializing...")
+    
     while True:
         sys.stdout.write(f"{C_BG}\033[2J\033[H")
         term_w, term_h = get_term_size()
         draw_top_bar()
         for r in range(2, term_h - 1): draw_frame_line("", row=r)
         draw_frame_line(f"{C_SIZE}THE MASTER COMPILER: CRUCIBLE AUDIT & REBUILD{RESET}", row=2, align="center")
+        draw_status_bar()
      
         try: files = [f for f in os.listdir(VLP_ARCHIVE) if f.lower().endswith('.vlp')]
         except: files = []
 
         if not files:
-            draw_frame_line(f"{C_ALERT}{get_pfx('err')}Cannot Compile: The Vault (/data/db/.vlp/) is empty.{RESET}", row=5, indent=2)
-            draw_universal_footer()
+            viewport_logs.clear()
+            log_task(format_log("FATAL", "Cannot Compile: The Vault (/data/db/.vlp/) is empty.", C_ALERT), "RAW")
+            draw_viewport(progress_pct=100.0, active_file="HALTED", current_file_idx=0, total_files=0, is_interactive=True, action_text="( PRESS ENTER TO RETURN )")
+            
+            while True:
+                c = getch()
+                if isinstance(c, bytes):
+                    try: c = c.decode('utf-8')
+                    except: continue
+                if c in ('\r', '\n', '\x1b'): break
             global_mode = "MAIN MENU"; return
 
-        # 1. Cinematic Start: Draw empty viewport behind the modal
         viewport_logs.clear()
         scroll_offset = 0
         log_task(format_log("SYSTEM", "Awaiting execution authorization...", C_TITLE), "RAW")
-        draw_viewport(progress_pct=0.0, active_file="Pending Auth...", current_file_idx=0, total_files=len(files), total_types=0, total_lenses=0, is_interactive=False)
+        draw_viewport(progress_pct=0.0, active_file="Pending Auth...", current_file_idx=0, total_files=len(files), total_types=0, total_lenses=0, is_interactive=False, action_text="( WAITING FOR INPUT )")
+        sys.stdout.flush()
 
-        # 2. Float the Modal
-        ans = draw_modal("CRITICAL SYSTEM WARNING", "Type COMPILE to annihilate DB & rebuild:", is_password=False)
-        if ans != "COMPILE": global_mode = "MAIN MENU"; return
+        ans = draw_z_index_modal("CRITICAL SYSTEM WARNING", "Type COMPILE to annihilate DB & rebuild:")
+        
+        sys.stdout.write(f"{C_BG}\033[2J\033[H")
+        draw_top_bar()
+        for r in range(2, term_h - 1): draw_frame_line("", row=r)
+        draw_frame_line(f"{C_SIZE}THE MASTER COMPILER: CRUCIBLE AUDIT & REBUILD{RESET}", row=2, align="center")
+        draw_status_bar()
+        
+        if ans != "COMPILE": 
+            global_mode = "MAIN MENU"
+            return
         
         if os.path.exists(DB_FILE):
             try: os.chmod(DB_FILE, stat.S_IWRITE | stat.S_IREAD)
@@ -3524,33 +3539,35 @@ def execute_generate_database():
             try:
                 df = robust_read_csv(fpath)
                 
-                # --- UNIVERSAL BUCKET PROFILER ---
                 for (name, mat, index), group in df.groupby(['Name', 'Material', 'Index']):
                     extras = str(group['Coating'].iloc[0]) if 'Coating' in group.columns else ""
                     c_type = str(group['Class'].iloc[0])
                     
-                    # Generate Bucket ID
                     b_id_str = f"{name}{mat}{index}{c_type}"
                     b_id = hashlib.md5(b_id_str.encode()).hexdigest()[:12]
                     
                     log_task(format_log("MERGE_NODE", f"{name} ({mat}, {index}) {extras}", C_STAGED), "RAW")
                     log_task(format_log("NODE_ID", f"{b_id} -> Minted {len(group)} SKUs", C_PROMPT), "RAW")
                     
-                    # Call the telemetry math
                     telemetry = get_bucket_telemetry(group, c_type)
                     for t in telemetry: log_task(t, "RAW")
                         
                     total_types += 1
                     
                     pct = ((idx + 1) / total_files) * 100.0
-                    draw_viewport(progress_pct=pct, active_file=fname, current_file_idx=idx+1, total_files=total_files, total_types=total_types, total_lenses=total_skus)
+                    draw_viewport(progress_pct=pct, active_file=fname, current_file_idx=idx+1, total_files=total_files, total_types=total_types, total_lenses=total_skus, action_text="( COMPILING )")
                     time.sleep(0.04)
 
                 for _, row_data in df.iterrows():
-                    h_id = generate_hash_id(row_data.to_dict())
+                    row_dict = row_data.to_dict()
+                    
+                    # --- NaN TO BLANK SCRUBBER ---
+                    clean_dict = {k: ("" if pd.isna(v) else v) for k, v in row_dict.items()}
+                    
+                    h_id = generate_hash_id(clean_dict)
                     if h_id in vault_hashes or h_id in local_lenses: 
                         file_valid = False; break
-                    local_lenses[h_id] = row_data.to_dict()
+                    local_lenses[h_id] = clean_dict
                     total_skus += 1
                     
             except Exception as e: 
@@ -3569,25 +3586,35 @@ def execute_generate_database():
                     log_task(format_log("SECURITY", f"{fname} BANISHED -> Hash Collision", C_ALERT), "RAW")
                 except: pass
                 
-        log_task(format_log("SYSTEM", "Writing JSON Payload..."), "RAW")
+        log_task(format_log("SYSTEM", "Writing JSON Payload...", C_TITLE), "RAW")
         
         try:
-            with open(DB_FILE, 'w', encoding='utf-8') as f: 
-                json.dump(master_db, f, indent=4, sort_keys=True, ensure_ascii=False)
+            # --- HIERARCHICAL JSON SORTING ---
+            master_db['lenses'] = dict(sorted(
+                master_db['lenses'].items(),
+                key=lambda item: (
+                    str(item[1].get('MFG', '')),
+                    str(item[1].get('Style', '')),
+                    str(item[1].get('Material', '')),
+                    str(item[1].get('Name', ''))
+                )
+            ))
             
-            # File Size Telemetry
+            with open(DB_FILE, 'w', encoding='utf-8') as f: 
+                # sort_keys=False enforces the optical hierarchy sort above
+                json.dump(master_db, f, indent=4, sort_keys=False, ensure_ascii=False)
+            
             f_size = os.path.getsize(DB_FILE)
             log_task(format_log("PAYLOAD_SIZE", f"{f_size / (1024*1024):.2f} MB ({f_size:,} bytes)", C_PROMPT), "RAW")
             
             os.chmod(DB_FILE, stat.S_IREAD | stat.S_IRGRP | stat.S_IROTH)
             sign_master_database()
             
-            # Signature Telemetry
             with open(SIG_FILE, 'r') as sf: sig = sf.read().strip()
             log_task(format_log("DB_PUB_ID", f"{sig}", C_WARN), "RAW")
             log_task(format_log("SEAL_LOG", f"Signature appended to master_lens_db.sig", C_STAGED), "RAW")
             
-            draw_viewport(progress_pct=100.0, active_file="master_lens_db.json", current_file_idx=total_files, total_files=total_files, total_types=total_types, total_lenses=total_skus, is_interactive=True)
+            draw_viewport(progress_pct=100.0, active_file="master_lens_db.json", current_file_idx=total_files, total_files=total_files, total_types=total_types, total_lenses=total_skus, is_interactive=True, action_text="( PRESS ENTER TO RETURN )")
             
             while True:
                 c = getch()
@@ -3595,17 +3622,27 @@ def execute_generate_database():
                     try: c = c.decode('utf-8')
                     except: continue
                 if c in ('\r', '\n', '\x1b'): break 
-                elif c == '\x1b[A' or c == 'UP': scroll_offset = min(len(viewport_logs) - ((term_h - 6) - 4), scroll_offset + 1)
-                elif c == '\x1b[B' or c == 'DOWN': scroll_offset = max(0, scroll_offset - 1)
-                elif c == '\x1b[5~' or c == 'PGUP': scroll_offset = min(len(viewport_logs) - ((term_h - 6) - 4), scroll_offset + 10)
-                elif c == '\x1b[6~' or c == 'PGDN': scroll_offset = max(0, scroll_offset - 10)
                 
-                draw_viewport(progress_pct=100.0, active_file="master_lens_db.json", current_file_idx=total_files, total_files=total_files, total_types=total_types, total_lenses=total_skus, is_interactive=True)
+                vp_height = term_h - 12
+                max_scroll = max(0, len(viewport_logs) - vp_height)
+                
+                if c == '\x1b[A' or c == 'UP': scroll_offset = max(0, scroll_offset - 1)
+                elif c == '\x1b[B' or c == 'DOWN': scroll_offset = min(max_scroll, scroll_offset + 1)
+                elif c == '\x1b[5~' or c == 'PGUP': scroll_offset = max(0, scroll_offset - 10)
+                elif c == '\x1b[6~' or c == 'PGDN': scroll_offset = min(max_scroll, scroll_offset + 10)
+                
+                draw_viewport(progress_pct=100.0, active_file="master_lens_db.json", current_file_idx=total_files, total_files=total_files, total_types=total_types, total_lenses=total_skus, is_interactive=True, action_text="( PRESS ENTER TO RETURN )")
      
         except Exception as e: 
             log_task(format_log("FATAL", f"{e}", C_ALERT), "RAW")
-            draw_viewport(progress_pct=100.0, active_file="ERROR", current_file_idx=total_files, total_files=total_files, is_interactive=True)
-            getch()
+            draw_viewport(progress_pct=100.0, active_file="ERROR", current_file_idx=total_files, total_files=total_files, is_interactive=True, action_text="( PRESS ENTER TO RETURN )")
+            
+            while True:
+                c = getch()
+                if isinstance(c, bytes):
+                    try: c = c.decode('utf-8')
+                    except: continue
+                if c in ('\r', '\n', '\x1b'): break
         
         break
     global_mode = "MAIN MENU"
