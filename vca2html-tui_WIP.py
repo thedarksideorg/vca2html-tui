@@ -2512,52 +2512,117 @@ def execute_html_generation():
 
 # --- MATH & PARSER UTILITIES ---
 
-def map_style_code(style_val, desc_val):
-    v = str(style_val).upper(); d = str(desc_val).upper()
-    if 'PROG' in v or 'PR ' in v or v == 'PR': return 6
-    if 'FTT' in v or 'TRI' in v or 'TF' in v: return 15
-    if 'FT' in v or 'BIF' in v or 'BI FT' in v: return 2
-    if 'EXEC' in v: return 9
-    if 'SV' in v or 'SINGLE' in v or v == '': 
-        if 'AS' in d or 'ASP' in d or 'ASPHERIC' in d or 'AS' in v or 'ASP' in v: return 14
-        return 1
-    return 0
+def map_style_code(row):
+    """Maps raw VCA data to base legacy style codes (1-18), ignoring false diameter triggers."""
+    raw_style = str(row.get('Style', '')).upper()
+    raw_desc = str(row.get('Description', '')).upper()
+    raw_name = str(row.get('Name', '')).upper()
+    c = f" {raw_style} {raw_desc} {raw_name} "
+    
+    # 1. Neutralize massive diameter tags so they don't trigger seg matches
+    diam = str(row.get('Diameter', '')).strip()
+    if diam:
+        try:
+            d_val = int(float(diam))
+            c = re.sub(rf'\bD-?{d_val}\b', '', c)
+        except: pass
 
-def resolve_material(mat_code, idx, desc, brand, explicit_mr_map=None, global_context=None):
-    mat = str(mat_code).upper().strip()
-    desc_upper = str(desc).upper()
-    brand_upper = str(brand).upper()
-    
-    if mat in ['TR', 'TRX', 'PNX'] or 'TRIVEX' in mat or 'TRIVEX' in desc_upper: return 'Trivex'
-    if mat == 'PL': return 'Plastic (CR-39)'
-    if mat == 'PY': return 'Polycarbonate'
-    if mat == 'PM' or (pd.notna(idx) and 1.54 <= float(idx) <= 1.56): return 'Mid-Index (1.56)'
-    
-    if mat == 'PH':
-        if pd.notna(idx) and 1.590 <= float(idx) <= 1.610:
-            if any(x in desc_upper for x in ['ULTRAFLEX', 'ULTRA FLEX', 'ULTRA-FLEX']) or any(x in brand_upper for x in ['ULTRAFLEX', 'ULTRA FLEX', 'ULTRA-FLEX']): 
-                return 'High-Index 1.60 (MR-8+)'
-            return 'High-Index 1.60 (MR-8)'
-        return 'High-Index 1.60'
+    # 2. Strict Seg Width Validation (22 to 45 bounds only)
+    seg_width = str(row.get('Seg Width', '')).strip()
+    has_valid_seg = False
+    if seg_width:
+        try:
+            s_val = int(float(seg_width))
+            if 22 <= s_val <= 45:
+                has_valid_seg = True
+        except: pass
+
+    # 3. Progressive Check
+    if any(x in c for x in [' PROG ', ' PR ', ' PAL ', ' PROGRESSIVE ']) or raw_style == 'PR': 
+        return 6
         
-    if 'PU' in mat:
-        if pd.notna(idx):
-            idx_val = float(idx)
-            if idx_val >= 1.73: return 'High-Index 1.74'
-            if 1.660 <= idx_val <= 1.70:
-                if 'MR-7' in desc_upper or 'MR7' in desc_upper: return 'High-Index 1.67 (MR-7)'
-                if 'MR-10' in desc_upper or 'MR10' in desc_upper: return 'High-Index 1.67 (MR-10)'
-                if global_context:
-                    c7 = global_context.get('7', 0)
-                    c10 = global_context.get('10', 0)
-                    fb = global_context.get('fallback')
-                    if c7 > 0 or c10 > 0:
-                        return 'High-Index 1.67 (MR-7)' if c7 < c10 else 'High-Index 1.67 (MR-10)'
-                    elif fb:
-                        return f"High-Index 1.67 ({fb})"
-                return 'High-Index 1.67 (MR-7)'
-        return 'High-Index (Polyurethane)'
-    return mat_code
+    # 4. Double Seg
+    if any(x in c for x in [' DOUBLE ', ' DBL ', ' QUAD ', ' DUAL ']): 
+        return 9 if ' EXEC ' in c or ' EXECUTIVE ' in c else 8
+        
+    # 5. Trifocal
+    if any(x in c for x in [' TRI ', ' TRIFOCAL ', ' TF ', ' 7X ', ' 8X ', ' 10X ']) or re.search(r'\b\d+X\d+\b', c):
+        if ' EXEC ' in c or ' EXECUTIVE ' in c: return 11
+        if ' ED ' in c: return 12
+        return 10
+        
+    # 6. Blended Seg
+    if ' BLEND ' in c: return 7
+        
+    # 7. Ultex
+    if ' ULTEX ' in c: return 5
+        
+    # 8. Executive Bifocal
+    if any(x in c for x in [' EXEC ', ' EXECUTIVE ']): return 4
+        
+    # 9. Round Bifocal
+    if any(x in c for x in [' RND ', ' ROUND ', ' SEG ']): return 3
+        
+    # 10. Flat Top Bifocal (Requires valid segment size or bounded D-seg regex)
+    if any(x in c for x in [' FT ', ' BIF ', ' BIFOCAL ']) or has_valid_seg or re.search(r'\b(?:FT|D-?)\s*(22|25|28|35|40|45)\b', c): 
+        return 2
+    
+    # 11. Single Vision (Default fallback for all stock blanks)
+    return 1
+
+def resolve_material(mat_str, index_val, desc_str, name_str, abbe_val, global_context=None):
+    if global_context is None: global_context = {}
+    c = f" {str(mat_str)} {str(desc_str)} {str(name_str)} ".upper()
+    
+    try: i_val = float(index_val)
+    except: i_val = 0.0
+    
+    try: a_val = float(abbe_val)
+    except: a_val = 0.0
+    
+    if "POLYCARBONATE" in c or i_val == 1.586 or ("POLY" in c and "POLYURETHANE" not in c and "POLYMER" not in c):
+        return "Polycarbonate"
+    if "TRIVEX" in c or re.search(r'\bTR\b', c) or "PNX" in c or i_val == 1.53:
+        return "Trivex"
+    if "CR39" in c or "CR-39" in c or re.search(r'\bPL\b', c) or i_val == 1.50:
+        return "CR-39"
+        
+    if 1.54 <= i_val <= 1.565:
+        return "Mid-Index (1.56)"
+        
+    if 1.59 <= i_val <= 1.61 or "1.60" in c:
+        return "High-Index 1.60 (MR-8)"
+        
+    if 1.73 <= i_val <= 1.745 or "1.74" in c:
+        return "High-Index 1.74"
+        
+    if 1.65 <= i_val <= 1.675 or "1.67" in c:
+        m10_score = 0
+        m7_score = 0
+        
+        if a_val == 31: m10_score += 2
+        if a_val == 32: m7_score += 2
+        
+        if "MR10" in c or "MR-10" in c: m10_score += 5
+        if "MR7" in c or "MR-7" in c: m7_score += 5
+        
+        if m10_score > m7_score: return "High-Index 1.67 (MR-10)"
+        elif m7_score > m10_score: return "High-Index 1.67 (MR-7)"
+        else:
+            m_key = f"1.67_{mat_str}_{desc_str}"
+            if m_key in global_context:
+                return global_context[m_key]
+            
+            ans = draw_z_index_modal("MATERIAL HEURISTIC TIE", f"Lens: {mat_str} {desc_str}\nIndex: {i_val} | Abbe: {a_val}\n\nIs this MR-7 or MR-10? Type 7 or 10:")
+            if ans == "10": 
+                global_context[m_key] = "High-Index 1.67 (MR-10)"
+                return "High-Index 1.67 (MR-10)"
+            else:
+                global_context[m_key] = "High-Index 1.67 (MR-7)"
+                return "High-Index 1.67 (MR-7)"
+                
+    if mat_str and str(mat_str).strip(): return str(mat_str).title()
+    return "Unknown Material"
 
 def extract_lens_colors_coatings(group_df):
     """Sweeps a folded bucket to aggregate all proprietary coatings, techs, and strictly defined colors."""
@@ -2572,37 +2637,43 @@ def extract_lens_colors_coatings(group_df):
                     str(row.get('Coating Brand', '')) + " " + 
                     str(row.get('Coating', ''))).upper()
         
-        c_pad = f" {combined} "
+        c_pad = f" {combined} ".replace('-', ' ').replace('/', ' ')
+        c_pad_color = c_pad.replace('BLUE FILTER', '').replace('BLUE BLOCKER', '').replace('BLUE PROTECT', '').replace('BLUEGUARD', '')
 
         has_pigment = False
-        if any(x in c_pad for x in [' GRAY ', ' GREY ', ' PRO GRAY ', ' PRO GREY ', ' EXTRAGREY ', ' EXTRAGRAY ']): colors_found.add('Gray'); has_pigment = True
-        elif any(x in c_pad for x in [' BROWN ', ' PRO BROWN ']): colors_found.add('Brown'); has_pigment = True
-        elif any(x in c_pad for x in [' GREEN ', ' G15 ', ' PIONEER ']): colors_found.add('Green'); has_pigment = True
-        elif ' PINK ' in c_pad: colors_found.add('Pink'); has_pigment = True
-        elif ' BLUE ' in c_pad: colors_found.add('Blue'); has_pigment = True
-        elif ' PURPLE ' in c_pad: colors_found.add('Purple'); has_pigment = True
+        if any(x in c_pad_color for x in [' GRAY', ' GREY', ' PRO GRAY', ' PRO GREY', ' EXTRAGREY', ' EXTRAGRAY']): colors_found.add('Gray'); has_pigment = True
+        elif any(x in c_pad_color for x in [' BROWN', ' PRO BROWN']): colors_found.add('Brown'); has_pigment = True
+        elif any(x in c_pad_color for x in [' GREEN', ' G15', ' PIONEER']): colors_found.add('Green'); has_pigment = True
+        elif ' PINK' in c_pad_color: colors_found.add('Pink'); has_pigment = True
+        elif any(x in c_pad_color for x in [' BLUE ', ' BLUE1', ' BLUE2', ' BLUE3']): colors_found.add('Blue'); has_pigment = True
+        elif ' PURPLE' in c_pad_color: colors_found.add('Purple'); has_pigment = True
 
-        is_tech = False
-        if any(x in c_pad for x in [' XTRA-ACTIVE ', ' XTRA ACTIVE ', ' XA ']): techs_found.add('Xtra-Active'); is_tech = True
-        elif any(x in c_pad for x in [' Q-CHANGE ', ' QC ']): techs_found.add('Quick-Change'); is_tech = True
-        elif any(x in c_pad for x in [' SUNSYNC ']): techs_found.add('SunSync'); is_tech = True
-        elif any(x in c_pad for x in [' SENSITY ']): techs_found.add('Sensity'); is_tech = True
-        elif any(x in c_pad for x in [' TRANS ', ' TRN ']): techs_found.add('Transitions'); is_tech = True
-        elif any(x in c_pad for x in [' PFX ', ' PHOTOFUSION X ']): techs_found.add('PhotoFusion X'); is_tech = True
-        elif ' PHOTOFUSION ' in c_pad: techs_found.add('PhotoFusion'); is_tech = True
-        elif ' PHOTO ' in c_pad or ' PHOTOCHROMIC ' in c_pad: is_tech = True
+        is_reactive = False
+        if any(x in c_pad for x in [' XTRA ACTIVE', ' XA ']): techs_found.add('Xtra-Active'); is_reactive = True
+        elif any(x in c_pad for x in [' Q CHANGE', ' QC ']): techs_found.add('Quick-Change'); is_reactive = True
+        elif any(x in c_pad for x in [' SUNSYNC']): techs_found.add('SunSync'); is_reactive = True
+        elif any(x in c_pad for x in [' SENSITY']): techs_found.add('Sensity'); is_reactive = True
+        elif any(x in c_pad for x in [' TRANSITIONS', ' TRANS ', ' TRN ']): techs_found.add('Transitions'); is_reactive = True
+        elif any(x in c_pad for x in [' PFX', ' PHOTOFUSION X']): techs_found.add('PhotoFusion X'); is_reactive = True
+        elif ' PHOTOFUSION' in c_pad: techs_found.add('PhotoFusion'); is_reactive = True
+        elif any(x in c_pad for x in [' PHOTOCHROMIC', ' PHOTO ']): is_reactive = True
         
-        # New Expanded Polarized Hook
-        if any(x in c_pad for x in [' POLAR ', ' POLARIZED ', ' POLZ ', ' POL ']): techs_found.add('Polarized'); is_tech = True
-        if any(x in c_pad for x in [" HEV ", " BLUE BLOCKER ", " BLUE FILTER ", " BLUE PROTECT ", " BP ", " BG ", " UV420 "]): techs_found.add('Blue Filter')
+        if ' NUPOLAR' in c_pad: techs_found.add('NuPolar'); is_reactive = True
+        elif ' TRUPOLAR' in c_pad: techs_found.add('TruPolar'); is_reactive = True
+        elif any(x in c_pad for x in [' POLARIZED', ' POLAR ', ' POLZ ', ' POL ']): techs_found.add('Polarized'); is_reactive = True
+        
+        if ' BLUE PROTECT' in c_pad or ' BP ' in c_pad: techs_found.add('Blue Protect')
+        elif ' BLUEGUARD' in c_pad or ' BG ' in c_pad: techs_found.add('BlueGuard')
+        elif ' HEV' in c_pad or ' UV420' in c_pad: techs_found.add('HEV')
+        elif any(x in c_pad for x in [" BLUE BLOCKER", " BLUE FILTER"]): techs_found.add('Blue Filter')
 
-        if not has_pigment and is_tech: colors_found.add('Gray')
-        elif not has_pigment and not is_tech: colors_found.add('Clear')
+        if not has_pigment and is_reactive: colors_found.add('Gray')
+        elif not has_pigment and not is_reactive: colors_found.add('Clear')
 
-        if ' DVC ' in c_pad or ' CHROME ' in c_pad: coats_found.add('DuraVision Chrome')
-        elif ' DVP ' in c_pad or ' PLATINUM ' in c_pad: coats_found.add('DuraVision Platinum')
-        elif ' DVG ' in c_pad or ' GOLD ' in c_pad: coats_found.add('DuraVision Gold')
-        elif ' DVS ' in c_pad or ' SILVER ' in c_pad: coats_found.add('DuraVision Silver')
+        if any(x in c_pad for x in [' DVC ', ' CHROME ']): coats_found.add('DuraVision Chrome')
+        elif any(x in c_pad for x in [' DVP ', ' PLATINUM ']): coats_found.add('DuraVision Platinum')
+        elif any(x in c_pad for x in [' DVG ', ' GOLD ']): coats_found.add('DuraVision Gold')
+        elif any(x in c_pad for x in [' DVS ', ' SILVER ']): coats_found.add('DuraVision Silver')
         elif ' ROCK ' in c_pad: coats_found.add('Crizal Rock')
         elif ' SAPPHIRE ' in c_pad: coats_found.add('Crizal Sapphire')
         elif ' EASY ' in c_pad: coats_found.add('Crizal Easy')
@@ -2615,13 +2686,67 @@ def extract_lens_colors_coatings(group_df):
         techs_found.add('Photochromic')
 
     color_str = ", ".join(sorted(colors_found)) if colors_found else "Clear"
-    # MUST return exactly 4 objects
     return color_str, list(colors_found), list(techs_found), list(coats_found)
 
-import re
+def map_style_code(row):
+    """Maps raw VCA data to base legacy style codes (1-18), ignoring false diameter triggers."""
+    raw_style = str(row.get('Style', '')).upper()
+    raw_desc = str(row.get('Description', '')).upper()
+    raw_name = str(row.get('Name', '')).upper()
+    c = f" {raw_style} {raw_desc} {raw_name} "
+    
+    # 1. Neutralize massive diameter tags so they don't trigger seg matches
+    diam = str(row.get('Diameter', '')).strip()
+    if diam:
+        try:
+            d_val = int(float(diam))
+            c = re.sub(rf'\bD-?{d_val}\b', '', c)
+        except: pass
+
+    # 2. Strict Seg Width Validation (22 to 45 bounds only)
+    seg_width = str(row.get('Seg Width', '')).strip()
+    has_valid_seg = False
+    if seg_width:
+        try:
+            s_val = int(float(seg_width))
+            if 22 <= s_val <= 45:
+                has_valid_seg = True
+        except: pass
+
+    # 3. Progressive Check
+    if any(x in c for x in [' PROG ', ' PR ', ' PAL ', ' PROGRESSIVE ']) or raw_style == 'PR': 
+        return 6
+        
+    # 4. Double Seg
+    if any(x in c for x in [' DOUBLE ', ' DBL ', ' QUAD ', ' DUAL ']): 
+        return 9 if ' EXEC ' in c or ' EXECUTIVE ' in c else 8
+        
+    # 5. Trifocal
+    if any(x in c for x in [' TRI ', ' TRIFOCAL ', ' TF ', ' 7X ', ' 8X ', ' 10X ']) or re.search(r'\b\d+X\d+\b', c):
+        if ' EXEC ' in c or ' EXECUTIVE ' in c: return 11
+        if ' ED ' in c: return 12
+        return 10
+        
+    # 6. Blended Seg
+    if ' BLEND ' in c: return 7
+        
+    # 7. Ultex
+    if ' ULTEX ' in c: return 5
+        
+    # 8. Executive Bifocal
+    if any(x in c for x in [' EXEC ', ' EXECUTIVE ']): return 4
+        
+    # 9. Round Bifocal
+    if any(x in c for x in [' RND ', ' ROUND ', ' SEG ']): return 3
+        
+    # 10. Flat Top Bifocal (Requires valid segment size or bounded D-seg regex)
+    if any(x in c for x in [' FT ', ' BIF ', ' BIFOCAL ']) or has_valid_seg or re.search(r'\b(?:FT|D-?)\s*(22|25|28|35|40|45)\b', c): 
+        return 2
+    
+    # 11. Single Vision (Default fallback for all stock blanks)
+    return 1
 
 def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found):
-    """Executes completely decoupled Long and Brief abbreviation tracks with smart cascades."""
     raw_desc = str(sample_row.get('Description', '')).upper().strip()
     raw_name = str(sample_row.get('Name', '')).upper().strip()
     mfg = str(sample_row.get('MFG', '')).upper().strip()
@@ -2629,68 +2754,83 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found):
     index = str(sample_row.get('Index', '')).strip()
     
     combined_name_desc = raw_desc + " " + raw_name
+    style_int = map_style_code(sample_row)
     
-    lens_type = "SV"
-    lms_type_str = "SV"
-    seg_size = ""
+    brand_str = ""
     is_short = False
+    seg_size = ""
     
-    if has_add or any(x in raw_name for x in ["FT", "PAL", "TRI"]) or re.search(r'\b\d+X\d+\b', combined_name_desc):
-        if re.search(r'\b(?:TRI|\d+X\d+)\b', combined_name_desc):
-            lens_type = "Trifocal"
-            match = re.search(r'\b(\d+X\d+)\b', combined_name_desc)
-            if match:
-                seg_size = match.group(1)
-                lms_type_str = seg_size
+    if style_int == 6:
+        clean_name = raw_name
+        if mfg:
+            if clean_name.startswith(mfg): clean_name = clean_name[len(mfg):].strip()
             else:
-                lms_type_str = "TRI"
-                
-        elif re.search(r'\b(FT|D)\s*\d+', combined_name_desc):
-            lens_type = "Flat Top"
-            match = re.search(r'\b(?:FT|D)\s*(\d+)', combined_name_desc)
-            if match:
-                seg_size = match.group(1)
-                lms_type_str = f"FT{seg_size}"
-            else:
-                lms_type_str = "FT"
-                
-        elif re.search(r'\b(RND|ROUND)\s*\d*', combined_name_desc):
-            lens_type = "Round"
-            match = re.search(r'\b(?:RND|ROUND)\s*(\d+)', combined_name_desc)
-            if match:
-                seg_size = match.group(1)
-                lms_type_str = f"RND{seg_size}"
-            else:
-                lms_type_str = "RND"
-                
-        elif re.search(r'\b(EXEC)', combined_name_desc):
-            lens_type = "Executive"
-            lms_type_str = "EXEC"
-            
-        else:
-            lens_type = "PAL"
-            clean_name = raw_name
-            if mfg:
-                if clean_name.startswith(mfg): clean_name = clean_name[len(mfg):].strip()
-                else:
-                    mfg_words = mfg.split()
-                    if mfg_words and clean_name.startswith(mfg_words[0]):
-                        clean_name = clean_name[len(mfg_words[0]):].strip()
-            
-            lms_type_str = clean_name.split()[0] if clean_name else "PAL"
-            
-            if re.search(r'\bSHORT\b', combined_name_desc):
-                is_short = True
-                lms_type_str += " SHORT"
+                mfg_words = mfg.split()
+                if mfg_words and clean_name.startswith(mfg_words[0]):
+                    clean_name = clean_name[len(mfg_words[0]):].strip()
+        brand_str = clean_name.split()[0] if clean_name else "PAL"
+        if re.search(r'\bSHORT\b', combined_name_desc): is_short = True
+
+    has_puck = "PUCK" in combined_name_desc and style_int in [1, 13, 14]
+    has_extra_thick = bool(re.search(r'\b(EXTRA THICK|EXTHK|EXTK|ET)\b', combined_name_desc))
+
+    type_cascade_array = []
+    if style_int in [10, 11, 12]:
+        match = re.search(r'\b(\d+X\d+)\b', combined_name_desc)
+        seg_size = match.group(1) if match else "7X28"
+        type_cascade_array = [f"TRIFOCAL {seg_size}", f"TRI{seg_size}", seg_size, seg_size]
+    elif style_int in [2, 8, 15]:
+        match = re.search(r'\b(?:FT|D-?)\s*(22|25|28|35|40|45)\b', combined_name_desc)
+        seg_size = match.group(1) if match else "28"
+        type_cascade_array = [f"FLAT TOP {seg_size}", f"FT{seg_size}", f"FT{seg_size}", f"FT{seg_size}"]
+    elif style_int in [3, 16]:
+        match = re.search(r'\b(?:RND|ROUND)\s*(\d+)', combined_name_desc)
+        seg_size = match.group(1) if match else "28"
+        type_cascade_array = [f"ROUND {seg_size}", f"RND{seg_size}", f"RND{seg_size}", f"RND{seg_size}"]
+    elif style_int in [4, 9]:
+        type_cascade_array = ["EXECUTIVE", "EXEC", "EX", "EX"]
+    elif style_int in [5, 17]:
+        type_cascade_array = ["ULTEX", "ULTEX", "ULT", "ULT"]
+    elif style_int == 7:
+        type_cascade_array = ["BLENDED", "BLEND", "BLND", "BLND"]
+    elif style_int == 6:
+        type_cascade_array = ["SHORT", "SHRT", "SHT", "SHT"] if is_short else []
+    else:
+        base_sv = "FSV" if is_fsv else "SFSV"
+        type_cascade_array = [base_sv, base_sv, base_sv, base_sv]
 
     tags = []
-    if is_fsv: tags.append("FSV")
-    elif lens_type == "SV": tags.append("SFSV")
-    else: tags.append("SF")
     
-    tags.append(lens_type)
+    tags.append("FIN" if is_fsv else "SF")
+    
+    style_tag_map = {
+        1: ["Single Vision"], 2: ["Flat Top", "Bifocal"], 3: ["Round", "Bifocal"], 4: ["Executive", "Bifocal"],
+        5: ["Ultex", "Bifocal"], 6: ["Progressive"], 7: ["Blended Seg"], 8: ["Double Seg", "Flat Top"],
+        9: ["Double Seg", "Executive"], 10: ["Trifocal", "Flat Top"], 11: ["Trifocal", "Executive"], 12: ["Trifocal", "ED"],
+        13: ["Other SV", "Single Vision"], 14: ["Aspheric", "Single Vision"], 15: ["Aspheric", "Flat Top", "Bifocal"], 
+        16: ["Aspheric", "Round", "Bifocal"], 17: ["Aspheric", "Ultex", "Bifocal"], 18: ["Other Multi-focal"]
+    }
+    tags.extend(style_tag_map.get(style_int, ["Single Vision"]))
+    
     if seg_size: tags.append(seg_size)
     if is_short: tags.append("Short")
+    if has_puck: tags.append("PUCK")
+    if has_extra_thick: tags.append("Extra Thick")
+
+    has_blue_tech = any(t in techs_found for t in ['Blue Protect', 'BlueGuard', 'HEV', 'Blue Filter'])
+    if has_blue_tech:
+        tags.append("Blue Filter")
+
+    color_keywords = ['GRAY', 'GREY', 'BROWN', 'GREEN', 'G15', 'PIONEER', 'PINK', 'BLUE', 'PURPLE']
+    has_color_word = any(re.search(rf'\b{w}\b', combined_name_desc) for w in color_keywords)
+    is_reactive = any(t in techs_found for t in [
+        'Transitions', 'PhotoFusion X', 'PhotoFusion', 'Sensity', 
+        'SunSync', 'Quick-Change', 'Xtra-Active', 'Photochromic', 
+        'Polarized', 'NuPolar', 'TruPolar'
+    ])
+    
+    if has_color_word and not is_reactive:
+        tags.append("Pre Tint")
 
     lms_mat_str = ""
     if "POLYCARBONATE" in material or index == "1.586" or ("POLY" in material and "POLYURETHANE" not in material and "POLYMER" not in material):
@@ -2699,95 +2839,219 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found):
         tags.append("Trivex"); lms_mat_str = "TRV"
     elif "CR39" in material or "CR-39" in material or re.search(r'\bPL\b', material) or index == "1.500":
         tags.append("CR-39"); lms_mat_str = "CR-39" 
-    elif "1.56" in material or index in ["1.56", "1.560"]:
-        tags.append("1.56"); lms_mat_str = "1.56"
-    elif "1.60" in material or index in ["1.60", "1.600", "1.605"]:
-        tags.append("1.60"); lms_mat_str = "1.60"
-    elif "1.67" in material or "1.66" in material or index in ["1.659", "1.66", "1.660", "1.665", "1.67", "1.670"]:
-        tags.append("1.67"); lms_mat_str = "1.67"
-    elif "1.74" in material or index in ["1.73", "1.735", "1.74", "1.740"]:
-        tags.append("1.74"); lms_mat_str = "1.74"
-
-    org_str = "ORG" if "ORG" in combined_name_desc else ""
-    base_indicator = "*" if is_fsv else ""
+    elif "1.56" in material or index in ["1.56", "1.560"]: tags.append("1.56"); lms_mat_str = "1.56"
+    elif "1.60" in material or index in ["1.60", "1.600", "1.605"]: tags.append("1.60"); lms_mat_str = "1.60"
+    elif "1.67" in material or "1.66" in material or index in ["1.659", "1.66", "1.660", "1.665", "1.67", "1.670"]: tags.append("1.67"); lms_mat_str = "1.67"
+    elif "1.74" in material or index in ["1.73", "1.735", "1.74", "1.740"]: tags.append("1.74"); lms_mat_str = "1.74"
 
     tech_list_full = []
-    if "Xtra-Active" in techs_found: tech_list_full.append("Xtra-Active")
-    elif "Quick-Change" in techs_found: tech_list_full.append("Q-Change")
-    elif "SunSync" in techs_found: tech_list_full.append("SunSync")
-    elif "Sensity" in techs_found: tech_list_full.append("Sensity")
-    elif "Transitions" in techs_found: tech_list_full.append("Transitions")
-    elif "PhotoFusion X" in techs_found: tech_list_full.append("PhotoFusion X")
-    elif "PhotoFusion" in techs_found: tech_list_full.append("PhotoFusion")
-    elif "Photochromic" in techs_found: tech_list_full.append("Photochromic")
-    if "Polarized" in techs_found: tech_list_full.append("Polarized")
-    if "Blue Filter" in techs_found: tech_list_full.append("Blue Filter")
+    for t in ['Xtra-Active', 'Quick-Change', 'SunSync', 'Sensity', 'Transitions', 'PhotoFusion X', 'PhotoFusion']:
+        if t in techs_found: tech_list_full.append(t)
+    if 'Photochromic' in techs_found and not any(x in techs_found for x in ['Xtra-Active', 'Quick-Change', 'SunSync', 'Sensity', 'Transitions', 'PhotoFusion X', 'PhotoFusion']):
+        tech_list_full.append("Photochromic")
+        
+    for t in ['NuPolar', 'TruPolar', 'Polarized']:
+        if t in techs_found: tech_list_full.append(t)
+        
+    if 'BlueGuard' in techs_found: tech_list_full.append('BlueGuard')
+    elif 'Blue Protect' in techs_found: tech_list_full.append('Blue Protect')
+    elif 'HEV' in techs_found: tech_list_full.append('HEV')
+    elif 'Blue Filter' in techs_found: tech_list_full.append('Blue Filter')
+
+    # Anti-Reflective (AR) Exclusivity Hierarchy
+    active_ar = None
+    ar_check_str = combined_name_desc
     
-    # --- LONG DESCRIPTION TRACK ---
-    mat_long_map = {"POLY": "Polycarbonate", "TRV": "Trivex", "CR-39": "CR-39"}
-    mat_long = mat_long_map.get(lms_mat_str, lms_mat_str)
-    
-    full_tech_str = " ".join(tech_list_full)
-    ideal_str_long = f"{base_indicator}{lms_type_str} {org_str} {mat_long} {full_tech_str}"
-    ideal_str_long = re.sub(r'\s+', ' ', ideal_str_long).strip()
+    if any(x in ar_check_str for x in ['DURAVISION CHROME', 'DV CHROME', 'DVC']): active_ar = "DuraVision Chrome"
+    elif any(x in ar_check_str for x in ['DURAVISION PLATINUM', 'DV PLATINUM', 'DVP']): active_ar = "DuraVision Platinum"
+    elif any(x in ar_check_str for x in ['DURAVISION SILVER', 'DV SILVER', 'DVS']): active_ar = "DuraVision Silver"
+    elif any(x in ar_check_str for x in ['DURAVISION GOLD', 'DV GOLD', 'DVG']): active_ar = "DuraVision Gold"
+    elif 'VELA' in ar_check_str: active_ar = "Vela"
+    elif any(x in ar_check_str for x in ['CRIZAL', 'CZ']): active_ar = "Crizal"
+    elif any(x in ar_check_str for x in ['HOYA PREMIUM', 'HOYA PREM']): active_ar = "Hoya Premium"
+    elif 'ECP' in ar_check_str: active_ar = "ECP"
+    elif any(x in ar_check_str for x in ['ULTRACLEAN', 'UC']): active_ar = "Ultraclean"
+    elif any(x in ar_check_str for x in ['HMC', 'BMC', 'SHMC', ' AR ', ' A/R ', 'ANTI-REFLECTIVE']): active_ar = "A/R"
 
-    long_desc = ideal_str_long
-    if len(long_desc) > 32:
-        long_desc = re.sub(r'\b(Aspheric|Asph|ASP|AP)\b', '', long_desc, flags=re.IGNORECASE)
-        long_desc = re.sub(r'\s+', ' ', long_desc).strip()
-    if len(long_desc) > 32:
-        long_desc = long_desc.replace("Transitions", "Trans").replace("Xtra-Active", "XtraA").replace("SunSensors", "SunSen").replace("Sensity", "Sens").replace("Polarized", "Polar").replace("Blue Blocker", "Blue Filter").replace("PhotoFusion X", "PFX")
-    long_desc = re.sub(r'\s+', ' ', long_desc).strip()[:32].strip()
+    if active_ar:
+        tags.append(active_ar if active_ar != "A/R" else "A/R Coating")
 
-    # --- BRIEF DESCRIPTION TRACK ---
-    tech_list_brief = []
-    for t in tech_list_full:
-        if t == "Xtra-Active": tech_list_brief.append("XA")
-        elif t == "Q-Change": tech_list_brief.append("QC")
-        elif t == "SunSync": tech_list_brief.append("SS")
-        elif t == "Sensity": tech_list_brief.append("SEN")
-        elif t == "Transitions": tech_list_brief.append("TRN")
-        elif t == "PhotoFusion X": tech_list_brief.append("PFX")
-        elif t == "PhotoFusion": tech_list_brief.append("PF")
-        elif t == "Photochromic": tech_list_brief.append("PHO")
-        elif t == "Polarized": tech_list_brief.append("POL")
-        elif t == "Blue Filter": tech_list_brief.append("BF")
+    is_org = "ORG" in combined_name_desc
+    is_asph = any(x in combined_name_desc for x in [' AS ', ' ASP ', ' ASPHERIC ', ' ASPH ']) and style_int not in [6, 7]
+
+    def run_ratchet(target_len):
+        mat_cascades = {
+            "POLY": ["POLYCARBONATE", "POLYCARB", "POLY", "PY", "PY"],
+            "CR-39": ["CR-39", "CR-39", "CR39", "CR", "CR"],
+            "TRV": ["TRIVEX", "TRIVEX", "TRVX", "TX", "TX"],
+            "1.56": ["1.56", "1.56", "1.56", "1.56", "156"], 
+            "1.60": ["1.60", "1.60", "1.60", "1.60", "160"],
+            "1.67": ["1.67", "1.67", "1.67", "1.67", "167"], 
+            "1.74": ["1.74", "1.74", "1.74", "1.74", "174"]
+        }
+        tech_cascades = {
+            "Transitions": ["TRANSITIONS", "TRANS", "TRN", "TRN"],
+            "PhotoFusion X": ["PHOTOFUSION X", "PHOTOFUSION", "PFX", "PFX"],
+            "PhotoFusion": ["PHOTOFUSION", "PHOTOFUSION", "PFX", "PFX"],
+            "Quick-Change": ["QUICK-CHANGE", "QCHANGE", "QC", "QC"],
+            "Xtra-Active": ["XTRA-ACTIVE", "XTRAA", "XA", "XA"],
+            "Polarized": ["POLARIZED", "POLAR", "POLZ", "POL"],
+            "NuPolar": ["NUPOLAR", "NUPOLAR", "NPOL", "NPOL"],
+            "TruPolar": ["TRUPOLAR", "TRUPOLAR", "TPOL", "TPOL"],
+            "Blue Filter": ["BLUE FILTER", "BLUEF", "BF", "BF"],
+            "Blue Protect": ["BLUE PROTECT", "BLUEP", "BP", "BP"],
+            "BlueGuard": ["BLUEGUARD", "BLUEG", "BG", "BG"],
+            "HEV": ["UV420", "UV420", "HEV", "HEV"], 
+            "Photochromic": ["PHOTOCHROMIC", "PHOTO", "PHT", "PHT"]
+        }
         
-    tech_brief = " ".join(tech_list_brief)
-    mat_brief = lms_mat_str.replace("POLY", "PY").replace("TRIVEX", "TRV")
-
-    def build_brief(type_str, org, mat, tech):
-        return re.sub(r'\s+', ' ', f"{base_indicator}{type_str} {org} {mat} {tech}").strip()
-
-    brief_desc = build_brief(lms_type_str, org_str, mat_brief, tech_brief)
-
-    if len(brief_desc) > 15 and "SHORT" in brief_desc:
-        brief_desc = brief_desc.replace("SHORT", "SRT")
-    if len(brief_desc) > 15 and org_str == "ORG":
-        org_str = "OR"
-        brief_desc = build_brief(lms_type_str, org_str, mat_brief, tech_brief)
-    if len(brief_desc) > 15 and org_str == "OR":
-        org_str = ""
-        brief_desc = build_brief(lms_type_str, org_str, mat_brief, tech_brief)
+        ar_cascades = {
+            "DuraVision Chrome": ["DURAVISION CHROME", "DV CHROME", "DVC", "DVC"],
+            "DuraVision Platinum": ["DURAVISION PLATINUM", "DV PLAT", "DVP", "DVP"],
+            "DuraVision Silver": ["DURAVISION SILVER", "DV SILV", "DVS", "DVS"],
+            "DuraVision Gold": ["DURAVISION GOLD", "DV GOLD", "DVG", "DVG"],
+            "Vela": ["VELA AR", "VELA", "VELA", "VELA"],
+            "Crizal": ["CRIZAL AR", "CRIZAL", "CZ", "CZ"],
+            "Hoya Premium": ["HOYA PREMIUM", "HOYA PREM", "HOYA", "HOYA"],
+            "ECP": ["ECP AR", "ECP", "ECP", "ECP"],
+            "Ultraclean": ["ULTRACLEAN", "ULTRACLN", "UCLN", "UCLN"],
+            "A/R": ["A/R", "A/R", "AR", "AR"]
+        }
         
-    # The CR-39 Cascade
-    if len(brief_desc) > 15 and "CR-39" in mat_brief:
-        mat_brief = mat_brief.replace("CR-39", "CR39")
-        brief_desc = build_brief(lms_type_str, org_str, mat_brief, tech_brief)
-    if len(brief_desc) > 15 and "CR39" in mat_brief:
-        mat_brief = mat_brief.replace("CR39", "CR")
-        brief_desc = build_brief(lms_type_str, org_str, mat_brief, tech_brief)
+        puck_cascades = ["PUCK", "PUK", "PK", ""]
+        et_cascades = ["EXTRA THICK", "EXTHK", "EXTK", "ET"]
         
-    if len(brief_desc) > 15 and lens_type == "PAL":
-        while len(brief_desc) > 15 and len(lms_type_str) > 4:
-            lms_type_str = lms_type_str[:-1]
-            brief_desc = build_brief(lms_type_str, org_str, mat_brief, tech_brief)
+        state_org = 1 if is_org else 0
+        state_asph = 1 if is_asph else 0
+        state_type = 0
+        state_tech = 0
+        state_mat = 0
+        state_puck = 0 if has_puck else 3
+        state_et = 0 if has_extra_thick else 4
+        state_ar = 0 if active_ar else 4
+        b_str = brand_str
+        
+        working_techs = list(tech_list_full)
+        working_type_array = list(type_cascade_array)
+        
+        def build():
+            parts = []
+            if working_type_array: 
+                parts.append(working_type_array[min(state_type, len(working_type_array)-1)])
+            if b_str: parts.append(b_str)
+            if state_org == 1: parts.append("ORG")
             
-    brief_desc = brief_desc[:15].strip()
+            if lms_mat_str:
+                m_arr = mat_cascades.get(lms_mat_str, [lms_mat_str])
+                parts.append(m_arr[min(state_mat, len(m_arr)-1)])
+            
+            if state_asph == 1: parts.append("AS")
+            
+            for t in working_techs:
+                t_arr = tech_cascades.get(t, [t])
+                parts.append(t_arr[min(state_tech, len(t_arr)-1)])
+                
+            if state_et < 4:
+                parts.append(et_cascades[state_et])
+                
+            if state_ar < 4 and active_ar:
+                a_arr = ar_cascades.get(active_ar, ["A/R", "A/R", "AR", "AR"])
+                parts.append(a_arr[min(state_ar, len(a_arr)-1)])
+                
+            if state_puck < 3:
+                parts.append(puck_cascades[state_puck])
+                
+            return " ".join(parts).replace("  ", " ").strip()
+
+        if len(build()) <= target_len: return build()
+        
+        state_org = 0
+        if len(build()) <= target_len: return build()
+        state_asph = 0
+        if len(build()) <= target_len: return build()
+        
+        state_type = 1
+        if len(build()) <= target_len: return build()
+        
+        state_tech = 1
+        if len(build()) <= target_len: return build()
+        
+        state_mat = 1
+        if len(build()) <= target_len: return build()
+        
+        if has_puck: state_puck = 1
+        if len(build()) <= target_len: return build()
+        
+        if active_ar: state_ar = 1
+        if len(build()) <= target_len: return build()
+        
+        state_type = 2
+        if len(build()) <= target_len: return build()
+        
+        state_tech = 2
+        if len(build()) <= target_len: return build()
+        
+        state_mat = 2
+        if len(build()) <= target_len: return build()
+        
+        if has_puck: state_puck = 2
+        if len(build()) <= target_len: return build()
+        
+        if active_ar: state_ar = 2
+        if len(build()) <= target_len: return build()
+        
+        state_tech = 3
+        if len(build()) <= target_len: return build()
+        
+        state_mat = 3
+        if len(build()) <= target_len: return build()
+        
+        state_mat = 4
+        if len(build()) <= target_len: return build()
+        
+        while len(b_str) > 0:
+            b_str = b_str[:-1].strip()
+            if len(build()) <= target_len: return build()
+            
+        if has_extra_thick: state_et = 1
+        if len(build()) <= target_len: return build()
+        
+        if has_extra_thick: state_et = 2
+        if len(build()) <= target_len: return build()
+        
+        if active_ar: state_ar = 3
+        if len(build()) <= target_len: return build()
+            
+        while len(working_techs) > 0:
+            working_techs.pop()
+            if len(build()) <= target_len: return build()
+            
+        if has_extra_thick: state_et = 3
+        if len(build()) <= target_len: return build()
+            
+        if working_type_array:
+            current_t = working_type_array[-1]
+            while len(current_t) > 0:
+                current_t = current_t[:-1].strip()
+                working_type_array = [current_t for _ in working_type_array]
+                if len(build()) <= target_len: return build()
+            
+        if has_puck: state_puck = 3
+        if len(build()) <= target_len: return build()
+        
+        if has_extra_thick: state_et = 4
+        if len(build()) <= target_len: return build()
+        
+        return build()[:target_len].strip()
+
+    brief_desc = run_ratchet(15)
+    long_desc = run_ratchet(32)
     
     clean_desc = raw_desc
+    
     for word in ['GRAY', 'GREY', 'BROWN', 'GREEN', 'G15', 'PIONEER', 'PINK', 'BLUE', 'PURPLE']:
-        clean_desc = re.sub(rf'\b{word}\b', '', clean_desc)
+        clean_desc = re.sub(rf'\b{word}(?:\s+(?:A|B|C|1|2|3))?\b', '', clean_desc)
+        
     for word in ['DVC', 'DVP', 'DVG', 'DVS', 'ROCK', 'EASY', 'SAPPHIRE', 'VELA', 'AR', 'CRIZAL', 'DURAVISION', 'DURA', 'HC', 'SR', 'SHMC', 'PG', 'UC', 'UNCOATED']:
         clean_desc = re.sub(rf'\b{word}\b', '', clean_desc)
         
@@ -2795,47 +3059,55 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found):
     
     return clean_desc, brief_desc, long_desc, tags
 
-def aggregate_fsv_powers(group_df):
-    """Slices stock lens grids and maps keys directly for JSON formatting (Plano to Minus)."""
-    sph = pd.to_numeric(group_df['SPH/BASE'], errors='coerce').fillna(0.0)
-    cyl = pd.to_numeric(group_df['CYL/ADD'], errors='coerce').fillna(0.0)
+def aggregate_fsv_powers(group):
+    raw_sph = pd.to_numeric(group['SPH/BASE'], errors='coerce')
+    raw_cyl = pd.to_numeric(group['CYL/ADD'], errors='coerce').fillna(0.0)
     
-    m_sph = (sph <= 0.0) & (cyl == 0.0)
-    m_cyl = (sph <= 0.0) & (cyl < 0.0)
-    p_sph = (sph > 0.0) & (cyl == 0.0)
-    p_cyl = (sph > 0.0) & (cyl < 0.0)
+    valid_mask = raw_sph.notna()
+    sph_vals = raw_sph[valid_mask]
+    cyl_vals = raw_cyl[valid_mask]
     
-    telemetry = []
     p_dict = {
-        "PowerRange_MSPH": None, 
-        "PowerRange_MCYL": None, 
-        "PowerRange_PSPH": None, 
-        "PowerRange_PCYL": None
+        "PowerRange_MinusSph": None,
+        "PowerRange_PlusSph": None,
+        "PowerRange_MinusCyl": None,
+        "PowerRange_PlusCyl": None
     }
     
-    def process_quad(mask, title, key):
-        if mask.sum() > 0:
-            min_s, max_s = sph[mask].min(), sph[mask].max()
-            min_c = cyl[mask].min()
-            
-            # Invert sorting for Minus quadrants so they always start from Plano (0.00)
-            if "Minus" in title:
-                start_s, end_s = max_s, min_s
-            else:
-                start_s, end_s = min_s, max_s
-            
-            if "Spherical" in title:
-                telemetry.append(f"{C_BORDER}    -> {C_SUBTEXT}{title}: {C_TITLE}{start_s:+.2f} to {end_s:+.2f} SPH{RESET}")
-                p_dict[key] = f"{start_s:+.2f} to {end_s:+.2f} SPH"
-            else:
-                telemetry.append(f"{C_BORDER}    -> {C_SUBTEXT}{title}: {C_TITLE}{start_s:+.2f} to {end_s:+.2f} SPH  |  Cyl to {min_c:+.2f}{RESET}")
-                p_dict[key] = f"{start_s:+.2f} to {end_s:+.2f} SPH (Cyl to {min_c:+.2f})"
-                
-    process_quad(m_sph, "Minus Spherical", "PowerRange_MSPH")
-    process_quad(m_cyl, "Minus with Cyl", "PowerRange_MCYL")
-    process_quad(p_sph, "Plus Spherical", "PowerRange_PSPH")
-    process_quad(p_cyl, "Plus with Cyl", "PowerRange_PCYL")
+    if sph_vals.empty: 
+        return [f"     {C_PROMPT}-> Power Range: N/A"], p_dict
+        
+    def fmt_r(min_v, max_v):
+        if min_v == max_v: 
+            return f"{min_v:+.2f}"
+        if max_v <= 0: 
+            return f"{max_v:+.2f} to {min_v:+.2f}"
+        return f"{min_v:+.2f} to {max_v:+.2f}"
+
+    m_sph = sph_vals[(sph_vals <= 0) & (cyl_vals == 0.0)]
+    p_sph = sph_vals[(sph_vals > 0) & (cyl_vals == 0.0)]
+    m_cyl = sph_vals[(sph_vals <= 0) & (cyl_vals != 0.0)]
+    m_cyl_c = cyl_vals[(sph_vals <= 0) & (cyl_vals != 0.0)]
+    p_cyl = sph_vals[(sph_vals > 0) & (cyl_vals != 0.0)]
+    p_cyl_c = cyl_vals[(sph_vals > 0) & (cyl_vals != 0.0)]
     
+    if not m_sph.empty: 
+        p_dict["PowerRange_MinusSph"] = f"{fmt_r(m_sph.min(), m_sph.max())} SPH"
+    if not p_sph.empty: 
+        p_dict["PowerRange_PlusSph"] = f"{fmt_r(p_sph.min(), p_sph.max())} SPH"
+        
+    if not m_cyl.empty: 
+        p_dict["PowerRange_MinusCyl"] = f"{fmt_r(m_cyl.min(), m_cyl.max())} SPH | {fmt_r(m_cyl_c.min(), m_cyl_c.max())} CYL"
+    if not p_cyl.empty: 
+        p_dict["PowerRange_PlusCyl"] = f"{fmt_r(p_cyl.min(), p_cyl.max())} SPH | {fmt_r(p_cyl_c.min(), p_cyl_c.max())} CYL"
+        
+    telemetry = [
+        f"     {C_PROMPT}-> Minus Sph      :{C_FILE} {p_dict['PowerRange_MinusSph'] if p_dict['PowerRange_MinusSph'] else 'null'}",
+        f"     {C_PROMPT}-> Plus Sph       :{C_FILE} {p_dict['PowerRange_PlusSph'] if p_dict['PowerRange_PlusSph'] else 'null'}",
+        f"     {C_PROMPT}-> Minus with Cyl :{C_FILE} {p_dict['PowerRange_MinusCyl'] if p_dict['PowerRange_MinusCyl'] else 'null'}",
+        f"     {C_PROMPT}-> Plus with Cyl  :{C_FILE} {p_dict['PowerRange_PlusCyl'] if p_dict['PowerRange_PlusCyl'] else 'null'}"
+    ]
+        
     return telemetry, p_dict
 
 def aggregate_sf_curves(group_df):
@@ -2948,37 +3220,47 @@ def extract_lens_colors_coatings(group_df):
                     str(row.get('Coating Brand', '')) + " " + 
                     str(row.get('Coating', ''))).upper()
         
-        c_pad = f" {combined} "
+        # Hyphen veil stripped. Blue prefixes neutralized for strict pigment matching.
+        c_pad = f" {combined} ".replace('-', ' ').replace('/', ' ')
+        c_pad_color = c_pad.replace('BLUE FILTER', '').replace('BLUE BLOCKER', '').replace('BLUE PROTECT', '').replace('BLUEGUARD', '')
 
         has_pigment = False
-        if any(x in c_pad for x in [' GRAY ', ' GREY ', ' PRO GRAY ', ' PRO GREY ', ' EXTRAGREY ', ' EXTRAGRAY ']): colors_found.add('Gray'); has_pigment = True
-        elif any(x in c_pad for x in [' BROWN ', ' PRO BROWN ']): colors_found.add('Brown'); has_pigment = True
-        elif any(x in c_pad for x in [' GREEN ', ' G15 ', ' PIONEER ']): colors_found.add('Green'); has_pigment = True
-        elif ' PINK ' in c_pad: colors_found.add('Pink'); has_pigment = True
-        elif ' BLUE ' in c_pad: colors_found.add('Blue'); has_pigment = True
-        elif ' PURPLE ' in c_pad: colors_found.add('Purple'); has_pigment = True
+        if any(x in c_pad_color for x in [' GRAY', ' GREY', ' PRO GRAY', ' PRO GREY', ' EXTRAGREY', ' EXTRAGRAY']): colors_found.add('Gray'); has_pigment = True
+        elif any(x in c_pad_color for x in [' BROWN', ' PRO BROWN']): colors_found.add('Brown'); has_pigment = True
+        elif any(x in c_pad_color for x in [' GREEN', ' G15', ' PIONEER']): colors_found.add('Green'); has_pigment = True
+        elif ' PINK' in c_pad_color: colors_found.add('Pink'); has_pigment = True
+        elif any(x in c_pad_color for x in [' BLUE ', ' BLUE1', ' BLUE2', ' BLUE3']): colors_found.add('Blue'); has_pigment = True
+        elif ' PURPLE' in c_pad_color: colors_found.add('Purple'); has_pigment = True
 
-        is_tech = False
-        if any(x in c_pad for x in [' XTRA-ACTIVE ', ' XTRA ACTIVE ', ' XA ']): techs_found.add('Xtra-Active'); is_tech = True
-        elif any(x in c_pad for x in [' Q-CHANGE ', ' QC ']): techs_found.add('Quick-Change'); is_tech = True
-        elif any(x in c_pad for x in [' SUNSYNC ']): techs_found.add('SunSync'); is_tech = True
-        elif any(x in c_pad for x in [' SENSITY ']): techs_found.add('Sensity'); is_tech = True
-        elif any(x in c_pad for x in [' TRANS ', ' TRN ']): techs_found.add('Transitions'); is_tech = True
-        elif any(x in c_pad for x in [' PFX ', ' PHOTOFUSION X ']): techs_found.add('PhotoFusion X'); is_tech = True
-        elif ' PHOTOFUSION ' in c_pad: techs_found.add('PhotoFusion'); is_tech = True
-        elif ' PHOTO ' in c_pad or ' PHOTOCHROMIC ' in c_pad: is_tech = True
+        is_reactive = False
+        if any(x in c_pad for x in [' XTRA ACTIVE', ' XA ']): techs_found.add('Xtra-Active'); is_reactive = True
+        elif any(x in c_pad for x in [' Q CHANGE', ' QC ']): techs_found.add('Quick-Change'); is_reactive = True
+        elif any(x in c_pad for x in [' SUNSYNC']): techs_found.add('SunSync'); is_reactive = True
+        elif any(x in c_pad for x in [' SENSITY']): techs_found.add('Sensity'); is_reactive = True
+        elif any(x in c_pad for x in [' TRANSITIONS', ' TRANS ', ' TRN ']): techs_found.add('Transitions'); is_reactive = True
+        elif any(x in c_pad for x in [' PFX', ' PHOTOFUSION X']): techs_found.add('PhotoFusion X'); is_reactive = True
+        elif ' PHOTOFUSION' in c_pad: techs_found.add('PhotoFusion'); is_reactive = True
+        elif any(x in c_pad for x in [' PHOTOCHROMIC', ' PHOTO ']): is_reactive = True
         
-        # New Expanded Polarized Hook
-        if any(x in c_pad for x in [' POLAR ', ' POLARIZED ', ' POLZ ', ' POL ']): techs_found.add('Polarized'); is_tech = True
-        if any(x in c_pad for x in [" HEV ", " BLUE BLOCKER ", " BLUE FILTER ", " BLUE PROTECT ", " BP ", " BG ", " UV420 "]): techs_found.add('Blue Filter')
+        # Granular Polarized Extraction
+        if ' NUPOLAR' in c_pad: techs_found.add('NuPolar'); is_reactive = True
+        elif ' TRUPOLAR' in c_pad: techs_found.add('TruPolar'); is_reactive = True
+        elif any(x in c_pad for x in [' POLARIZED', ' POLAR ', ' POLZ ', ' POL ']): techs_found.add('Polarized'); is_reactive = True
+        
+        # Granular Blue Tech Extraction
+        if ' BLUE PROTECT' in c_pad or ' BP ' in c_pad: techs_found.add('Blue Protect')
+        elif ' BLUEGUARD' in c_pad or ' BG ' in c_pad: techs_found.add('BlueGuard')
+        elif ' HEV' in c_pad or ' UV420' in c_pad: techs_found.add('HEV')
+        elif any(x in c_pad for x in [" BLUE BLOCKER", " BLUE FILTER"]): techs_found.add('Blue Filter')
 
-        if not has_pigment and is_tech: colors_found.add('Gray')
-        elif not has_pigment and not is_tech: colors_found.add('Clear')
+        # The Pigment Safety Net
+        if not has_pigment and is_reactive: colors_found.add('Gray')
+        elif not has_pigment and not is_reactive: colors_found.add('Clear')
 
-        if ' DVC ' in c_pad or ' CHROME ' in c_pad: coats_found.add('DuraVision Chrome')
-        elif ' DVP ' in c_pad or ' PLATINUM ' in c_pad: coats_found.add('DuraVision Platinum')
-        elif ' DVG ' in c_pad or ' GOLD ' in c_pad: coats_found.add('DuraVision Gold')
-        elif ' DVS ' in c_pad or ' SILVER ' in c_pad: coats_found.add('DuraVision Silver')
+        if any(x in c_pad for x in [' DVC ', ' CHROME ']): coats_found.add('DuraVision Chrome')
+        elif any(x in c_pad for x in [' DVP ', ' PLATINUM ']): coats_found.add('DuraVision Platinum')
+        elif any(x in c_pad for x in [' DVG ', ' GOLD ']): coats_found.add('DuraVision Gold')
+        elif any(x in c_pad for x in [' DVS ', ' SILVER ']): coats_found.add('DuraVision Silver')
         elif ' ROCK ' in c_pad: coats_found.add('Crizal Rock')
         elif ' SAPPHIRE ' in c_pad: coats_found.add('Crizal Sapphire')
         elif ' EASY ' in c_pad: coats_found.add('Crizal Easy')
@@ -2991,7 +3273,6 @@ def extract_lens_colors_coatings(group_df):
         techs_found.add('Photochromic')
 
     color_str = ", ".join(sorted(colors_found)) if colors_found else "Clear"
-    # MUST return exactly 4 objects
     return color_str, list(colors_found), list(techs_found), list(coats_found)
 
 def normalize_lens_grouping_name(raw_name):
@@ -3427,8 +3708,8 @@ def execute_batch_convert():
         
     for mem in memory_bank:
         if mem['amb_mask'].sum() > 0:
-            if mem['mr10'] > mem['mr7']: mem['deduced_167'] = "MR-7" 
-            elif mem['mr7'] > mem['mr10']: mem['deduced_167'] = "MR-10" 
+            if mem['mr10'] > mem['mr7']: mem['deduced_167'] = "MR-10" 
+            elif mem['mr7'] > mem['mr10']: mem['deduced_167'] = "MR-7" 
             else:
                 if mem['mr7'] == 0: mem['deduced_167'] = "MR-7" 
                 else:
@@ -3460,13 +3741,14 @@ def execute_batch_convert():
         if 'MFG' in df.columns:
             df['MFG'] = df['MFG'].str.strip().map(mfg_translation_map).fillna(df['MFG'])
             
-        # --- MATERIAL RESOLVER ENGINE ---
+        # --- MATERIAL RESOLVER ENGINE (Strict Pipeline Signature) ---
         df['Material'] = df.apply(
             lambda row: resolve_material(
-                mat_code=row.get('Material'), 
-                idx=row.get('Safe Index'), 
-                desc=row.get('Description', ''), 
-                brand=row.get('MFG', ''),
+                mat_str=row.get('Material'), 
+                index_val=row.get('Safe Index'), 
+                desc_str=row.get('Description', ''), 
+                name_str=row.get('Name', ''),
+                abbe_val=row.get('Abbe', ''),
                 global_context={'fallback': mem.get('deduced_167')}
             ), axis=1
         )
@@ -3785,7 +4067,7 @@ def execute_list_database():
         draw_universal_footer()
         break
     global_mode = "MAIN MENU"
-
+    
 def execute_scan_database():
     global global_mode
     if not enforce_security_lock(): return
@@ -3826,13 +4108,16 @@ def execute_scan_database():
         draw_universal_footer()
         break
     global_mode = "MAIN MENU"
-    
+
 def execute_generate_database():
     global global_mode, scroll_offset
     global_mode = "MASTER COMPILER (Generate)"
     render_ui_skeleton("Master Compiler Initializing...")
     
     import re
+    import time
+    import stat
+    import hashlib
     
     while True:
         sys.stdout.write(f"{C_BG}\033[2J\033[H")
@@ -3882,6 +4167,8 @@ def execute_generate_database():
         if ans != "COMPILE": 
             global_mode = "MAIN MENU"
             return
+            
+        compile_start_time = time.time()
         
         if os.path.exists(DB_FILE):
             try: os.chmod(DB_FILE, stat.S_IWRITE | stat.S_IREAD)
@@ -3898,6 +4185,13 @@ def execute_generate_database():
             fpath = os.path.join(VLP_ARCHIVE, fname)
             log_task(format_log("VAULT_FILE", f"{fpath}", C_FILE), "RAW")
             
+            if fname not in master_db["files"]:
+                try:
+                    with open(fpath, "rb") as hash_f:
+                        master_db["files"][fname] = hashlib.sha256(hash_f.read()).hexdigest()
+                except:
+                    master_db["files"][fname] = "HASH_ERROR"
+            
             try:
                 df = robust_read_csv(fpath)
                 
@@ -3910,7 +4204,6 @@ def execute_generate_database():
                 
                 df['Norm_Name'] = df['Name'].apply(normalize_lens_grouping_name)
                 
-                # --- IMMORTAL GROUPBY UNPACKING ---
                 group_cols = ['Norm_Name', 'Material', 'Index']
                 if 'Class' in df.columns:
                     group_cols.append('Class')
@@ -3927,10 +4220,11 @@ def execute_generate_database():
                     b_id_str = f"{norm_name}{mat}{index}{cls}"
                     b_id = hashlib.md5(b_id_str.encode()).hexdigest()[:12]
                     
-                    # 4-Variable Execution
                     color_tag, extracted_colors, extracted_techs, extracted_coats = extract_lens_colors_coatings(group)
                     
                     sample_row = group.iloc[0].to_dict()
+                    raw_vca_description = str(sample_row.get('Description', ''))
+                    
                     clean_desc, lms_brief, lms_long, tags = synthesize_descriptions(sample_row, is_fsv, has_add, extracted_techs)
                     
                     for tech in extracted_techs:
@@ -3942,8 +4236,12 @@ def execute_generate_database():
                     tags.extend(extracted_coats)
                     tags.extend(extracted_colors) 
                     
-                    log_task(format_log("MERGE_NODE", f"{lms_long} ({mat}, {index})", C_STAGED), "RAW")
-                    log_task(format_log("NODE_ID", f"{b_id} -> Minted {len(group)} SKUs", C_PROMPT), "RAW")
+                    base_msg = f"{lms_long} ({mat}, {index})"
+                    tag = f"[+{len(group)} LENSES]"
+                    pad = max(1, (term_w - 32) - len(base_msg) - len(tag))
+                    padded_msg = f"{base_msg}{' ' * pad}{tag}"
+                    
+                    log_task(format_log("MERGE_NODE", padded_msg, C_STAGED), "RAW")
                     
                     processed_lines += len(group)
                     pct = (processed_lines / max(1, total_raw_lines)) * 100.0
@@ -3963,97 +4261,135 @@ def execute_generate_database():
                         
                     total_types += 1
                     
-                    surfacing = []
+                    specifications = []
                     for _, row_data in group.iterrows():
                         r_dict = {k: ("" if pd.isna(v) else v) for k, v in row_data.items()}
                         
                         row_color = "Clear"
-                        c_pad_row = str(r_dict.get('Description', '')) + " " + str(r_dict.get('Name', ''))
-                        c_pad_row = f" {c_pad_row.upper()} "
+                        c_pad_row = (str(r_dict.get('Description', '')) + " " + 
+                                     str(r_dict.get('Name', '')) + " " + 
+                                     str(r_dict.get('Filter', '')) + " " + 
+                                     str(r_dict.get('Coating Brand', '')) + " " + 
+                                     str(r_dict.get('Coating', ''))).upper()
+                        c_pad_row = f" {c_pad_row} ".replace('-', ' ').replace('/', ' ')
+                        c_pad_color = c_pad_row.replace('BLUE FILTER', '').replace('BLUE BLOCKER', '').replace('BLUE PROTECT', '').replace('BLUEGUARD', '')
                         
                         has_pigment = False
-                        if any(x in c_pad_row for x in [' GRAY ', ' GREY ', ' PRO GRAY ', ' PRO GREY ', ' EXTRAGREY ', ' EXTRAGRAY ']): row_color = 'Gray'; has_pigment = True
-                        elif any(x in c_pad_row for x in [' BROWN ', ' PRO BROWN ']): row_color = 'Brown'; has_pigment = True
-                        elif any(x in c_pad_row for x in [' GREEN ', ' G15 ', ' PIONEER ']): row_color = 'Green'; has_pigment = True
-                        elif ' PINK ' in c_pad_row: row_color = 'Pink'; has_pigment = True
-                        elif ' BLUE ' in c_pad_row: row_color = 'Blue'; has_pigment = True
-                        elif ' PURPLE ' in c_pad_row: row_color = 'Purple'; has_pigment = True
+                        if any(x in c_pad_color for x in [' GRAY', ' GREY', ' PRO GRAY', ' PRO GREY', ' EXTRAGREY', ' EXTRAGRAY']): row_color = 'Gray'; has_pigment = True
+                        elif any(x in c_pad_color for x in [' BROWN', ' PRO BROWN']): row_color = 'Brown'; has_pigment = True
+                        elif any(x in c_pad_color for x in [' GREEN', ' G15', ' PIONEER']): row_color = 'Green'; has_pigment = True
+                        elif ' PINK' in c_pad_color: row_color = 'Pink'; has_pigment = True
+                        elif any(x in c_pad_color for x in [' BLUE ', ' BLUE1', ' BLUE2', ' BLUE3']): row_color = 'Blue'; has_pigment = True
+                        elif ' PURPLE' in c_pad_color: row_color = 'Purple'; has_pigment = True
                         
-                        is_tech = False
-                        if any(x in c_pad_row for x in [' XTRA-ACTIVE ', ' XA ', ' Q-CHANGE ', ' QC ', ' SUNSYNC ', ' SENSITY ', ' TRANS ', ' TRN ', ' PFX ', ' PHOTOFUSION ', ' PHOTO ', ' POLAR ', ' POLARIZED ', ' POLZ ']):
-                            is_tech = True
+                        is_reactive = False
+                        if any(x in c_pad_row for x in [' XTRA ACTIVE', ' XA ', ' Q CHANGE', ' QC ', ' SUNSYNC', ' SENSITY', ' TRANSITIONS', ' TRANS ', ' TRN ', ' PFX', ' PHOTOFUSION X', ' PHOTOFUSION', ' PHOTOCHROMIC', ' PHOTO ', ' NUPOLAR', ' TRUPOLAR', ' POLARIZED', ' POLAR ', ' POLZ ']):
+                            is_reactive = True
                             
-                        if not has_pigment and is_tech: row_color = 'Gray'
-                        elif not has_pigment and not is_tech: row_color = 'Clear'
+                        if not has_pigment and is_reactive: row_color = 'Gray'
+                        elif not has_pigment and not is_reactive: row_color = 'Clear'
                         
                         r_opc = str(r_dict.get("Right OPC", "")).strip()
                         l_opc = str(r_dict.get("Left OPC", "")).strip()
                         
                         b_val = pd.to_numeric(r_dict.get("SPH/BASE"), errors='coerce')
                         c_val = pd.to_numeric(r_dict.get("CYL/ADD"), errors='coerce')
-                        d_val = r_dict.get("Diameter")
-                        tc_val = pd.to_numeric(r_dict.get("Front TC"), errors='coerce')
+                        
+                        b_str = f"{b_val:+.2f}" if pd.notna(b_val) else ""
+                        
+                        if pd.isna(c_val) or float(c_val) == 0.0:
+                            c_str = "+0.00"
+                        else:
+                            c_str = f"{c_val:+.2f}"
+                        
+                        spec_base = {}
+                        if is_fsv:
+                            spec_base = {
+                                "SPH": b_str,
+                                "CYL": c_str,
+                                "Diameter": r_dict.get("Diameter", ""),
+                                "Center Thick": r_dict.get("Center Thick", ""),
+                                "Edge Thick": r_dict.get("Edge Thick", "")
+                            }
+                        else:
+                            spec_base = {
+                                "BASE": b_str,
+                                "ADD": c_str,
+                                "Front RAD": r_dict.get("Front RAD", ""),
+                                "Back RAD": r_dict.get("Back RAD", ""),
+                                "Front TC": r_dict.get("Front TC", ""),
+                                "Back TC": r_dict.get("Back TC", ""),
+                                "SAG": r_dict.get("SAG", ""),
+                                "Center Thick": r_dict.get("Center Thick", ""),
+                                "Edge Thick": r_dict.get("Edge Thick", ""),
+                                "Diameter": r_dict.get("Diameter", ""),
+                                "Inset": r_dict.get("Inset", ""),
+                                "Drop": r_dict.get("Drop", ""),
+                                "PRP Out": r_dict.get("PRP Out", ""),
+                                "PRP Up": r_dict.get("PRP Up", ""),
+                                "Seg Width": r_dict.get("Seg Width", ""),
+                                "Seg Thick": r_dict.get("Seg Thick", "")
+                            }
                         
                         is_duplicate = False
-                        for exist_s in surfacing:
-                            eb_val = pd.to_numeric(exist_s.get("SPH/BASE"), errors='coerce')
-                            ec_val = pd.to_numeric(exist_s.get("CYL/ADD"), errors='coerce')
-                            ed_val = exist_s.get("Diameter")
-                            etc_val = pd.to_numeric(exist_s.get("Front TC"), errors='coerce')
-                            
-                            if b_val == eb_val and c_val == ec_val and str(d_val) == str(ed_val):
-                                if (pd.notna(tc_val) and pd.notna(etc_val) and abs(tc_val - etc_val) <= 0.05) or (pd.isna(tc_val) and pd.isna(etc_val)):
+                        for exist_s in specifications:
+                            if is_fsv:
+                                if spec_base["SPH"] == exist_s.get("SPH") and spec_base["CYL"] == exist_s.get("CYL") and str(spec_base["Diameter"]) == str(exist_s.get("Diameter")):
                                     if r_opc and r_opc != "NAN": exist_s["Right OPC"][row_color] = r_opc
                                     if l_opc and l_opc != "NAN": exist_s["Left OPC"][row_color] = l_opc
                                     is_duplicate = True; break
+                            else:
+                                if spec_base["BASE"] == exist_s.get("BASE") and spec_base["ADD"] == exist_s.get("ADD") and str(spec_base["Diameter"]) == str(exist_s.get("Diameter")):
+                                    tc_val = pd.to_numeric(r_dict.get("Front TC"), errors='coerce')
+                                    etc_val = pd.to_numeric(exist_s.get("Front TC"), errors='coerce')
+                                    if (pd.notna(tc_val) and pd.notna(etc_val) and abs(tc_val - etc_val) <= 0.05) or (pd.isna(tc_val) and pd.isna(etc_val)):
+                                        if r_opc and r_opc != "NAN": exist_s["Right OPC"][row_color] = r_opc
+                                        if l_opc and l_opc != "NAN": exist_s["Left OPC"][row_color] = l_opc
+                                        is_duplicate = True; break
 
                         if not is_duplicate:
-                            surfacing.append({
-                                "Right OPC": {row_color: r_opc} if r_opc and r_opc != "NAN" else {},
-                                "Left OPC": {row_color: l_opc} if l_opc and l_opc != "NAN" else {},
-                                "SPH/BASE": r_dict.get("SPH/BASE"),
-                                "CYL/ADD": r_dict.get("CYL/ADD"),
-                                "Front RAD": r_dict.get("Front RAD"),
-                                "Back RAD": r_dict.get("Back RAD"),
-                                "Front TC": r_dict.get("Front TC"),
-                                "Back TC": r_dict.get("Back TC"),
-                                "SAG": r_dict.get("SAG"),
-                                "Center Thick": r_dict.get("Center Thick"),
-                                "Edge Thick": r_dict.get("Edge Thick"),
-                                "Diameter": r_dict.get("Diameter"),
-                                "Inset": r_dict.get("Inset"),
-                                "Drop": r_dict.get("Drop"),
-                                "PRP Out": r_dict.get("PRP Out"),
-                                "PRP Up": r_dict.get("PRP Up"),
-                                "Seg Width": r_dict.get("Seg Width"),
-                                "Seg Thick": r_dict.get("Seg Thick")
-                            })
+                            spec_base["Right OPC"] = {row_color: r_opc} if r_opc and r_opc != "NAN" else {}
+                            spec_base["Left OPC"] = {row_color: l_opc} if l_opc and l_opc != "NAN" else {}
+                            specifications.append(spec_base)
+                            
                         total_skus += 1
                         
-                    final_style = sample_row.get("Style", "")
-                    for t in ["PAL", "Flat Top", "Trifocal", "Round", "Executive", "SV"]:
-                        if t in tags:
-                            final_style = t
-                            break
+                    for spec in specifications:
+                        r_opc_dict = spec.get("Right OPC", {})
+                        l_opc_dict = spec.get("Left OPC", {})
+                        
+                        if not r_opc_dict and not l_opc_dict:
+                            spec["OPC"] = {}
+                            spec.pop("Right OPC", None)
+                            spec.pop("Left OPC", None)
+                        elif r_opc_dict == l_opc_dict or not r_opc_dict or not l_opc_dict:
+                            spec["OPC"] = r_opc_dict if r_opc_dict else l_opc_dict
+                            spec.pop("Right OPC", None)
+                            spec.pop("Left OPC", None)
+                        
+                    strict_style_code = map_style_code(sample_row)
 
                     lens_entry = {
                         "Id": b_id,
                         "MFG": sample_row.get("MFG", ""),
-                        "Style": final_style,
+                        "Style": strict_style_code,
                         "Material": mat,
                         "Index": sample_row.get("Index", ""),
                         "Abbe": sample_row.get("Abbe", ""),
+                        "Raw Description": raw_vca_description,
                         "Description": clean_desc,
                         "Brief Description": lms_brief,
                         "Long Description": lms_long,
                         "Color": color_tag,
                         "Coatings": extracted_coats,
                         "FilterTags": list(set(tags)),
-                        "Surfacing": surfacing
+                        "Specifications": {"FIN": specifications} if is_fsv else {"SF": specifications}
                     }
                     
-                    if is_fsv: lens_entry.update(p_range_dict)
-                    else: lens_entry["NominalBaseCurves"] = sf_curve_str
+                    if is_fsv: 
+                        lens_entry.update(p_range_dict)
+                    else: 
+                        lens_entry["NominalBaseCurves"] = sf_curve_str
                         
                     master_db['lenses'][b_id] = lens_entry
                     
@@ -4073,18 +4409,39 @@ def execute_generate_database():
                 )
             ))
             
+            raw_json = json.dumps(master_db, indent=4, sort_keys=False, ensure_ascii=False)
+            
+            collapsed_json = re.sub(
+                r'("(?:Right |Left )?OPC":\s*\{)([^}]+)(\})',
+                lambda m: m.group(1) + " " + " ".join(m.group(2).split()) + " }",
+                raw_json
+            )
+            
             with open(DB_FILE, 'w', encoding='utf-8') as f: 
-                json.dump(master_db, f, indent=4, sort_keys=False, ensure_ascii=False)
+                f.write(collapsed_json)
             
             f_size = os.path.getsize(DB_FILE)
-            log_task(format_log("PAYLOAD_SIZE", f"{f_size / (1024*1024):.2f} MB ({f_size:,} bytes)", C_PROMPT), "RAW")
-            
             os.chmod(DB_FILE, stat.S_IREAD | stat.S_IRGRP | stat.S_IROTH)
             sign_master_database()
-            
             with open(SIG_FILE, 'r') as sf: sig = sf.read().strip()
+            
+            compile_end_time = time.time()
+            elapsed = compile_end_time - compile_start_time
+            mins, secs = divmod(int(elapsed), 60)
+            
+            log_task(format_log("SYSTEM", "=======================================================", C_TITLE), "RAW")
+            log_task(format_log("SYSTEM", "CRUCIBLE SUMMARY", C_TITLE), "RAW")
+            log_task(format_log("SYSTEM", "=======================================================", C_TITLE), "RAW")
+            log_task(format_log("SUMMARY", f"Total Time Elapsed  : {mins}m {secs}s", C_STAGED), "RAW")
+            log_task(format_log("SUMMARY", f"Vault Files Digested: {len(files)}", C_STAGED), "RAW")
+            log_task(format_log("SUMMARY", f"Unique Merge Nodes  : {total_types}", C_STAGED), "RAW")
+            log_task(format_log("SUMMARY", f"Total Lenses Minted : {total_skus:,}", C_STAGED), "RAW")
+            log_task(format_log("PAYLOAD", f"{f_size / (1024*1024):.2f} MB ({f_size:,} bytes)", C_PROMPT), "RAW")
             log_task(format_log("DB_PUB_ID", f"{sig}", C_WARN), "RAW")
             log_task(format_log("SEAL_LOG", f"Signature appended to master_lens_db.sig", C_STAGED), "RAW")
+            
+            vp_height = term_h - 12
+            scroll_offset = max(0, len(viewport_logs) - vp_height)
             
             draw_viewport(progress_pct=100.0, active_file="master_lens_db.json", current_file_idx=total_raw_lines, total_files=total_raw_lines, total_types=total_types, total_lenses=total_skus, is_interactive=True, action_text="( PRESS ENTER TO RETURN )")
             
@@ -4095,9 +4452,7 @@ def execute_generate_database():
                     except: continue
                 if c in ('\r', '\n', '\x1b'): break 
                 
-                vp_height = term_h - 12
                 max_scroll = max(0, len(viewport_logs) - vp_height)
-                
                 if c == '\x1b[A' or c == 'UP': scroll_offset = max(0, scroll_offset - 1)
                 elif c == '\x1b[B' or c == 'DOWN': scroll_offset = min(max_scroll, scroll_offset + 1)
                 elif c == '\x1b[5~' or c == 'PGUP': scroll_offset = max(0, scroll_offset - 10)
