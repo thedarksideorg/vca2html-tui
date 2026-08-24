@@ -824,7 +824,10 @@ def draw_status_bar():
     except: total_lenses = 0
     staged = len([f for f in os.listdir(IMPORT_DIR) if f.lower().endswith('.vlp')]) if os.path.exists(IMPORT_DIR) else 0
     
-    mode_str = global_mode.upper()
+    # Strip redundant text directly in the renderer
+    clean_mode = global_mode.replace(" (Generate)", "").replace(" (GENERATE)", "")
+    mode_str = clean_mode.upper()
+    
     if "MENU" in mode_str: m_key = "mode"
     elif "AUDIT" in mode_str or "QUESTION" in mode_str or "CONVERT" in mode_str: m_key = "conv"
     elif "GATEKEEPER" in mode_str or "ADD" in mode_str: m_key = "add"
@@ -838,15 +841,23 @@ def draw_status_bar():
     elif "DELETE" in mode_str: m_key = "del"
     else: m_key = "mode"
     
-    m_block = f"{C_SIZE}{get_ico(m_key)} MODE: {C_TITLE}{global_mode}{C_BORDER}"
+    m_block = f"{C_SIZE}{get_ico(m_key)} MODE: {C_TITLE}{clean_mode}{C_BORDER}"
     db_block = f"{C_SIZE}{get_ico('db')} DB: {C_TITLE}{'ACTIVE' if db_active else 'OFFLINE'}{C_BORDER}"
-    l_block = f"{C_SIZE}{get_ico('lens')} LENSES: {C_STAGED}{total_lenses}{C_BORDER}"
+    l_block = f"{C_SIZE}{get_ico('lens')} LENSES: {C_STAGED}{total_lenses:,}{C_BORDER}"
     s_block = f"{C_SIZE}{get_ico('stage')} STAGED: {C_TITLE}{staged}{C_BORDER}"
 
-    left = f"{C_BORDER}╚════[{m_block}]════[{db_block}]══({l_block})════[{s_block}]"
-    right = f"═══[{C_TITLE}{get_ico('prot')} {get_sys_info()}{C_BORDER}]════╝{RESET}"
+    # Reduced structural padding to allow the dynamic gap to breathe
+    left = f"{C_BORDER}╚══[{m_block}]══[{db_block}]══({l_block})══[{s_block}]"
+    right = f"══[{C_TITLE}{get_ico('prot')} {get_sys_info()}{C_BORDER}]══╝{RESET}"
     
-    gap = max(0, term_w - ansi_len(left) - ansi_len(right))
+    gap = term_w - ansi_len(left) - ansi_len(right)
+    
+    # Dynamic failsafe: If the screen is exceptionally narrow, crush the padding
+    if gap < 0:
+        left = f"{C_BORDER}╚═[{m_block}]═[{db_block}]═({l_block})═[{s_block}]"
+        right = f"═[{C_TITLE}{get_ico('prot')} {get_sys_info()}{C_BORDER}]═╝{RESET}"
+        gap = max(0, term_w - ansi_len(left) - ansi_len(right))
+        
     sys.stdout.write(f"\033[{term_h - 1};1H{left}{'═' * gap}{right}")
     sys.stdout.flush()
 
@@ -2746,7 +2757,7 @@ def map_style_code(row):
     # 11. Single Vision (Default fallback for all stock blanks)
     return 1
 
-def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found):
+def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_coats, is_universal_ar):
     raw_desc = str(sample_row.get('Description', '')).upper().strip()
     raw_name = str(sample_row.get('Name', '')).upper().strip()
     mfg = str(sample_row.get('MFG', '')).upper().strip()
@@ -2759,6 +2770,7 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found):
     brand_str = ""
     is_short = False
     seg_size = ""
+    is_zeiss = 'ZEISS' in mfg or 'ZEISS' in combined_name_desc
     
     if style_int == 6:
         clean_name = raw_name
@@ -2800,7 +2812,6 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found):
         type_cascade_array = [base_sv, base_sv, base_sv, base_sv]
 
     tags = []
-    
     tags.append("FIN" if is_fsv else "SF")
     
     style_tag_map = {
@@ -2817,20 +2828,33 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found):
     if has_puck: tags.append("PUCK")
     if has_extra_thick: tags.append("Extra Thick")
 
-    has_blue_tech = any(t in techs_found for t in ['Blue Protect', 'BlueGuard', 'HEV', 'Blue Filter'])
-    if has_blue_tech:
-        tags.append("Blue Filter")
+    active_ar = None
+    if is_universal_ar:
+        coats_upper = [c.upper() for c in extracted_coats]
+        ar_check_str = combined_name_desc + " " + " ".join(coats_upper)
+        
+        if any(x in ar_check_str for x in ['DURAVISION CHROME', 'DV CHROME', 'DVC']): active_ar = "DuraVision Chrome"
+        elif any(x in ar_check_str for x in ['DURAVISION PLATINUM', 'DV PLATINUM', 'DVP']): active_ar = "DuraVision Platinum"
+        elif any(x in ar_check_str for x in ['DURAVISION SILVER', 'DV SILVER', 'DVS']): active_ar = "DuraVision Silver"
+        elif any(x in ar_check_str for x in ['DURAVISION GOLD', 'DV GOLD', 'DVG']): active_ar = "DuraVision Gold"
+        elif 'VELA' in ar_check_str: active_ar = "Vela"
+        elif any(x in ar_check_str for x in ['CRIZAL', 'CZ']): active_ar = "Crizal"
+        elif any(x in ar_check_str for x in ['HOYA PREMIUM', 'HOYA PREM']): active_ar = "Hoya Premium"
+        elif 'ECP' in ar_check_str: active_ar = "ECP"
+        elif any(x in ar_check_str for x in ['ULTRACLEAN', 'ULTRACLN']): active_ar = "Ultraclean"
+        elif any(x in ar_check_str for x in ['HMC', 'BMC', 'SHMC', ' AR ', ' A/R ', 'ANTI-REFLECTIVE']): active_ar = "A/R"
+
+    if active_ar: tags.append("A/R") 
 
     color_keywords = ['GRAY', 'GREY', 'BROWN', 'GREEN', 'G15', 'PIONEER', 'PINK', 'BLUE', 'PURPLE']
     has_color_word = any(re.search(rf'\b{w}\b', combined_name_desc) for w in color_keywords)
-    is_reactive = any(t in techs_found for t in [
+    is_reactive = any(t in techs_found or t.upper() in combined_name_desc for t in [
         'Transitions', 'PhotoFusion X', 'PhotoFusion', 'Sensity', 
         'SunSync', 'Quick-Change', 'Xtra-Active', 'Photochromic', 
         'Polarized', 'NuPolar', 'TruPolar'
     ])
     
-    if has_color_word and not is_reactive:
-        tags.append("Pre Tint")
+    if has_color_word and not is_reactive: tags.append("Pre Tint")
 
     lms_mat_str = ""
     if "POLYCARBONATE" in material or index == "1.586" or ("POLY" in material and "POLYURETHANE" not in material and "POLYMER" not in material):
@@ -2844,37 +2868,53 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found):
     elif "1.67" in material or "1.66" in material or index in ["1.659", "1.66", "1.660", "1.665", "1.67", "1.670"]: tags.append("1.67"); lms_mat_str = "1.67"
     elif "1.74" in material or index in ["1.73", "1.735", "1.74", "1.740"]: tags.append("1.74"); lms_mat_str = "1.74"
 
+    active_blue = None
+    if is_zeiss:
+        if 'BLUE PROTECT' in combined_name_desc or 'BLUEP' in combined_name_desc:
+            active_blue = "Blue Protect"
+        elif any(x in combined_name_desc for x in ['BLUEGUARD', 'BG', 'HEV', 'UV420']) or any(t in techs_found for t in ['HEV', 'BlueGuard', 'Blue Filter']):
+            active_blue = "BlueGuard"
+    else:
+        if 'BLUEGUARD' in combined_name_desc: active_blue = "BlueGuard"
+        elif 'BLUE PROTECT' in combined_name_desc: active_blue = "Blue Protect"
+        elif any(x in combined_name_desc for x in ['HEV', 'UV420']) or 'HEV' in techs_found: active_blue = "HEV"
+        elif 'BLUE FILTER' in combined_name_desc or 'Blue Filter' in techs_found: active_blue = "Blue Filter"
+        
+    if active_blue: tags.append("Blue Filter") 
+
     tech_list_full = []
-    for t in ['Xtra-Active', 'Quick-Change', 'SunSync', 'Sensity', 'Transitions', 'PhotoFusion X', 'PhotoFusion']:
-        if t in techs_found: tech_list_full.append(t)
-    if 'Photochromic' in techs_found and not any(x in techs_found for x in ['Xtra-Active', 'Quick-Change', 'SunSync', 'Sensity', 'Transitions', 'PhotoFusion X', 'PhotoFusion']):
-        tech_list_full.append("Photochromic")
-        
-    for t in ['NuPolar', 'TruPolar', 'Polarized']:
-        if t in techs_found: tech_list_full.append(t)
-        
-    if 'BlueGuard' in techs_found: tech_list_full.append('BlueGuard')
-    elif 'Blue Protect' in techs_found: tech_list_full.append('Blue Protect')
-    elif 'HEV' in techs_found: tech_list_full.append('HEV')
-    elif 'Blue Filter' in techs_found: tech_list_full.append('Blue Filter')
-
-    # Anti-Reflective (AR) Exclusivity Hierarchy
-    active_ar = None
-    ar_check_str = combined_name_desc
     
-    if any(x in ar_check_str for x in ['DURAVISION CHROME', 'DV CHROME', 'DVC']): active_ar = "DuraVision Chrome"
-    elif any(x in ar_check_str for x in ['DURAVISION PLATINUM', 'DV PLATINUM', 'DVP']): active_ar = "DuraVision Platinum"
-    elif any(x in ar_check_str for x in ['DURAVISION SILVER', 'DV SILVER', 'DVS']): active_ar = "DuraVision Silver"
-    elif any(x in ar_check_str for x in ['DURAVISION GOLD', 'DV GOLD', 'DVG']): active_ar = "DuraVision Gold"
-    elif 'VELA' in ar_check_str: active_ar = "Vela"
-    elif any(x in ar_check_str for x in ['CRIZAL', 'CZ']): active_ar = "Crizal"
-    elif any(x in ar_check_str for x in ['HOYA PREMIUM', 'HOYA PREM']): active_ar = "Hoya Premium"
-    elif 'ECP' in ar_check_str: active_ar = "ECP"
-    elif any(x in ar_check_str for x in ['ULTRACLEAN', 'UC']): active_ar = "Ultraclean"
-    elif any(x in ar_check_str for x in ['HMC', 'BMC', 'SHMC', ' AR ', ' A/R ', 'ANTI-REFLECTIVE']): active_ar = "A/R"
-
-    if active_ar:
-        tags.append(active_ar if active_ar != "A/R" else "A/R Coating")
+    # Strictly Deduplicated Reactive Additions
+    has_photo = False
+    if 'PhotoFusion X' in techs_found or 'PHOTOFUSION X' in combined_name_desc:
+        tech_list_full.append('PhotoFusion X')
+        has_photo = True
+    elif 'PhotoFusion' in techs_found or 'PHOTOFUSION' in combined_name_desc:
+        tech_list_full.append('PhotoFusion')
+        has_photo = True
+        
+    for t in ['Xtra-Active', 'Quick-Change', 'SunSync', 'Sensity', 'Transitions']:
+        if t in techs_found or t.upper() in combined_name_desc: 
+            tech_list_full.append(t)
+            has_photo = True
+            
+    if not has_photo and ('Photochromic' in techs_found or 'PHOTOCHROMIC' in combined_name_desc):
+        tech_list_full.append("Photochromic")
+        has_photo = True
+        
+    if has_photo: tags.append("Photochromic")
+        
+    # Strict Regex for Polarized Firewall (Ignores techs_found completely)
+    has_polar = False
+    if re.search(r'\b(POLARIZED|POLAR|NUPOLAR|TRUPOLAR)\b', combined_name_desc):
+        has_polar = True
+        if 'NUPOLAR' in combined_name_desc: tech_list_full.append('NuPolar')
+        elif 'TRUPOLAR' in combined_name_desc: tech_list_full.append('TruPolar')
+        else: tech_list_full.append('Polarized')
+            
+    if has_polar: tags.append("Polarized")
+            
+    if active_blue: tech_list_full.append(active_blue)
 
     is_org = "ORG" in combined_name_desc
     is_asph = any(x in combined_name_desc for x in [' AS ', ' ASP ', ' ASPHERIC ', ' ASPH ']) and style_int not in [6, 7]
@@ -2898,10 +2938,10 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found):
             "Polarized": ["POLARIZED", "POLAR", "POLZ", "POL"],
             "NuPolar": ["NUPOLAR", "NUPOLAR", "NPOL", "NPOL"],
             "TruPolar": ["TRUPOLAR", "TRUPOLAR", "TPOL", "TPOL"],
-            "Blue Filter": ["BLUE FILTER", "BLUEF", "BF", "BF"],
+            "BlueGuard": ["BLUEGUARD", "BLUEGUARD", "BG", "BG"],
             "Blue Protect": ["BLUE PROTECT", "BLUEP", "BP", "BP"],
-            "BlueGuard": ["BLUEGUARD", "BLUEG", "BG", "BG"],
             "HEV": ["UV420", "UV420", "HEV", "HEV"], 
+            "Blue Filter": ["BLUE FILTER", "BLUEF", "BF", "BF"],
             "Photochromic": ["PHOTOCHROMIC", "PHOTO", "PHT", "PHT"]
         }
         
@@ -2936,8 +2976,7 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found):
         
         def build():
             parts = []
-            if working_type_array: 
-                parts.append(working_type_array[min(state_type, len(working_type_array)-1)])
+            if working_type_array: parts.append(working_type_array[min(state_type, len(working_type_array)-1)])
             if b_str: parts.append(b_str)
             if state_org == 1: parts.append("ORG")
             
@@ -2951,17 +2990,20 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found):
                 t_arr = tech_cascades.get(t, [t])
                 parts.append(t_arr[min(state_tech, len(t_arr)-1)])
                 
-            if state_et < 4:
-                parts.append(et_cascades[state_et])
+            if state_et < 4: parts.append(et_cascades[state_et])
                 
             if state_ar < 4 and active_ar:
                 a_arr = ar_cascades.get(active_ar, ["A/R", "A/R", "AR", "AR"])
                 parts.append(a_arr[min(state_ar, len(a_arr)-1)])
                 
-            if state_puck < 3:
-                parts.append(puck_cascades[state_puck])
+            if state_puck < 3: parts.append(puck_cascades[state_puck])
                 
-            return " ".join(parts).replace("  ", " ").strip()
+            # Active deduplicator (fixes PFX PFX)
+            clean_parts = []
+            for p in parts:
+                if p and p not in clean_parts:
+                    clean_parts.append(p)
+            return " ".join(clean_parts).replace("  ", " ").strip()
 
         if len(build()) <= target_len: return build()
         
@@ -2979,9 +3021,6 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found):
         state_mat = 1
         if len(build()) <= target_len: return build()
         
-        if has_puck: state_puck = 1
-        if len(build()) <= target_len: return build()
-        
         if active_ar: state_ar = 1
         if len(build()) <= target_len: return build()
         
@@ -2992,9 +3031,6 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found):
         if len(build()) <= target_len: return build()
         
         state_mat = 2
-        if len(build()) <= target_len: return build()
-        
-        if has_puck: state_puck = 2
         if len(build()) <= target_len: return build()
         
         if active_ar: state_ar = 2
@@ -3035,11 +3071,16 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found):
                 current_t = current_t[:-1].strip()
                 working_type_array = [current_t for _ in working_type_array]
                 if len(build()) <= target_len: return build()
-            
-        if has_puck: state_puck = 3
+                
+        if has_extra_thick: state_et = 4
         if len(build()) <= target_len: return build()
         
-        if has_extra_thick: state_et = 4
+        # PUCK is moved to the absolute lowest priority.
+        if has_puck: state_puck = 1
+        if len(build()) <= target_len: return build()
+        if has_puck: state_puck = 2
+        if len(build()) <= target_len: return build()
+        if has_puck: state_puck = 3
         if len(build()) <= target_len: return build()
         
         return build()[:target_len].strip()
@@ -3055,9 +3096,13 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found):
     for word in ['DVC', 'DVP', 'DVG', 'DVS', 'ROCK', 'EASY', 'SAPPHIRE', 'VELA', 'AR', 'CRIZAL', 'DURAVISION', 'DURA', 'HC', 'SR', 'SHMC', 'PG', 'UC', 'UNCOATED']:
         clean_desc = re.sub(rf'\b{word}\b', '', clean_desc)
         
+    # Actively scrubs diameter strings from the cosmetic description
+    clean_desc = re.sub(r'\bD\d{2,3}\b', '', clean_desc, flags=re.IGNORECASE)
+    clean_desc = re.sub(r'\b\d{2,3}MM\b', '', clean_desc, flags=re.IGNORECASE)
+        
     clean_desc = re.sub(r'\s+', ' ', clean_desc).strip()
     
-    return clean_desc, brief_desc, long_desc, tags
+    return clean_desc, brief_desc, long_desc, tags, active_ar
 
 def aggregate_fsv_powers(group):
     raw_sph = pd.to_numeric(group['SPH/BASE'], errors='coerce')
@@ -3073,6 +3118,9 @@ def aggregate_fsv_powers(group):
         "PowerRange_MinusCyl": None,
         "PowerRange_PlusCyl": None
     }
+    
+    C_BRIGHT_BLUE = '\033[94m'
+    C_FG_RESET = '\033[39m' 
     
     if sph_vals.empty: 
         return [f"     {C_PROMPT}-> Power Range: N/A"], p_dict
@@ -3102,10 +3150,10 @@ def aggregate_fsv_powers(group):
         p_dict["PowerRange_PlusCyl"] = f"{fmt_r(p_cyl.min(), p_cyl.max())} SPH | {fmt_r(p_cyl_c.min(), p_cyl_c.max())} CYL"
         
     telemetry = [
-        f"     {C_PROMPT}-> Minus Sph      :{C_FILE} {p_dict['PowerRange_MinusSph'] if p_dict['PowerRange_MinusSph'] else 'null'}",
-        f"     {C_PROMPT}-> Plus Sph       :{C_FILE} {p_dict['PowerRange_PlusSph'] if p_dict['PowerRange_PlusSph'] else 'null'}",
-        f"     {C_PROMPT}-> Minus with Cyl :{C_FILE} {p_dict['PowerRange_MinusCyl'] if p_dict['PowerRange_MinusCyl'] else 'null'}",
-        f"     {C_PROMPT}-> Plus with Cyl  :{C_FILE} {p_dict['PowerRange_PlusCyl'] if p_dict['PowerRange_PlusCyl'] else 'null'}"
+        f"     {C_PROMPT}-> Minus Sph      : {C_BRIGHT_BLUE}{p_dict['PowerRange_MinusSph'] if p_dict['PowerRange_MinusSph'] else 'null'}{C_FG_RESET}",
+        f"     {C_PROMPT}-> Plus Sph       : {C_BRIGHT_BLUE}{p_dict['PowerRange_PlusSph'] if p_dict['PowerRange_PlusSph'] else 'null'}{C_FG_RESET}",
+        f"     {C_PROMPT}-> Minus with Cyl : {C_BRIGHT_BLUE}{p_dict['PowerRange_MinusCyl'] if p_dict['PowerRange_MinusCyl'] else 'null'}{C_FG_RESET}",
+        f"     {C_PROMPT}-> Plus with Cyl  : {C_BRIGHT_BLUE}{p_dict['PowerRange_PlusCyl'] if p_dict['PowerRange_PlusCyl'] else 'null'}{C_FG_RESET}"
     ]
         
     return telemetry, p_dict
@@ -4111,7 +4159,7 @@ def execute_scan_database():
 
 def execute_generate_database():
     global global_mode, scroll_offset
-    global_mode = "MASTER COMPILER (Generate)"
+    global_mode = "MASTER COMPILER"
     render_ui_skeleton("Master Compiler Initializing...")
     
     import re
@@ -4181,9 +4229,15 @@ def execute_generate_database():
         total_skus = 0
         total_types = 0
         
+        def get_norm_desc(desc):
+            n = normalize_lens_grouping_name(str(desc))
+            n = re.sub(r'\bD\d{2,3}\b', '', n, flags=re.IGNORECASE)
+            n = re.sub(r'\b\d{2,3}MM\b', '', n, flags=re.IGNORECASE)
+            return n.strip()
+        
         for idx, fname in enumerate(files):
             fpath = os.path.join(VLP_ARCHIVE, fname)
-            log_task(format_log("VAULT_FILE", f"{fpath}", C_FILE), "RAW")
+            log_task(format_log("VAULT_FILE", f"{fpath}", C_ALERT), "RAW")
             
             if fname not in master_db["files"]:
                 try:
@@ -4202,14 +4256,15 @@ def execute_generate_database():
                     row.get('Name'), row.get('Abbe'), global_context=file_global_context
                 ), axis=1)
                 
-                df['Norm_Name'] = df['Name'].apply(normalize_lens_grouping_name)
+                # Now grouped aggressively by normalized Description
+                df['Norm_Desc'] = df['Description'].apply(get_norm_desc)
                 
-                group_cols = ['Norm_Name', 'Material', 'Index']
+                group_cols = ['Norm_Desc', 'Material', 'Index']
                 if 'Class' in df.columns:
                     group_cols.append('Class')
                 
                 for group_keys, group in df.groupby(group_cols):
-                    norm_name = group_keys[0] if len(group_keys) > 0 else ""
+                    norm_desc = group_keys[0] if len(group_keys) > 0 else ""
                     mat = group_keys[1] if len(group_keys) > 1 else ""
                     index = group_keys[2] if len(group_keys) > 2 else ""
                     cls = group_keys[3] if len(group_keys) > 3 else ""
@@ -4217,24 +4272,47 @@ def execute_generate_database():
                     is_fsv = "FIN" in str(cls).upper() if cls else False
                     has_add = pd.to_numeric(group['CYL/ADD'], errors='coerce').max() > 0 if not is_fsv else False
                     
-                    b_id_str = f"{norm_name}{mat}{index}{cls}"
+                    b_id_str = f"{norm_desc}{mat}{index}{cls}"
                     b_id = hashlib.md5(b_id_str.encode()).hexdigest()[:12]
                     
                     color_tag, extracted_colors, extracted_techs, extracted_coats = extract_lens_colors_coatings(group)
                     
-                    sample_row = group.iloc[0].to_dict()
-                    raw_vca_description = str(sample_row.get('Description', ''))
-                    
-                    clean_desc, lms_brief, lms_long, tags = synthesize_descriptions(sample_row, is_fsv, has_add, extracted_techs)
-                    
-                    for tech in extracted_techs:
-                        if tech in ['Xtra-Active', 'Quick-Change', 'SunSync', 'Sensity', 'Transitions', 'PhotoFusion X', 'PhotoFusion', 'Photochromic']:
-                            tags.append('Photochromic')
-                        else:
-                            tags.append(tech)
+                    has_non_ar = False
+                    for _, row_data in group.iterrows():
+                        coat_str = (str(row_data.get('Coating', '')) + " " + str(row_data.get('Coating Brand', ''))).upper()
+                        
+                        is_ar_line = any(x in coat_str for x in ['AR', 'A/R', 'DURA', 'CRIZAL', 'VELA', 'HOYA', 'ECP', 'ULTRACLEAN', 'ANTI-REFLECTIVE', 'HMC', 'SHMC', 'BMC'])
+                        
+                        if 'UNCOAT' in coat_str or 'UC' in coat_str.split():
+                            has_non_ar = True
+                        elif not is_ar_line and ('HC' in coat_str.split() or 'SR' in coat_str.split() or 'HARDCOAT' in coat_str):
+                            has_non_ar = True
+                        elif not is_ar_line and not coat_str.strip():
+                            has_non_ar = True 
                             
+                    is_universal_ar = not has_non_ar
+                    
+                    sample_row = group.iloc[0].to_dict()
+                    clean_desc, lms_brief, lms_long, tags, active_ar = synthesize_descriptions(sample_row, is_fsv, has_add, extracted_techs, extracted_coats, is_universal_ar)
+                    
+                    base_raw_desc = str(sample_row.get('Description', '')).strip()
+                    extra_dia_tags = []
+                    if len(group) > 1:
+                        for _, r_data in group.iloc[1:].iterrows():
+                            rd = str(r_data.get('Description', '')).strip()
+                            matches = re.findall(r'\bD\d{2,3}\b|\b\d{2,3}MM\b', rd, flags=re.IGNORECASE)
+                            for m in matches:
+                                m_upper = m.upper()
+                                if m_upper not in base_raw_desc.upper() and m_upper not in extra_dia_tags:
+                                    extra_dia_tags.append(m_upper)
+                                    
+                    raw_vca_description = base_raw_desc
+                    if extra_dia_tags:
+                        raw_vca_description += " " + " ".join(extra_dia_tags)
+                    
                     tags.extend(extracted_coats)
                     tags.extend(extracted_colors) 
+                    tags = list(set(tags))
                     
                     base_msg = f"{lms_long} ({mat}, {index})"
                     tag = f"[+{len(group)} LENSES]"
@@ -4262,6 +4340,9 @@ def execute_generate_database():
                     total_types += 1
                     
                     specifications = []
+                    all_diameters = set()
+                    all_colors = set()
+                    
                     for _, row_data in group.iterrows():
                         r_dict = {k: ("" if pd.isna(v) else v) for k, v in row_data.items()}
                         
@@ -4289,25 +4370,44 @@ def execute_generate_database():
                         if not has_pigment and is_reactive: row_color = 'Gray'
                         elif not has_pigment and not is_reactive: row_color = 'Clear'
                         
+                        all_colors.add(row_color)
+                        
+                        # Strict AR word boundary check
+                        raw_coat_str = (str(r_dict.get('Coating', '')) + " " + str(r_dict.get('Coating Brand', ''))).upper()
+                        is_ar = any(x in raw_coat_str for x in ['A/R', 'DURA', 'CRIZAL', 'VELA', 'HOYA', 'ECP', 'ULTRACLEAN', 'ANTI-REFLECTIVE', 'HMC', 'SHMC', 'BMC']) or bool(re.search(r'\bAR\b', raw_coat_str))
+                        if is_ar: coat_tier = "AR"
+                        elif 'UNCOAT' in raw_coat_str or 'UC' in raw_coat_str.split() or not raw_coat_str.strip(): coat_tier = "UC"
+                        else: coat_tier = "HC"
+
                         r_opc = str(r_dict.get("Right OPC", "")).strip()
                         l_opc = str(r_dict.get("Left OPC", "")).strip()
+                        
+                        if r_opc == "NAN": r_opc = ""
+                        if l_opc == "NAN": l_opc = ""
+                        
+                        # Bulletproof S logic gate catching single-sided entries
+                        valid_opc_s = r_opc if r_opc else l_opc
+                        if (r_opc and not l_opc) or (l_opc and not r_opc) or (r_opc == l_opc and valid_opc_s):
+                            opc_flag = "S"
+                        else:
+                            opc_flag = "SPLIT"
+                            
+                        dia_val = str(r_dict.get("Diameter", "")).replace(".0", "").strip()
+                        if dia_val:
+                            try: all_diameters.add(int(float(dia_val)) if float(dia_val).is_integer() else float(dia_val))
+                            except: all_diameters.add(dia_val)
                         
                         b_val = pd.to_numeric(r_dict.get("SPH/BASE"), errors='coerce')
                         c_val = pd.to_numeric(r_dict.get("CYL/ADD"), errors='coerce')
                         
                         b_str = f"{b_val:+.2f}" if pd.notna(b_val) else ""
-                        
-                        if pd.isna(c_val) or float(c_val) == 0.0:
-                            c_str = "+0.00"
-                        else:
-                            c_str = f"{c_val:+.2f}"
+                        c_str = "+0.00" if pd.isna(c_val) or float(c_val) == 0.0 else f"{c_val:+.2f}"
                         
                         spec_base = {}
                         if is_fsv:
                             spec_base = {
                                 "SPH": b_str,
                                 "CYL": c_str,
-                                "Diameter": r_dict.get("Diameter", ""),
                                 "Center Thick": r_dict.get("Center Thick", ""),
                                 "Edge Thick": r_dict.get("Edge Thick", "")
                             }
@@ -4322,7 +4422,6 @@ def execute_generate_database():
                                 "SAG": r_dict.get("SAG", ""),
                                 "Center Thick": r_dict.get("Center Thick", ""),
                                 "Edge Thick": r_dict.get("Edge Thick", ""),
-                                "Diameter": r_dict.get("Diameter", ""),
                                 "Inset": r_dict.get("Inset", ""),
                                 "Drop": r_dict.get("Drop", ""),
                                 "PRP Out": r_dict.get("PRP Out", ""),
@@ -4334,40 +4433,82 @@ def execute_generate_database():
                         is_duplicate = False
                         for exist_s in specifications:
                             if is_fsv:
-                                if spec_base["SPH"] == exist_s.get("SPH") and spec_base["CYL"] == exist_s.get("CYL") and str(spec_base["Diameter"]) == str(exist_s.get("Diameter")):
-                                    if r_opc and r_opc != "NAN": exist_s["Right OPC"][row_color] = r_opc
-                                    if l_opc and l_opc != "NAN": exist_s["Left OPC"][row_color] = l_opc
-                                    is_duplicate = True; break
+                                if spec_base["SPH"] == exist_s.get("SPH") and spec_base["CYL"] == exist_s.get("CYL"):
+                                    is_duplicate = True
                             else:
-                                if spec_base["BASE"] == exist_s.get("BASE") and spec_base["ADD"] == exist_s.get("ADD") and str(spec_base["Diameter"]) == str(exist_s.get("Diameter")):
+                                if spec_base["BASE"] == exist_s.get("BASE") and spec_base["ADD"] == exist_s.get("ADD"):
                                     tc_val = pd.to_numeric(r_dict.get("Front TC"), errors='coerce')
                                     etc_val = pd.to_numeric(exist_s.get("Front TC"), errors='coerce')
                                     if (pd.notna(tc_val) and pd.notna(etc_val) and abs(tc_val - etc_val) <= 0.05) or (pd.isna(tc_val) and pd.isna(etc_val)):
-                                        if r_opc and r_opc != "NAN": exist_s["Right OPC"][row_color] = r_opc
-                                        if l_opc and l_opc != "NAN": exist_s["Left OPC"][row_color] = l_opc
-                                        is_duplicate = True; break
+                                        is_duplicate = True
+                                        
+                            if is_duplicate:
+                                if dia_val:
+                                    try: d_formatted = int(float(dia_val)) if float(dia_val).is_integer() else float(dia_val)
+                                    except: d_formatted = dia_val
+                                    
+                                    if d_formatted not in exist_s["Diameters"]:
+                                        exist_s["Diameters"].append(d_formatted)
+                                        try: exist_s["Diameters"] = sorted(exist_s["Diameters"], key=float)
+                                        except: pass
+
+                                if opc_flag == "S" and valid_opc_s:
+                                    k = f"{dia_val}_S_{row_color.upper()}_{coat_tier}"
+                                    if k in exist_s["OPC"]:
+                                        if valid_opc_s not in exist_s["OPC"][k]:
+                                            if isinstance(exist_s["OPC"][k], list): exist_s["OPC"][k].append(valid_opc_s)
+                                            else: exist_s["OPC"][k] = [exist_s["OPC"][k], valid_opc_s]
+                                    else: exist_s["OPC"][k] = valid_opc_s
+                                elif opc_flag == "SPLIT":
+                                    kr = f"{dia_val}_R_{row_color.upper()}_{coat_tier}"
+                                    kl = f"{dia_val}_L_{row_color.upper()}_{coat_tier}"
+                                    if r_opc:
+                                        if kr in exist_s["OPC"]:
+                                            if r_opc not in exist_s["OPC"][kr]:
+                                                if isinstance(exist_s["OPC"][kr], list): exist_s["OPC"][kr].append(r_opc)
+                                                else: exist_s["OPC"][kr] = [exist_s["OPC"][kr], r_opc]
+                                        else: exist_s["OPC"][kr] = r_opc
+                                    if l_opc:
+                                        if kl in exist_s["OPC"]:
+                                            if l_opc not in exist_s["OPC"][kl]:
+                                                if isinstance(exist_s["OPC"][kl], list): exist_s["OPC"][kl].append(l_opc)
+                                                else: exist_s["OPC"][kl] = [exist_s["OPC"][kl], l_opc]
+                                        else: exist_s["OPC"][kl] = l_opc
+                                break
 
                         if not is_duplicate:
-                            spec_base["Right OPC"] = {row_color: r_opc} if r_opc and r_opc != "NAN" else {}
-                            spec_base["Left OPC"] = {row_color: l_opc} if l_opc and l_opc != "NAN" else {}
+                            try:
+                                d_formatted = int(float(dia_val)) if float(dia_val).is_integer() else float(dia_val)
+                                spec_base["Diameters"] = [d_formatted] if dia_val else []
+                            except:
+                                spec_base["Diameters"] = [dia_val] if dia_val else []
+                                
+                            spec_base["OPC"] = {}
+                            if opc_flag == "S" and valid_opc_s:
+                                spec_base["OPC"][f"{dia_val}_S_{row_color.upper()}_{coat_tier}"] = valid_opc_s
+                            elif opc_flag == "SPLIT":
+                                if r_opc: spec_base["OPC"][f"{dia_val}_R_{row_color.upper()}_{coat_tier}"] = r_opc
+                                if l_opc: spec_base["OPC"][f"{dia_val}_L_{row_color.upper()}_{coat_tier}"] = l_opc
+                                
                             specifications.append(spec_base)
                             
                         total_skus += 1
                         
                     for spec in specifications:
-                        r_opc_dict = spec.get("Right OPC", {})
-                        l_opc_dict = spec.get("Left OPC", {})
-                        
-                        if not r_opc_dict and not l_opc_dict:
-                            spec["OPC"] = {}
-                            spec.pop("Right OPC", None)
-                            spec.pop("Left OPC", None)
-                        elif r_opc_dict == l_opc_dict or not r_opc_dict or not l_opc_dict:
-                            spec["OPC"] = r_opc_dict if r_opc_dict else l_opc_dict
-                            spec.pop("Right OPC", None)
-                            spec.pop("Left OPC", None)
+                        if not spec.get("OPC"):
+                            spec.pop("OPC", None)
                         
                     strict_style_code = map_style_code(sample_row)
+
+                    try: sorted_diameters = sorted(list(all_diameters), key=float)
+                    except: sorted_diameters = list(all_diameters)
+                    
+                    has_blue_tech = any(t in tags for t in ["Blue Filter", "BlueGuard", "Blue Protect", "HEV"])
+                    if has_blue_tech and "Blue" in all_colors:
+                        all_colors.remove("Blue")
+                        if not all_colors: all_colors.add("Clear")
+                    if has_blue_tech and "Blue" in tags:
+                        tags.remove("Blue")
 
                     lens_entry = {
                         "Id": b_id,
@@ -4380,9 +4521,10 @@ def execute_generate_database():
                         "Description": clean_desc,
                         "Brief Description": lms_brief,
                         "Long Description": lms_long,
-                        "Color": color_tag,
+                        "Colors": sorted(list(all_colors)),
+                        "Diameters": sorted_diameters,
                         "Coatings": extracted_coats,
-                        "FilterTags": list(set(tags)),
+                        "FilterTags": tags,
                         "Specifications": {"FIN": specifications} if is_fsv else {"SF": specifications}
                     }
                     
@@ -4412,9 +4554,15 @@ def execute_generate_database():
             raw_json = json.dumps(master_db, indent=4, sort_keys=False, ensure_ascii=False)
             
             collapsed_json = re.sub(
-                r'("(?:Right |Left )?OPC":\s*\{)([^}]+)(\})',
-                lambda m: m.group(1) + " " + " ".join(m.group(2).split()) + " }",
+                r'("(?:Colors|Diameters)":\s*\[)\s*([^\]]*?)\s*(\])',
+                lambda m: m.group(1) + " ".join(m.group(2).split()) + "]",
                 raw_json
+            )
+            
+            collapsed_json = re.sub(
+                r'("OPC":\s*\{)\s*([^}]+?)\s*(\})',
+                lambda m: m.group(1) + " ".join(m.group(2).split()) + "}",
+                collapsed_json
             )
             
             with open(DB_FILE, 'w', encoding='utf-8') as f: 
