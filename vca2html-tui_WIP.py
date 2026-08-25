@@ -2854,7 +2854,12 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
         'Polarized', 'NuPolar', 'TruPolar'
     ])
     
-    if has_color_word and not is_reactive: tags.append("Pre Tint")
+    tech_list_full = []
+    
+    # Pre-Tint dynamically injected into the tech arrays
+    if has_color_word and not is_reactive: 
+        tags.append("Pre-Tint")
+        tech_list_full.append("Pre-Tint")
 
     lms_mat_str = ""
     if "POLYCARBONATE" in material or index == "1.586" or ("POLY" in material and "POLYURETHANE" not in material and "POLYMER" not in material):
@@ -2881,10 +2886,7 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
         elif 'BLUE FILTER' in combined_name_desc or 'Blue Filter' in techs_found: active_blue = "Blue Filter"
         
     if active_blue: tags.append("Blue Filter") 
-
-    tech_list_full = []
     
-    # Strictly Deduplicated Reactive Additions
     has_photo = False
     if 'PhotoFusion X' in techs_found or 'PHOTOFUSION X' in combined_name_desc:
         tech_list_full.append('PhotoFusion X')
@@ -2904,7 +2906,6 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
         
     if has_photo: tags.append("Photochromic")
         
-    # Strict Regex for Polarized Firewall (Ignores techs_found completely)
     has_polar = False
     if re.search(r'\b(POLARIZED|POLAR|NUPOLAR|TRUPOLAR)\b', combined_name_desc):
         has_polar = True
@@ -2942,7 +2943,8 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
             "Blue Protect": ["BLUE PROTECT", "BLUEP", "BP", "BP"],
             "HEV": ["UV420", "UV420", "HEV", "HEV"], 
             "Blue Filter": ["BLUE FILTER", "BLUEF", "BF", "BF"],
-            "Photochromic": ["PHOTOCHROMIC", "PHOTO", "PHT", "PHT"]
+            "Photochromic": ["PHOTOCHROMIC", "PHOTO", "PHT", "PHT"],
+            "Pre-Tint": ["PRE-TINT", "PRE-TINT", "TINT", "TINT"]
         }
         
         ar_cascades = {
@@ -2998,7 +3000,6 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
                 
             if state_puck < 3: parts.append(puck_cascades[state_puck])
                 
-            # Active deduplicator (fixes PFX PFX)
             clean_parts = []
             for p in parts:
                 if p and p not in clean_parts:
@@ -3075,7 +3076,6 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
         if has_extra_thick: state_et = 4
         if len(build()) <= target_len: return build()
         
-        # PUCK is moved to the absolute lowest priority.
         if has_puck: state_puck = 1
         if len(build()) <= target_len: return build()
         if has_puck: state_puck = 2
@@ -3096,9 +3096,9 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
     for word in ['DVC', 'DVP', 'DVG', 'DVS', 'ROCK', 'EASY', 'SAPPHIRE', 'VELA', 'AR', 'CRIZAL', 'DURAVISION', 'DURA', 'HC', 'SR', 'SHMC', 'PG', 'UC', 'UNCOATED']:
         clean_desc = re.sub(rf'\b{word}\b', '', clean_desc)
         
-    # Actively scrubs diameter strings from the cosmetic description
     clean_desc = re.sub(r'\bD\d{2,3}\b', '', clean_desc, flags=re.IGNORECASE)
     clean_desc = re.sub(r'\b\d{2,3}MM\b', '', clean_desc, flags=re.IGNORECASE)
+    clean_desc = re.sub(r'\bUV400\b', 'UV', clean_desc, flags=re.IGNORECASE)
         
     clean_desc = re.sub(r'\s+', ' ', clean_desc).strip()
     
@@ -4256,7 +4256,6 @@ def execute_generate_database():
                     row.get('Name'), row.get('Abbe'), global_context=file_global_context
                 ), axis=1)
                 
-                # Now grouped aggressively by normalized Description
                 df['Norm_Desc'] = df['Description'].apply(get_norm_desc)
                 
                 group_cols = ['Norm_Desc', 'Material', 'Index']
@@ -4295,7 +4294,15 @@ def execute_generate_database():
                     sample_row = group.iloc[0].to_dict()
                     clean_desc, lms_brief, lms_long, tags, active_ar = synthesize_descriptions(sample_row, is_fsv, has_add, extracted_techs, extracted_coats, is_universal_ar)
                     
+                    # Heavy vacuum for Raw Description
                     base_raw_desc = str(sample_row.get('Description', '')).strip()
+                    for word in ['GRAY', 'GREY', 'BROWN', 'GREEN', 'G15', 'PIONEER', 'PINK', 'BLUE', 'PURPLE']:
+                        base_raw_desc = re.sub(rf'\b{word}(?:\s+(?:A|B|C|1|2|3))?\b', '', base_raw_desc, flags=re.IGNORECASE)
+                    
+                    # Scrub UV400 from Raw Description
+                    base_raw_desc = re.sub(r'\bUV400\b', 'UV', base_raw_desc, flags=re.IGNORECASE)
+                    base_raw_desc = re.sub(r'\s+', ' ', base_raw_desc).strip()
+                    
                     extra_dia_tags = []
                     if len(group) > 1:
                         for _, r_data in group.iloc[1:].iterrows():
@@ -4372,7 +4379,6 @@ def execute_generate_database():
                         
                         all_colors.add(row_color)
                         
-                        # Strict AR word boundary check
                         raw_coat_str = (str(r_dict.get('Coating', '')) + " " + str(r_dict.get('Coating Brand', ''))).upper()
                         is_ar = any(x in raw_coat_str for x in ['A/R', 'DURA', 'CRIZAL', 'VELA', 'HOYA', 'ECP', 'ULTRACLEAN', 'ANTI-REFLECTIVE', 'HMC', 'SHMC', 'BMC']) or bool(re.search(r'\bAR\b', raw_coat_str))
                         if is_ar: coat_tier = "AR"
@@ -4385,7 +4391,6 @@ def execute_generate_database():
                         if r_opc == "NAN": r_opc = ""
                         if l_opc == "NAN": l_opc = ""
                         
-                        # Bulletproof S logic gate catching single-sided entries
                         valid_opc_s = r_opc if r_opc else l_opc
                         if (r_opc and not l_opc) or (l_opc and not r_opc) or (r_opc == l_opc and valid_opc_s):
                             opc_flag = "S"
@@ -4553,15 +4558,17 @@ def execute_generate_database():
             
             raw_json = json.dumps(master_db, indent=4, sort_keys=False, ensure_ascii=False)
             
+            # Formats native JSON arrays tightly
             collapsed_json = re.sub(
-                r'("(?:Colors|Diameters)":\s*\[)\s*([^\]]*?)\s*(\])',
-                lambda m: m.group(1) + " ".join(m.group(2).split()) + "]",
+                r'("(?:Colors|Diameters)":\s*)\[\s*([^\]]*?)\s*\]',
+                lambda m: m.group(1) + '[' + " ".join(m.group(2).split()) + ']',
                 raw_json
             )
             
+            # Implements the perfectly symmetrical OPC dictionary format
             collapsed_json = re.sub(
-                r'("OPC":\s*\{)\s*([^}]+?)\s*(\})',
-                lambda m: m.group(1) + " ".join(m.group(2).split()) + "}",
+                r'("OPC":\s*)\{\s*([^}]+?)\s*\}',
+                lambda m: m.group(1) + '{' + " ".join(m.group(2).split()) + '}',
                 collapsed_json
             )
             
