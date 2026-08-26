@@ -1,3 +1,5 @@
 Taking industry "standard VCA files" and trying to format them into something human readable so data input on legacy LMS systems is a lot easier. I'm also learning more about python.
 
 Still working on internals; Instructions to come.
+
+If playing, the files in ./.org/ are "proper" vca files (public files)

@@ -2667,7 +2667,6 @@ def map_style_code(row):
     return 1
 
 def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_coats, is_universal_ar):
-    import re
     raw_desc = str(sample_row.get('Description', '')).upper().strip()
     raw_name = str(sample_row.get('Name', '')).upper().strip()
     mfg = str(sample_row.get('MFG', '')).upper().strip()
@@ -2696,7 +2695,7 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
     has_puck = "PUCK" in combined_name_desc and style_int in [1, 13, 14]
     has_extra_thick = bool(re.search(r'\b(EXTRA\s*-?\s*THICK|EXTHK|ET)\b', combined_name_desc))
 
-    # --- PREFIX BUILDER (Front-loading the lens type) ---
+    # --- PREFIX BUILDER ---
     prefix_parts = []
     if style_int == 6:
         if brand_str: prefix_parts.append(brand_str)
@@ -2769,7 +2768,7 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
 
     if active_ar: tags.append("A/R") 
 
-    color_keywords = ['PRO GRAY', 'PRO GREY', 'PRO BROWN', 'EXTRA-GRAY', 'EXTRA-GREY', 'EXTRA GRAY', 'EXTRA GREY', 'EXTRAGRAY', 'EXTRAGREY', 'XTRA-ACTIVE', 'XTRA ACTIVE', 'GRAY', 'GREY', 'GRY', 'BROWN', 'BRN', 'GREEN', 'GRN', 'G15', 'G-15', 'PIONEER', 'PIONEEER', 'PIO', 'EMERALD', 'BURGUNDY', 'BURG', 'BRG', 'PINK', 'PNK', 'BLUE', 'BLU', 'PURPLE', 'PURP']
+    color_keywords = ['PRO GRAY', 'PRO GREY', 'PRO BROWN', 'EXTRA-GRAY', 'EXTRA-GREY', 'EXTRA GRAY', 'EXTRA GREY', 'EXTRAGRAY', 'EXTRAGREY', 'GRAY', 'GREY', 'GRY', 'BROWN', 'BRN', 'GREEN', 'GRN', 'G15', 'G-15', 'PIONEER', 'PIONEEER', 'PIO', 'EMERALD', 'BURGUNDY', 'BURG', 'BRG', 'PINK', 'PNK', 'BLUE', 'BLU', 'PURPLE', 'PURP']
     
     c_pad_desc = f" {combined_name_desc} ".replace('-', ' ').replace('/', ' ').upper()
     c_pad_color = c_pad_desc.replace('BLUE FILTER', '').replace('BLUE BLOCKER', '').replace('BLUE PROTECT', '').replace('BLUEGUARD', '').replace('BLUEP', '').replace('UV420', '').replace('GUARD', '')
@@ -2777,9 +2776,9 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
     has_color_word = any(x in c_pad_color for x in [f" {w} " for w in color_keywords] + [f" {w}" for w in color_keywords])
 
     is_reactive = any(t in techs_found or t.upper() in combined_name_desc for t in [
-        'Transitions', 'PhotoFusion X', 'PhotoFusion', 'Sensity', 
+        'Transitions', 'PhotoFusion X', 'PhotoFusion', 'Sensitivity', 
         'SunSync', 'Quick-Change', 'Xtra-Active', 'Photochromic', 
-        'Polarized', 'NuPolar', 'TruPolar'
+        'Polarized', 'NuPolar', 'TruPolar', 'LifeRx', 'SunRx', 'Coppertone'
     ])
     
     tech_list_full = []
@@ -2823,15 +2822,22 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
         
     if active_blue: tags.append("Blue Filter") 
     
+    # --- PROPRIETARY TECH BRAND ROUTING ---
     has_photo = False
     if 'PhotoFusion X' in techs_found or 'PHOTOFUSION X' in combined_name_desc:
-        tech_list_full.append('PhotoFusion X')
+        if 'EXTRA GRAY' in c_pad_color or ' EXTRA ' in c_pad_color or ' EXG ' in c_pad_color:
+            tech_list_full.append('PhotoFusion X Extra')
+        else:
+            tech_list_full.append('PhotoFusion X')
         has_photo = True
     elif 'PhotoFusion' in techs_found or 'PHOTOFUSION' in combined_name_desc:
-        tech_list_full.append('PhotoFusion')
+        if 'EXTRA GRAY' in c_pad_color or ' EXTRA ' in c_pad_color or ' EXG ' in c_pad_color:
+            tech_list_full.append('PhotoFusion X Extra')
+        else:
+            tech_list_full.append('PhotoFusion')
         has_photo = True
         
-    for t in ['Xtra-Active', 'Quick-Change', 'SunSync', 'Sensity', 'Transitions']:
+    for t in ['Xtra-Active', 'Quick-Change', 'SunSync', 'Sensitivity', 'Transitions', 'LifeRx']:
         if t in techs_found or t.upper() in combined_name_desc: 
             tech_list_full.append(t)
             has_photo = True
@@ -2843,14 +2849,13 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
     if has_photo: tags.append("Photochromic")
         
     has_polar = False
-    if re.search(r'\b(POLARIZED|POLAR|NUPOLAR|TRUPOLAR)\b', combined_name_desc):
-        has_polar = True
-        if 'NUPOLAR' in combined_name_desc: tech_list_full.append('NuPolar')
-        elif 'TRUPOLAR' in combined_name_desc: tech_list_full.append('TruPolar')
-        else: tech_list_full.append('Polarized')
+    for t in ['NuPolar', 'TruPolar', 'SunRx', 'Coppertone', 'Polarized']:
+        if t in techs_found or t.upper() in combined_name_desc:
+            tech_list_full.append(t)
+            has_polar = True
+            break
             
     if has_polar: tags.append("Polarized")
-            
     if active_blue: tech_list_full.append(active_blue)
 
     is_org = "ORG" in combined_name_desc
@@ -2869,13 +2874,18 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
         }
         tech_cascades = {
             "Transitions": ["TRANSITIONS", "TRANS", "TRN", "TRN"],
-            "PhotoFusion X": ["PHOTOFUSION X", "PHOTOFUSION", "PFX", "PFX"],
-            "PhotoFusion": ["PHOTOFUSION", "PHOTOFUSION", "PFX", "PFX"],
+            "PhotoFusion X Extra": ["PHOTOFUSION X EXTRA", "PFX EXTRA", "PFX EXG", "PFX EXG"],
+            "PhotoFusion X": ["PHOTOFUSION X", "PFX", "PF", "PF"],
+            "PhotoFusion": ["PHOTOFUSION", "PF", "PF", "PF"],
             "Quick-Change": ["QUICK-CHANGE", "QCHANGE", "QC", "QC"],
-            "Xtra-Active": ["XTRA-ACTIVE", "XTRAA", "XA", "XA"],
-            "Polarized": ["POLARIZED", "POLAR", "POLZ", "POL"],
+            "Xtra-Active": ["XTRA-ACTIVE", "XTRA", "XA", "XA"],
+            "Sensitivity": ["SENSITIVITY", "SENS", "SENS", "SENS"],
+            "LifeRx": ["LIFERX", "LIFERX", "LRX", "LRX"],
             "NuPolar": ["NUPOLAR", "NUPOLAR", "NPOL", "NPOL"],
             "TruPolar": ["TRUPOLAR", "TRUPOLAR", "TPOL", "TPOL"],
+            "SunRx": ["SUNRX", "SUNRX", "SUN", "SUN"],
+            "Coppertone": ["COPPERTONE", "COPPER", "CT", "CT"],
+            "Polarized": ["POLARIZED", "POLAR", "POLZ", "POL"],
             "BlueGuard": ["BLUEGUARD", "BLUEGUARD", "BG", "BG"],
             "Blue Protect": ["BLUE PROTECT", "BLUEP", "BP", "BP"],
             "HEV": ["UV420", "UV420", "HEV", "HEV"], 
@@ -3037,13 +3047,16 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
     clean_desc = re.sub(r'\b(?:EXTRA\s*-?\s*THICK|EXTHK|ET)\b', '__ET__', clean_desc, flags=re.IGNORECASE)
     
     for word in [
-        'PRO GRAY', 'PRO GREY', 'PRO BROWN', 'EXTRA-GRAY', 'EXTRA-GREY', 'EXTRA GRAY', 'EXTRA GREY', 'EXTRAGRAY', 'EXTRAGREY', 'XTRA-ACTIVE', 'XTRA ACTIVE',
+        'PRO GRAY', 'PRO GREY', 'PRO BROWN', 'EXTRA-GRAY', 'EXTRA-GREY', 'EXTRA GRAY', 'EXTRA GREY', 'EXTRAGRAY', 'EXTRAGREY', 'XTRA-ACTIVE', 'XTRA ACTIVE', 'XTRA',
         'GRAY', 'GREY', 'GRY', 'BROWN', 'BRN', 'GREEN', 'GRN', 'G15', 'G-15', 'PIONEER', 'PIONEEER', 'PIO', 'EMERALD', 'BURGUNDY', 'BURG', 'BRG',
-        'PINK', 'PNK', 'BLUE', 'BLU', 'PURPLE', 'PURP', 'PRO', 'EXTRA', 'XTRA', 'XA'
+        'PINK', 'PNK', 'BLUE', 'BLU', 'PURPLE', 'PURP', 'PRO', 'EXTRA', 'XA', 'EXG'
     ]:
         clean_desc = re.sub(rf'\b{word}(?:\s*[-]?\s*[123ABC])?\b', '', clean_desc, flags=re.IGNORECASE)
         
     for word in [
+        'PHOTOFUSION X', 'PHOTOFUSION', 'TRANSITIONS', 'TRANS', 'TRN', 'SENSITIVITY', 'SENS', 'LIFERX', 'LRX',
+        'QUICK CHANGE', 'QUICK-CHANGE', 'QC', 'NUPOLAR', 'NPOL', 'TRUPOLAR', 'TPOL', 'SUNRX', 'SUN', 'COPPERTONE', 'COPPER', 'CT', 
+        'POLARIZED', 'POLAR', 'POLZ', 'PHOTOCHROMIC', 'PHOTO', 'PHT',
         'DVC', 'DVP', 'DVG', 'DVS', 'ROCK', 'EASY', 'SAPPHIRE', 'VELA', 'AR', 'CRIZAL', 'DURAVISION', 'DURA', 
         'HC', 'SR', 'SHMC', 'PG', 'UT', 'YHC', 'US', 'UC', 'UNCOATED', 'THICK',
         'YOUNGERHC', 'YOUNGER HARDCOAT', 'YOUNGER HARD COAT', 'YOUNGER HARD-COAT',
@@ -3261,7 +3274,8 @@ def extract_lens_colors_coatings(group_df):
         else:
             if any(x in c_pad_color for x in [' PRO GRAY', ' PRO GREY']): colors_found.add('Pro Gray'); has_pigment = True
             elif any(x in c_pad_color for x in [' PRO BROWN']): colors_found.add('Pro Brown'); has_pigment = True
-            elif any(x in c_pad_color for x in [' EXTRAGREY', ' EXTRAGRAY', ' EXTRA GREY', ' EXTRA GRAY', ' EXTRA-GREY', ' EXTRA-GRAY', ' XTRA ACTIVE', ' XTRA-ACTIVE', ' XA ', ' EXTRA ', ' XTRA ']): colors_found.add('Extra Gray'); has_pigment = True
+            # Severed ties between Essilor's "Xtra" and Zeiss's "Extra"
+            elif any(x in c_pad_color for x in [' EXTRAGREY', ' EXTRAGRAY', ' EXTRA GREY', ' EXTRA GRAY', ' EXTRA-GREY', ' EXTRA-GRAY', ' EXTRA ', ' EXG ']): colors_found.add('Extra Gray'); has_pigment = True
             elif any(x in c_pad_color for x in [' GRAY', ' GREY', ' GRY ']): colors_found.add('Gray'); has_pigment = True
             elif any(x in c_pad_color for x in [' BROWN', ' BRN ']): colors_found.add('Brown'); has_pigment = True
             elif any(x in c_pad_color for x in [' GREEN', ' GRN ', ' G15', ' G 15', ' PIONEER', ' PIONEEER', ' EMERALD', ' PIO ']): colors_found.add('Green'); has_pigment = True
@@ -3271,17 +3285,23 @@ def extract_lens_colors_coatings(group_df):
             elif any(x in c_pad_color for x in [' PURPLE', ' PURP ']): colors_found.add('Purple'); has_pigment = True
 
         is_reactive = False
-        if any(x in c_pad for x in [' XTRA ACTIVE', ' XTRA-ACTIVE', ' XA ', ' EXTRA ', ' XTRA ']): techs_found.add('Xtra-Active'); is_reactive = True
-        elif any(x in c_pad for x in [' Q CHANGE', ' QC ']): techs_found.add('Quick-Change'); is_reactive = True
+        
+        # --- PHOTOCHROMIC TECHS ---
+        if any(x in c_pad for x in [' XTRA ACTIVE', ' XTRA-ACTIVE', ' XA ', ' XTRA ']): techs_found.add('Xtra-Active'); is_reactive = True
+        elif any(x in c_pad for x in [' QUICK CHANGE', ' Q CHANGE', ' QC ']): techs_found.add('Quick-Change'); is_reactive = True
         elif any(x in c_pad for x in [' SUNSYNC']): techs_found.add('SunSync'); is_reactive = True
-        elif any(x in c_pad for x in [' SENSITY']): techs_found.add('Sensity'); is_reactive = True
+        elif any(x in c_pad for x in [' SENSITIVITY', ' SENS ']): techs_found.add('Sensitivity'); is_reactive = True
         elif any(x in c_pad for x in [' TRANSITIONS', ' TRANS ', ' TRN ']): techs_found.add('Transitions'); is_reactive = True
         elif any(x in c_pad for x in [' PFX', ' PHOTOFUSION X']): techs_found.add('PhotoFusion X'); is_reactive = True
         elif ' PHOTOFUSION' in c_pad: techs_found.add('PhotoFusion'); is_reactive = True
+        elif any(x in c_pad for x in [' LIFERX', ' LIFE RX ', ' LRX ']): techs_found.add('LifeRx'); is_reactive = True
         elif any(x in c_pad for x in [' PHOTOCHROMIC', ' PHOTO ']): is_reactive = True
         
+        # --- POLARIZED TECHS ---
         if ' NUPOLAR' in c_pad: techs_found.add('NuPolar'); is_reactive = True
         elif ' TRUPOLAR' in c_pad: techs_found.add('TruPolar'); is_reactive = True
+        elif any(x in c_pad for x in [' SUNRX', ' SUN RX ']): techs_found.add('SunRx'); is_reactive = True
+        elif any(x in c_pad for x in [' COPPERTONE', ' COPPER ']): techs_found.add('Coppertone'); is_reactive = True
         elif any(x in c_pad for x in [' POLARIZED', ' POLAR ', ' POLZ ', ' POL ']): techs_found.add('Polarized'); is_reactive = True
         
         if ' BLUE PROTECT' in c_pad or ' BP ' in c_pad: techs_found.add('Blue Protect')
@@ -3312,22 +3332,29 @@ def extract_lens_colors_coatings(group_df):
         elif any(x in c_pad for x in [' AR ', ' CRIZAL ', ' DURAVISION ', ' DURA ']): coats_found.add('A/R')
         elif any(x in c_pad for x in [' UC ', ' UNCOATED ']): coats_found.add('Uncoated')
 
-    if any(t in techs_found for t in ['Xtra-Active', 'Quick-Change', 'SunSync', 'Sensity', 'Transitions', 'PhotoFusion X', 'PhotoFusion']):
+    # Apply Umbrella Tags
+    if any(t in techs_found for t in ['Xtra-Active', 'Quick-Change', 'SunSync', 'Sensitivity', 'Transitions', 'PhotoFusion X', 'PhotoFusion', 'LifeRx']):
         techs_found.add('Photochromic')
+    if any(t in techs_found for t in ['NuPolar', 'TruPolar', 'SunRx', 'Coppertone']):
+        techs_found.add('Polarized')
 
     color_str = ", ".join(sorted(colors_found)) if colors_found else "Clear"
     return color_str, list(colors_found), list(techs_found), list(coats_found)
 
 def normalize_lens_grouping_name(raw_name):
-    """Strips pigments and coatings, preserves Extra-Thick via hidden token."""
-    import re
+    """Strips pigments, coatings, and reactive brands so physical blanks fold together perfectly."""
     n = str(raw_name).upper()
     
     n = re.sub(r'\b(?:EXTRA\s*-?\s*THICK|EXTHK|ET)\b', '__ET__', n)
     
-    n = re.sub(r'\b(PRO GRAY|PRO GREY|PRO BROWN|EXTRA-GRAY|EXTRA-GREY|EXTRA GRAY|EXTRA GREY|EXTRAGRAY|EXTRAGREY|XTRA-ACTIVE|XTRA ACTIVE|GRAY|GREY|GRY|BROWN|BRN|GREEN|GRN|G15|G-15|PIONEER|PIONEEER|PIO|EMERALD|BURGUNDY|BURG|BRG|PINK|PNK|BLUE|BLU|PURPLE|PURP|PRO|EXTRA|XTRA|XA)(?:\s*[-]?\s*[123ABC])?\b', '', n)
+    # Pigment Purge (Severed EXTRA from XTRA)
+    n = re.sub(r'\b(PRO GRAY|PRO GREY|PRO BROWN|EXTRA-GRAY|EXTRA-GREY|EXTRA GRAY|EXTRA GREY|EXTRAGRAY|EXTRAGREY|XTRA-ACTIVE|XTRA ACTIVE|GRAY|GREY|GRY|BROWN|BRN|GREEN|GRN|G15|G-15|PIONEER|PIONEEER|PIO|EMERALD|BURGUNDY|BURG|BRG|PINK|PNK|BLUE|BLU|PURPLE|PURP|PRO|EXTRA|XTRA|XA|EXG)(?:\s*[-]?\s*[123ABC])?\b', '', n)
         
+    # The Tech & Coating Purge (Forces identical Master Nodes)
     for word in [
+        'PHOTOFUSION X', 'PHOTOFUSION', 'TRANSITIONS', 'TRANS', 'TRN', 'SENSITIVITY', 'SENS', 'LIFERX', 'LRX',
+        'QUICK CHANGE', 'QUICK-CHANGE', 'QC', 'NUPOLAR', 'NPOL', 'TRUPOLAR', 'TPOL', 'SUNRX', 'SUN', 'COPPERTONE', 'COPPER', 'CT', 
+        'POLARIZED', 'POLAR', 'POLZ', 'PHOTOCHROMIC', 'PHOTO', 'PHT',
         'DVC', 'DVP', 'DVG', 'DVS', 'ROCK', 'EASY', 'SAPPHIRE', 'VELA', 'AR', 'CRIZAL', 'DURAVISION', 'DURA', 
         'HC', 'SR', 'SHMC', 'PG', 'UT', 'YHC', 'US', 'UC', 'UNCOATED', 'THICK',
         'YOUNGERHC', 'YOUNGER HARDCOAT', 'YOUNGER HARD COAT', 'YOUNGER HARD-COAT',
@@ -4282,10 +4309,17 @@ def execute_generate_database():
                     base_raw_desc = str(sample_row.get('Description', '')).strip()
                     base_raw_desc = re.sub(r'\b(?:EXTRA\s*-?\s*THICK|EXTHK|ET)\b', '__ET__', base_raw_desc, flags=re.IGNORECASE)
                     
-                    for word in ['PRO GRAY', 'PRO GREY', 'PRO BROWN', 'EXTRA-GRAY', 'EXTRA-GREY', 'EXTRA GRAY', 'EXTRA GREY', 'EXTRAGRAY', 'EXTRAGREY', 'XTRA-ACTIVE', 'XTRA ACTIVE', 'GRAY', 'GREY', 'GRY', 'BROWN', 'BRN', 'GREEN', 'GRN', 'G15', 'G-15', 'PIONEER', 'PIONEEER', 'PIO', 'EMERALD', 'BURGUNDY', 'BURG', 'BRG', 'PINK', 'PNK', 'BLUE', 'BLU', 'PURPLE', 'PURP', 'PRO', 'EXTRA', 'XTRA', 'XA']:
+                    for word in [
+                        'PRO GRAY', 'PRO GREY', 'PRO BROWN', 'EXTRA-GRAY', 'EXTRA-GREY', 'EXTRA GRAY', 'EXTRA GREY', 'EXTRAGRAY', 'EXTRAGREY', 'XTRA-ACTIVE', 'XTRA ACTIVE', 'XTRA',
+                        'GRAY', 'GREY', 'GRY', 'BROWN', 'BRN', 'GREEN', 'GRN', 'G15', 'G-15', 'PIONEER', 'PIONEEER', 'PIO', 'EMERALD', 'BURGUNDY', 'BURG', 'BRG',
+                        'PINK', 'PNK', 'BLUE', 'BLU', 'PURPLE', 'PURP', 'PRO', 'EXTRA', 'XA', 'EXG'
+                    ]:
                         base_raw_desc = re.sub(rf'\b{word}(?:\s*[-]?\s*[123ABC])?\b', '', base_raw_desc, flags=re.IGNORECASE)
                     
                     for word in [
+                        'PHOTOFUSION X', 'PHOTOFUSION', 'TRANSITIONS', 'TRANS', 'TRN', 'SENSITIVITY', 'SENS', 'LIFERX', 'LRX',
+                        'QUICK CHANGE', 'QUICK-CHANGE', 'QC', 'NUPOLAR', 'NPOL', 'TRUPOLAR', 'TPOL', 'SUNRX', 'SUN', 'COPPERTONE', 'COPPER', 'CT', 
+                        'POLARIZED', 'POLAR', 'POLZ', 'PHOTOCHROMIC', 'PHOTO', 'PHT',
                         'DVC', 'DVP', 'DVG', 'DVS', 'ROCK', 'EASY', 'SAPPHIRE', 'VELA', 'AR', 'CRIZAL', 'DURAVISION', 'DURA', 
                         'HC', 'SR', 'SHMC', 'PG', 'UT', 'YHC', 'US', 'UC', 'UNCOATED', 'THICK',
                         'YOUNGERHC', 'YOUNGER HARDCOAT', 'YOUNGER HARD COAT', 'YOUNGER HARD-COAT',
@@ -4348,6 +4382,7 @@ def execute_generate_database():
                                      str(r_dict.get('Coating', ''))).upper()
                         c_pad_row = f" {c_pad_row} ".replace('-', ' ').replace('/', ' ')
                         c_pad_color = c_pad_row.replace('BLUE FILTER', '').replace('BLUE BLOCKER', '').replace('BLUE PROTECT', '').replace('BLUEGUARD', '').replace('BLUEP', '').replace('UV420', '').replace('GUARD', '')
+                        c_pad_coat = c_pad_row.replace('-', '').replace(' ', '')
                         
                         shade_match = re.search(r'\b(GRAY|GREY|GRY|BROWN|BRN|GREEN|GRN|PIO|BURGUNDY|BURG|BRG|PINK|PNK|BLUE|BLU|PURPLE|PURP)\s*[-]?\s*([123ABC])\b', c_pad_color)
                         if shade_match:
@@ -4375,7 +4410,7 @@ def execute_generate_database():
                             has_pigment = False
                             if any(x in c_pad_color for x in [' PRO GRAY', ' PRO GREY']): row_color = 'Pro Gray'; has_pigment = True
                             elif any(x in c_pad_color for x in [' PRO BROWN']): row_color = 'Pro Brown'; has_pigment = True
-                            elif any(x in c_pad_color for x in [' EXTRAGREY', ' EXTRAGRAY', ' EXTRA GREY', ' EXTRA GRAY', ' EXTRA-GREY', ' EXTRA-GRAY', ' XTRA ACTIVE', ' XTRA-ACTIVE', ' XA ', ' EXTRA ', ' XTRA ']): row_color = 'Extra Gray'; has_pigment = True
+                            elif any(x in c_pad_color for x in [' EXTRAGREY', ' EXTRAGRAY', ' EXTRA GREY', ' EXTRA GRAY', ' EXTRA-GREY', ' EXTRA-GRAY', ' EXTRA ', ' EXG ']): row_color = 'Extra Gray'; has_pigment = True
                             elif any(x in c_pad_color for x in [' GRAY', ' GREY', ' GRY ']): row_color = 'Gray'; has_pigment = True
                             elif any(x in c_pad_color for x in [' BROWN', ' BRN ']): row_color = 'Brown'; has_pigment = True
                             elif any(x in c_pad_color for x in [' GREEN', ' GRN ', ' G15', ' G 15', ' PIONEER', ' PIONEEER', ' EMERALD', ' PIO ']): row_color = 'Green'; has_pigment = True
@@ -4385,7 +4420,7 @@ def execute_generate_database():
                             elif any(x in c_pad_color for x in [' PURPLE', ' PURP ']): row_color = 'Purple'; has_pigment = True
                             
                             is_reactive = False
-                            if any(x in c_pad_row for x in [' XTRA ACTIVE', ' XTRA-ACTIVE', ' XA ', ' EXTRA ', ' XTRA ', ' Q CHANGE', ' QC ', ' SUNSYNC', ' SENSITY', ' TRANSITIONS', ' TRANS ', ' TRN ', ' PFX', ' PHOTOFUSION X', ' PHOTOFUSION', ' PHOTOCHROMIC', ' PHOTO ', ' NUPOLAR', ' TRUPOLAR', ' POLARIZED', ' POLAR ', ' POLZ ']):
+                            if any(x in c_pad_row for x in [' XTRA ACTIVE', ' XTRA-ACTIVE', ' XA ', ' XTRA ', ' QUICK CHANGE', ' Q CHANGE', ' QC ', ' SUNSYNC', ' SENSITIVITY', ' SENS ', ' TRANSITIONS', ' TRANS ', ' TRN ', ' LIFERX', ' LIFE RX ', ' PFX', ' PHOTOFUSION X', ' PHOTOFUSION', ' PHOTOCHROMIC', ' PHOTO ', ' NUPOLAR', ' TRUPOLAR', ' SUNRX', ' COPPERTONE', ' POLARIZED', ' POLAR ', ' POLZ ']):
                                 is_reactive = True
                                 
                             if not has_pigment and is_reactive: row_color = 'Gray'
