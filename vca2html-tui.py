@@ -1064,6 +1064,9 @@ def verify_and_stage_fonts():
     ghost_weight = 1.0 / max(1, total_ghost_loads)
     boot_total = sum(1 for m in modules if m[2]) + (1 if total_ghost_loads > 0 else 0)
     curr = 0.0
+    
+    # --- THE CONTINUOUS TICK COUNTER ---
+    spinner_tick = 0
 
     for dest_name, meta in fonts.items():
         targets = [dest_name] + meta.get('extra_targets', [])
@@ -1085,7 +1088,7 @@ def verify_and_stage_fonts():
         nonlocal curr
         global scroll_offset
         padded_tag = tag.ljust(10)
-        viewport_logs.append(f"{MARGIN}{C_SUBTEXT}({C_STAGED}{CHECK_MARK}{C_SUBTEXT}){RESET} {C_PROMPT}{padded_tag}{RESET}  {C_TITLE}❯{RESET}  {C_FILE}{desc}{RESET}")
+        viewport_logs.append(f"{MARGIN}{C_STAGED} {CHECK_MARK} {RESET} {C_PROMPT}{padded_tag}{RESET}  {C_TITLE}❯{RESET}  {C_FILE}{desc}{RESET}")
         curr += ghost_weight 
         vp_height = (term_h - 9) - 4 - 1
         scroll_offset = max(0, len(viewport_logs) - vp_height)
@@ -1095,13 +1098,15 @@ def verify_and_stage_fonts():
         time.sleep(random.uniform(0.03, 0.08))
 
     def execute_pipeline(tag, objective, tasks):
-        nonlocal curr
+        nonlocal curr, spinner_tick
         global scroll_offset
         padded_tag = tag.ljust(10)
         header_idx = len(viewport_logs)
-        viewport_logs.append(f"{MARGIN}{C_SIZE}({C_TITLE}|{C_SIZE}){RESET} {C_PROMPT}{padded_tag}{RESET}  {C_TITLE}❯{RESET}  {C_FILE}{objective}{RESET}")
+        
         spinner_chars = ['|', '/', '-', '\\']
-        frame = 0
+        start_char = spinner_chars[spinner_tick % len(spinner_chars)]
+        
+        viewport_logs.append(f"{MARGIN}{C_SIZE}({C_TITLE}{start_char}{C_SIZE}){RESET} {C_PROMPT}{padded_tag}{RESET}  {C_TITLE}❯{RESET}  {C_FILE}{objective}{RESET}")
 
         for raw_cmd, task_func in tasks:
             if not raw_cmd:
@@ -1129,7 +1134,7 @@ def verify_and_stage_fonts():
             start_time = time.time()
             
             while not task_complete or (time.time() - start_time) < floor_time:
-                char = spinner_chars[frame % 4]
+                char = spinner_chars[spinner_tick % len(spinner_chars)]
                 spin = f"{C_TITLE}{char}{C_SIZE}"
                 viewport_logs[header_idx] = f"{MARGIN}{C_SIZE}({spin}){RESET} {C_PROMPT}{padded_tag}{RESET}  {C_TITLE}❯{RESET}  {C_FILE}{objective}{RESET}"
                 vp_height = (term_h - 9) - 4 - 1
@@ -1137,11 +1142,11 @@ def verify_and_stage_fonts():
                 pct = min(100.0, (curr / max(1, boot_total)) * 100.0)
                 draw_viewport(progress_pct=pct, active_file="Executing...", current_file_idx=int(curr), total_files=boot_total, is_interactive=False)
                 sys.stdout.flush()
-                time.sleep(0.15)
-                frame += 1
+                time.sleep(0.12)
+                spinner_tick += 1
             curr += 1.0
 
-        viewport_logs[header_idx] = f"{MARGIN}{C_SUBTEXT}({C_STAGED}{CHECK_MARK}{C_SUBTEXT}){RESET} {C_PROMPT}{padded_tag}{RESET}  {C_TITLE}❯{RESET}  {C_FILE}{objective}{RESET}"
+        viewport_logs[header_idx] = f"{MARGIN}{C_STAGED} {CHECK_MARK} {RESET} {C_PROMPT}{padded_tag}{RESET}  {C_TITLE}❯{RESET}  {C_FILE}{objective}{RESET}"
         pct = min(100.0, (curr / max(1, boot_total)) * 100.0)
         draw_viewport(progress_pct=pct, active_file="Executing...", current_file_idx=int(curr), total_files=boot_total, is_interactive=False)
         sys.stdout.flush()
@@ -2705,11 +2710,11 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
         seg_size = match.group(1) if match else "7X28"
         prefix_parts.append(f"TRI {seg_size}")
     elif style_int in [2, 8, 15]:
-        match = re.search(r'\b(?:FT|D-?)\s*(22|25|28|35|40|45)\b', combined_name_desc)
+        match = re.search(r'\b(?:FT|D-?)(?:\s*SEG)?\s*(22|25|28|35|40|45)\b', combined_name_desc)
         seg_size = match.group(1) if match else "28"
         prefix_parts.append(f"FT{seg_size}")
     elif style_int in [3, 16]:
-        match = re.search(r'\b(?:RND|ROUND)\s*(\d+)', combined_name_desc)
+        match = re.search(r'\b(?:RND|ROUND)(?:\s*SEG)?\s*(\d+)', combined_name_desc)
         seg_size = match.group(1) if match else "28"
         prefix_parts.append(f"RND{seg_size}")
     elif style_int in [4, 9]:
@@ -2771,7 +2776,9 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
     color_keywords = ['PRO GRAY', 'PRO GREY', 'PRO BROWN', 'EXTRA-GRAY', 'EXTRA-GREY', 'EXTRA GRAY', 'EXTRA GREY', 'EXTRAGRAY', 'EXTRAGREY', 'GRAY', 'GREY', 'GRY', 'BROWN', 'BRN', 'GREEN', 'GRN', 'G15', 'G-15', 'PIONEER', 'PIONEEER', 'PIO', 'EMERALD', 'BURGUNDY', 'BURG', 'BRG', 'PINK', 'PNK', 'BLUE', 'BLU', 'PURPLE', 'PURP']
     
     c_pad_desc = f" {combined_name_desc} ".replace('-', ' ').replace('/', ' ').upper()
-    c_pad_color = c_pad_desc.replace('BLUE FILTER', '').replace('BLUE BLOCKER', '').replace('BLUE PROTECT', '').replace('BLUEGUARD', '').replace('BLUEP', '').replace('UV420', '').replace('GUARD', '')
+    
+    # Orphaned BLUE trap
+    c_pad_color = c_pad_desc.replace('BLUE FILTER', '').replace('BLUE BLOCKER', '').replace('BLUE PROTECT', '').replace('BLUE GUARD', '').replace('BLUE-GUARD', '').replace('BLUEGUARD', '').replace('BLUEP', '').replace('UV420', '').replace('GUARD', '')
 
     has_color_word = any(x in c_pad_color for x in [f" {w} " for w in color_keywords] + [f" {w}" for w in color_keywords])
 
@@ -2822,7 +2829,6 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
         
     if active_blue: tags.append("Blue Filter") 
     
-    # --- PROPRIETARY TECH BRAND ROUTING ---
     has_photo = False
     if 'PhotoFusion X' in techs_found or 'PHOTOFUSION X' in combined_name_desc:
         if 'EXTRA GRAY' in c_pad_color or ' EXTRA ' in c_pad_color or ' EXG ' in c_pad_color:
@@ -3079,7 +3085,7 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
     clean_desc = f"{prefix_str} {clean_desc}".replace("  ", " ").strip()
     clean_desc = re.sub(r'\s+', ' ', clean_desc).strip()
     
-    return clean_desc, brief_desc, long_desc, tags, active_ar, prefix_str, prefix_parts
+    return clean_desc, brief_desc, long_desc, tags, active_ar, prefix_str, prefix_parts, seg_size
 
 def aggregate_fsv_powers(group):
     import pandas as pd
@@ -3244,7 +3250,9 @@ def extract_lens_colors_coatings(group_df):
                     str(row.get('Coating', ''))).upper()
         
         c_pad = f" {combined} ".replace('-', ' ').replace('/', ' ')
-        c_pad_color = c_pad.replace('BLUE FILTER', '').replace('BLUE BLOCKER', '').replace('BLUE PROTECT', '').replace('BLUEGUARD', '').replace('BLUEP', '').replace('UV420', '').replace('GUARD', '')
+        
+        # Orphaned 'BLUE' trap by catching spaced variations first
+        c_pad_color = c_pad.replace('BLUE FILTER', '').replace('BLUE BLOCKER', '').replace('BLUE PROTECT', '').replace('BLUE GUARD', '').replace('BLUE-GUARD', '').replace('BLUEGUARD', '').replace('BLUEP', '').replace('UV420', '').replace('GUARD', '')
         c_pad_coat = c_pad.replace('-', '').replace(' ', '')
 
         has_pigment = False
@@ -3274,7 +3282,6 @@ def extract_lens_colors_coatings(group_df):
         else:
             if any(x in c_pad_color for x in [' PRO GRAY', ' PRO GREY']): colors_found.add('Pro Gray'); has_pigment = True
             elif any(x in c_pad_color for x in [' PRO BROWN']): colors_found.add('Pro Brown'); has_pigment = True
-            # Severed ties between Essilor's "Xtra" and Zeiss's "Extra"
             elif any(x in c_pad_color for x in [' EXTRAGREY', ' EXTRAGRAY', ' EXTRA GREY', ' EXTRA GRAY', ' EXTRA-GREY', ' EXTRA-GRAY', ' EXTRA ', ' EXG ']): colors_found.add('Extra Gray'); has_pigment = True
             elif any(x in c_pad_color for x in [' GRAY', ' GREY', ' GRY ']): colors_found.add('Gray'); has_pigment = True
             elif any(x in c_pad_color for x in [' BROWN', ' BRN ']): colors_found.add('Brown'); has_pigment = True
@@ -3312,7 +3319,6 @@ def extract_lens_colors_coatings(group_df):
         if not has_pigment and is_reactive: colors_found.add('Gray')
         elif not has_pigment and not is_reactive: colors_found.add('Clear')
 
-        # Generic vs Proprietary Hardcoat detection with Healed Text Checking
         if any(x in c_pad for x in [' HC ', ' SR ', ' SHMC ', ' PG ', ' UT ', ' YHC ', ' US ', ' HARDCOAT ', ' HARD COAT ', ' HARD-COAT ', ' HARD ']) or any(x in c_pad_coat for x in ['ULTRASHIELD', 'PERMAGUARD', 'ULTRATOUGH', 'YOUNGERHC', 'YOUNGERHARDCOAT']):
             coats_found.add('Hardcoat')
             
@@ -3332,7 +3338,6 @@ def extract_lens_colors_coatings(group_df):
         elif any(x in c_pad for x in [' AR ', ' CRIZAL ', ' DURAVISION ', ' DURA ']): coats_found.add('A/R')
         elif any(x in c_pad for x in [' UC ', ' UNCOATED ']): coats_found.add('Uncoated')
 
-    # Apply Umbrella Tags
     if any(t in techs_found for t in ['Xtra-Active', 'Quick-Change', 'SunSync', 'Sensitivity', 'Transitions', 'PhotoFusion X', 'PhotoFusion', 'LifeRx']):
         techs_found.add('Photochromic')
     if any(t in techs_found for t in ['NuPolar', 'TruPolar', 'SunRx', 'Coppertone']):
@@ -4235,6 +4240,8 @@ def execute_generate_database():
         total_skus = 0
         total_types = 0
         
+        spinner_tick = 0
+        
         def get_norm_desc(desc):
             n = normalize_lens_grouping_name(str(desc))
             n = re.sub(r'\bD\d{2,3}\b', '', n, flags=re.IGNORECASE)
@@ -4304,7 +4311,7 @@ def execute_generate_database():
                     is_universal_ar = not has_non_ar
                     
                     sample_row = group.iloc[0].to_dict()
-                    clean_desc, lms_brief, lms_long, tags, active_ar, prefix_str, prefix_parts = synthesize_descriptions(sample_row, is_fsv, has_add, extracted_techs, extracted_coats, is_universal_ar)
+                    clean_desc, lms_brief, lms_long, tags, active_ar, prefix_str, prefix_parts, extracted_seg_size = synthesize_descriptions(sample_row, is_fsv, has_add, extracted_techs, extracted_coats, is_universal_ar)
                     
                     base_raw_desc = str(sample_row.get('Description', '')).strip()
                     base_raw_desc = re.sub(r'\b(?:EXTRA\s*-?\s*THICK|EXTHK|ET)\b', '__ET__', base_raw_desc, flags=re.IGNORECASE)
@@ -4381,7 +4388,9 @@ def execute_generate_database():
                                      str(r_dict.get('Coating Brand', '')) + " " + 
                                      str(r_dict.get('Coating', ''))).upper()
                         c_pad_row = f" {c_pad_row} ".replace('-', ' ').replace('/', ' ')
-                        c_pad_color = c_pad_row.replace('BLUE FILTER', '').replace('BLUE BLOCKER', '').replace('BLUE PROTECT', '').replace('BLUEGUARD', '').replace('BLUEP', '').replace('UV420', '').replace('GUARD', '')
+                        
+                        # Orphaned BLUE trap
+                        c_pad_color = c_pad_row.replace('BLUE FILTER', '').replace('BLUE BLOCKER', '').replace('BLUE PROTECT', '').replace('BLUE GUARD', '').replace('BLUE-GUARD', '').replace('BLUEGUARD', '').replace('BLUEP', '').replace('UV420', '').replace('GUARD', '')
                         c_pad_coat = c_pad_row.replace('-', '').replace(' ', '')
                         
                         shade_match = re.search(r'\b(GRAY|GREY|GRY|BROWN|BRN|GREEN|GRN|PIO|BURGUNDY|BURG|BRG|PINK|PNK|BLUE|BLU|PURPLE|PURP)\s*[-]?\s*([123ABC])\b', c_pad_color)
@@ -4431,13 +4440,22 @@ def execute_generate_database():
                         
                         is_ar = any(x in raw_coat_str for x in ['A/R', 'DURA', 'CRIZAL', 'VELA', 'HOYA', 'ECP', 'ULTRACLEAN', 'ANTI-REFLECTIVE', 'HMC', 'SHMC', 'BMC']) or bool(re.search(r'\bAR\b', raw_coat_str))
                         
-                        if is_ar: coat_tier = "AR"
-                        elif 'UNCOAT' in raw_coat_str or 'UC' in raw_coat_str.split() or not raw_coat_str.strip() or 'NONE' in raw_coat_str.split(): coat_tier = "UC"
-                        elif 'PG' in raw_coat_str.split() or 'PERMAGUARD' in raw_coat_healed: coat_tier = "PG"
-                        elif 'UT' in raw_coat_str.split() or 'ULTRATOUGH' in raw_coat_healed: coat_tier = "UT"
-                        elif 'YHC' in raw_coat_str.split() or 'YOUNGERHC' in raw_coat_healed or 'YOUNGERHARDCOAT' in raw_coat_healed: coat_tier = "YHC"
-                        elif 'US' in raw_coat_str.split() or 'ULTRASHIELD' in raw_coat_healed: coat_tier = "US"
-                        else: coat_tier = "HC"
+                        if is_ar: 
+                            coat_tier = "AR"
+                        elif 'PG' in raw_coat_str.split() or 'PERMAGUARD' in raw_coat_healed: 
+                            coat_tier = "PG"
+                        elif 'UT' in raw_coat_str.split() or 'ULTRATOUGH' in raw_coat_healed: 
+                            coat_tier = "UT"
+                        elif 'YHC' in raw_coat_str.split() or 'YOUNGERHC' in raw_coat_healed or 'YOUNGERHARDCOAT' in raw_coat_healed: 
+                            coat_tier = "YHC"
+                        elif 'US' in raw_coat_str.split() or 'ULTRASHIELD' in raw_coat_healed: 
+                            coat_tier = "US"
+                        elif any(x in raw_coat_str.split() for x in ['HC', 'SR']) or 'HARD' in raw_coat_str: 
+                            coat_tier = "HC"
+                        elif 'UNCOAT' in raw_coat_str or 'UC' in raw_coat_str.split() or not raw_coat_str.strip() or 'NONE' in raw_coat_str.split(): 
+                            coat_tier = "UC"
+                        else: 
+                            coat_tier = "HC" 
 
                         dia_val = str(r_dict.get("Diameter", "")).replace(".0", "").strip()
                         try: d_check = int(float(dia_val)) if float(dia_val).is_integer() else float(dia_val)
@@ -4487,6 +4505,14 @@ def execute_generate_database():
                                 "Edge Thick": r_dict.get("Edge Thick", "")
                             }
                         else:
+                            raw_seg_w = str(r_dict.get("Seg Width", "")).strip()
+                            if not raw_seg_w and extracted_seg_size:
+                                try: raw_seg_w = float(extracted_seg_size)
+                                except: raw_seg_w = extracted_seg_size
+                            elif raw_seg_w:
+                                try: raw_seg_w = float(raw_seg_w)
+                                except: pass
+                                
                             spec_base = {
                                 "BASE": b_str,
                                 "ADD": c_str,
@@ -4501,7 +4527,7 @@ def execute_generate_database():
                                 "Drop": r_dict.get("Drop", ""),
                                 "PRP Out": r_dict.get("PRP Out", ""),
                                 "PRP Up": r_dict.get("PRP Up", ""),
-                                "Seg Width": r_dict.get("Seg Width", ""),
+                                "Seg Width": raw_seg_w,
                                 "Seg Thick": r_dict.get("Seg Thick", "")
                             }
                         
@@ -4567,11 +4593,11 @@ def execute_generate_database():
                     tags.extend(all_exact_shades)
                     tags = sorted(list(set(tags)), key=str.casefold)
                     
-                    spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+                    spinner_chars = ['(|)', '(/)', '(-)', '(\\)']
                     check_char = get_ico('check')
                     
                     target_dur = max(0.4, min(2.5, (total_in_group / 150.0) * 0.25))
-                    sleep_interval = 0.15 
+                    sleep_interval = 0.12 
                     anim_frames = max(3, int(target_dur / sleep_interval))
                     pct = (processed_lines / max(1, total_raw_lines)) * 100.0
                     
@@ -4587,8 +4613,13 @@ def execute_generate_database():
                         if fake_i == 0 and total_in_group > 0: fake_i = 1
                         if f == anim_frames: fake_i = total_in_group
                         
-                        spin_char = f"{C_STAGED}{check_char}{RESET}" if f == anim_frames else f"{C_TITLE}{spinner_chars[f % len(spinner_chars)]}{RESET}"
-                        clean_count = f"[+{fake_i}/{total_in_group}]    X" 
+                        if f == anim_frames:
+                            spin_char = f"{C_STAGED} {check_char} {RESET}"
+                        else:
+                            spin_char = f"{C_TITLE}{spinner_chars[spinner_tick % len(spinner_chars)]}{RESET}"
+                            spinner_tick += 1
+                            
+                        clean_count = f"[+{fake_i}/{total_in_group}]    (|)" 
                         
                         static_len = len(f'[COMPILE]  ("{b_id}")') + len(clean_count)
                         max_desc_len = max(5, (term_w - 14) - static_len)
@@ -4617,8 +4648,13 @@ def execute_generate_database():
                             if fake_i == 0 and total_in_group > 0: fake_i = 1
                             if f == anim_frames: fake_i = total_in_group
                             
-                            spin_char = f"{C_STAGED}{check_char}{RESET}" if f == anim_frames else f"{C_TITLE}{spinner_chars[f % len(spinner_chars)]}{RESET}"
-                            clean_count = f"[+{fake_i}/{total_in_group}]    X"
+                            if f == anim_frames:
+                                spin_char = f"{C_STAGED} {check_char} {RESET}"
+                            else:
+                                spin_char = f"{C_TITLE}{spinner_chars[spinner_tick % len(spinner_chars)]}{RESET}"
+                                spinner_tick += 1
+                                
+                            clean_count = f"[+{fake_i}/{total_in_group}]    (|)"
                             
                             static_len = len(f'[ MERGE ]  ("{b_id}"): {m_event}') + len(clean_count)
                             max_desc_len = max(5, (term_w - 14) - static_len)
