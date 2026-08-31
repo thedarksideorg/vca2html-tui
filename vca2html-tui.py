@@ -519,10 +519,26 @@ def format_log(tag, msg, color, is_cmd=False):
         muted_colon = f"{C_SUBTEXT}:{color}"
         return f"{color}{tag_str}{muted_colon} {msg}{RESET}"
 
-def draw_viewport(progress_pct=100.0, current_task_string="", active_file="", current_file_idx=0, total_files=0, total_types=0, total_lenses=0, is_interactive=False, action_text=""):
-    global scroll_offset
-    import re
+# Global tracking for universal resize hook
+last_known_w, last_known_h = 0, 0
+
+def draw_viewport(progress_pct=100.0, current_task_string="", active_file="", current_file_idx=0, total_files=0, total_types=0, total_lenses=0, is_interactive=False, action_text="", frame_title=""):
+    global scroll_offset, last_known_w, last_known_h
+
+    
     term_w, term_h = get_term_size()
+    
+    # UNIVERSAL RESIZE HOOK
+    if term_w != last_known_w or term_h != last_known_h:
+        last_known_w, last_known_h = term_w, term_h
+        sys.stdout.write(f"{C_BG}\033[2J\033[H")
+        draw_top_bar()
+        for r in range(2, term_h - 1): draw_frame_line("", row=r)
+        
+        if frame_title:
+            draw_frame_line(f"{C_SIZE}{frame_title}{RESET}", row=2, align="center")
+            
+        draw_status_bar()
     
     inner_l = 4; inner_r = term_w - 3
     box_w = inner_r - inner_l + 1
@@ -544,7 +560,7 @@ def draw_viewport(progress_pct=100.0, current_task_string="", active_file="", cu
     
     sys.stdout.write(f"\033[{vp_start_row};{inner_l}H{C_BORDER}┌{'─' * (box_w - 2)}┐{RESET}")
     
-    # HIGH SPEED FIX: Only process lines that are physically visible on the screen
+    # Only process lines that are physically visible on the screen
     for i in range(vp_height):
         row = vp_start_row + 1 + i
         log_idx = scroll_offset + i
@@ -630,7 +646,7 @@ def draw_viewport(progress_pct=100.0, current_task_string="", active_file="", cu
     
     sys.stdout.write(f"\033[{term_h};1H")
     sys.stdout.flush()
-
+    
 def getch():
     if os.name == 'nt':
         ch = msvcrt.getch()
@@ -2558,6 +2574,7 @@ def map_style_code(row):
 def resolve_material(mat_str, mat_brand_str, index_val, desc_str, name_str, abbe_val, global_context=None):
     if global_context is None: global_context = {}
     
+    import re
     # Material Brand injected into the text sweep
     c = f" {str(mat_str)} {str(mat_brand_str)} {str(desc_str)} {str(name_str)} ".upper()
     
@@ -2575,13 +2592,13 @@ def resolve_material(mat_str, mat_brand_str, index_val, desc_str, name_str, abbe
         return "CR-39"
         
     if 1.54 <= i_val <= 1.565:
-        return "Mid-Index (1.56)"
+        return "1.56"
         
     if 1.59 <= i_val <= 1.61 or "1.60" in c:
-        return "High-Index 1.60 (MR-8)"
+        return "1.60 (MR-8)"
         
     if 1.73 <= i_val <= 1.745 or "1.74" in c:
-        return "High-Index 1.74"
+        return "1.74 (MR-74)"
         
     if 1.65 <= i_val <= 1.675 or "1.67" in c:
         m10_score = 0
@@ -2593,8 +2610,8 @@ def resolve_material(mat_str, mat_brand_str, index_val, desc_str, name_str, abbe
         if "MR10" in c or "MR-10" in c: m10_score += 5
         if "MR7" in c or "MR-7" in c: m7_score += 5
         
-        if m10_score > m7_score: return "High-Index 1.67 (MR-10)"
-        elif m7_score > m10_score: return "High-Index 1.67 (MR-7)"
+        if m10_score > m7_score: return "1.67 (MR-10)"
+        elif m7_score > m10_score: return "1.67 (MR-7)"
         else:
             m_key = f"1.67_{mat_str}_{desc_str}"
             if m_key in global_context:
@@ -2602,11 +2619,11 @@ def resolve_material(mat_str, mat_brand_str, index_val, desc_str, name_str, abbe
             
             ans = draw_z_index_modal("MATERIAL HEURISTIC TIE", f"Lens: {mat_str} {desc_str}\nIndex: {i_val} | Abbe: {a_val}\n\nIs this MR-7 or MR-10? Type 7 or 10:")
             if ans == "10": 
-                global_context[m_key] = "High-Index 1.67 (MR-10)"
-                return "High-Index 1.67 (MR-10)"
+                global_context[m_key] = "1.67 (MR-10)"
+                return "1.67 (MR-10)"
             else:
-                global_context[m_key] = "High-Index 1.67 (MR-7)"
-                return "High-Index 1.67 (MR-7)"
+                global_context[m_key] = "1.67 (MR-7)"
+                return "1.67 (MR-7)"
                 
     if mat_str and str(mat_str).strip(): return str(mat_str).title()
     return "Unknown Material"
@@ -2668,8 +2685,48 @@ def map_style_code(row):
     
     # 11. Single Vision (Default fallback for all stock blanks)
     return 1
+    
+def apply_smart_casing(text, techs_list):
+    """Translates generic manufacture terms, applies title case, and protects optical acronyms."""
+    t = str(text).upper()
+    techs_upper = [str(x).upper() for x in techs_list]
+    
+    t = re.sub(r'\bPHOTOCHROMIC\b', 'PHOTOFUSION X', t)
+    t = re.sub(r'\bPHOTOFUSION(?!\s*X)\b', 'PHOTOFUSION X', t)
+    
+    if 'NUPOLAR' in techs_upper:
+        t = re.sub(r'\b(POLARIZED|POLAR|POLZ)\b', 'NUPOLAR', t)
+    elif 'TRUPOLAR' in techs_upper:
+        t = re.sub(r'\b(POLARIZED|POLAR|POLZ)\b', 'TRUPOLAR', t)
+        
+    t = t.title()
 
-def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_coats, is_universal_ar):
+    protections = {
+        r'\bGt2\b': 'GT2', r'\bCr-39\b': 'CR-39', r'\bCr39\b': 'CR39',
+        r'\bA/r\b': 'A/R', r'\bNupolar\b': 'NuPolar', r'\bTrupolar\b': 'TruPolar',
+        r'\bPhotofusion X\b': 'PhotoFusion X', r'\bPhotofusion\b': 'PhotoFusion',
+        r'\bSunsync\b': 'SunSync', r'\bLiferx\b': 'LifeRx', r'\bSunrx\b': 'SunRx',
+        r'\bHev\b': 'HEV', r'\bFsv\b': 'FSV', r'\bSfsv\b': 'SFSV', r'\bSf\b': 'SF',
+        r'\bFt(\d+)\b': r'FT\1', r'\bDd(\d+)\b': r'DD\1', r'\bRnd(\d+)\b': r'RND\1', r'\bExg\b': 'EXG',
+        r'\bUv\b': 'UV', r'\bUv(\d+)\b': r'UV\1', r'\bAr\b': 'AR', r'\bPg\b': 'PG',
+        r'\bUt\b': 'UT', r'\bYhc\b': 'YHC', r'\bUs\b': 'US', r'\bHc\b': 'HC', r'\bUc\b': 'UC',
+        r'\bBlueguard\b': 'BlueGuard', r'\bBlueprotect\b': 'BlueProtect', r'\bPfx\b': 'PFX',
+        r'\bPal\b': 'PAL', r'\bMm\b': 'MM', r'\bExec\b': 'EXEC', r'\bUltex\b': 'ULTEX',
+        r'\bAsph\b': 'ASPH', r'\bSv\b': 'SV', r'(?i)\b(\d+)x(\d+)\b': r'\1X\2',
+        r'\bUvprotect\b': 'UVProtect', r'\bClearview\b': 'ClearView',
+        r'\bFul-Protect\b': 'Ful-Protect', r'\bPuck\b': 'PUCK',
+        r'\bTri\b': 'TRI', r'\bRnd\b': 'RND', r'\bFt\b': 'FT', r'\bAs\b': 'AS',
+        r'\bHmc\b': 'HMC', r'\bHmc\+\b': 'HMC+', r'\bBmc\b': 'BMC', r'\bHct\b': 'HCT',
+        r'\bMr-7\b': 'MR-7', r'\bMr-8\b': 'MR-8', r'\bMr-8\+\b': 'MR-8+', r'\bMr-10\b': 'MR-10', r'\bMr-74\b': 'MR-74'
+    }
+    
+    for pat, repl in protections.items():
+        t = re.sub(pat, repl, t)
+        
+    return t
+
+def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_coats, is_universal_ar, resolved_mat):
+    import re
     raw_desc = str(sample_row.get('Description', '')).upper().strip()
     raw_name = str(sample_row.get('Name', '')).upper().strip()
     mfg = str(sample_row.get('MFG', '')).upper().strip()
@@ -3037,10 +3094,6 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
         state_mat = 4
         if len(build()) <= target_len: return build()
         
-        while len(b_str) > 0:
-            b_str = b_str[:-1].strip()
-            if len(build()) <= target_len: return build()
-            
         if has_extra_thick: state_et = 1
         if len(build()) <= target_len: return build()
         if has_extra_thin: state_ethin = 1
@@ -3080,30 +3133,45 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
         if has_puck: state_puck = 3
         if len(build()) <= target_len: return build()
         
+        while len(b_str) > 0:
+            b_str = b_str[:-1].strip()
+            if len(build()) <= target_len: return build()
+        
         return build()[:target_len].strip()
 
     brief_desc = run_ratchet(15)
     long_desc = run_ratchet(32)
     
     clean_desc = raw_desc
-    clean_desc = re.sub(r'\b(?:HARD RESIN|RESIN|ORG)\b', 'CR-39', clean_desc, flags=re.IGNORECASE)
+    
+    # 1. Purge generic plastics, indexes, mid/high index labels, and SV tags
+    clean_desc = re.sub(r'\b(?:HARD RESIN|RESIN|ORG|PLASTIC|STANDARD PLASTIC|HIGH-INDEX|HIGH INDEX|MID-INDEX|MID INDEX)\b', '', clean_desc, flags=re.IGNORECASE)
     clean_desc = re.sub(r'\bBLUE\s*GUARD\b', 'BLUEGUARD', clean_desc, flags=re.IGNORECASE)
     clean_desc = re.sub(r'\b(?:EXTRA\s*-?\s*THICK|EXTHK|ET)\b', '__ET__', clean_desc, flags=re.IGNORECASE)
     clean_desc = re.sub(r'\b(?:EXTRA\s*-?\s*THIN)\b', '__E_THIN__', clean_desc, flags=re.IGNORECASE)
     
+    # Floating Decimal Assassin and parenthetical material wipe
+    clean_desc = re.sub(r'(^|\s)\.\d{2,3}\b', ' ', clean_desc)
+    clean_desc = re.sub(r'\(\s*MR-[\w\+\-]+\s*\)', '', clean_desc, flags=re.IGNORECASE)
+    
     for word in [
         'PRO GRAY', 'PRO GREY', 'PRO BROWN', 'EXTRA-GRAY', 'EXTRA-GREY', 'EXTRA GRAY', 'EXTRA GREY', 'EXTRAGRAY', 'EXTRAGREY', 'XTRA-ACTIVE', 'XTRA ACTIVE', 'XTRA',
         'GRAY', 'GREY', 'GRY', 'BROWN', 'BRN', 'GREEN', 'GRN', 'G15', 'G-15', 'PIONEER', 'PIONEEER', 'PIO', 'EMERALD', 'BURGUNDY', 'BURG', 'BRG',
-        'PINK', 'PNK', 'BLUE', 'BLU', 'PURPLE', 'PURP', 'PRO', 'EXTRA', 'XA', 'EXG'
+        'PINK', 'PNK', 'BLUE', 'BLU', 'PURPLE', 'PURP', 'PRO', 'EXTRA', 'XA', 'EXG',
+        'POLYCARBONATE', 'POLYCARB', 'POLY', 'TRIVEX', 'TRV', 'CR39', 'CR-39', 'RESIN', 'HARD RESIN', 'PLASTIC', 'STANDARD PLASTIC',
+        '1.50', '1.500', '1.53', '1.547', '1.56', '1.586', '1.59', '1.60', '1.605', '1.61', '1.66', '1.67', '1.73', '1.74',
+        'MR-8', 'MR-8+', 'MR8', 'MR-7', 'MR7', 'MR-10', 'MR10', 'MR-74', 'MR74', 'HIGH-INDEX', 'HIGH INDEX', 'MID-INDEX', 'MID INDEX',
+        'PUCK', 'PUK', 'PK'
     ]:
         clean_desc = re.sub(rf'\b{word}(?:\s*[-]?\s*[123ABC])?\b', '', clean_desc, flags=re.IGNORECASE)
         
     for word in [
         'DVC', 'DVP', 'DVG', 'DVS', 'ROCK', 'EASY', 'SAPPHIRE', 'VELA', 'AR', 'CRIZAL', 'DURAVISION', 'DURA', 
-        'HC', 'SR', 'SHMC', 'PG', 'UT', 'YHC', 'US', 'UC', 'UNCOATED', 'THICK', 'THIN',
+        'HC', 'SR', 'SHMC', 'PG', 'UT', 'YHC', 'US', 'UC', 'UNCOATED', 'THICK', 'THIN', 'HCT',
         'YOUNGERHC', 'YOUNGER HARDCOAT', 'YOUNGER HARD COAT', 'YOUNGER HARD-COAT',
         'PERMAGUARD', 'PERMA-GUARD', 'PERMA GUARD', 'ULTRATOUGH', 'ULTRA-TOUGH', 'ULTRA TOUGH',
-        'ULTRASHIELD', 'ULTRA-SHIELD', 'ULTRA SHIELD', 'HARDCOAT', 'HARD COAT', 'HARD-COAT', 'HARD'
+        'ULTRASHIELD', 'ULTRA-SHIELD', 'ULTRA SHIELD', 'HARDCOAT', 'HARD COAT', 'HARD-COAT', 'HARD',
+        'DOUBLE D', 'OCCUPATIONAL', 'OCCUP', 'OCC', 'DD'
     ]:
         clean_desc = re.sub(rf'\b{word}\b', '', clean_desc, flags=re.IGNORECASE)
         
@@ -3114,7 +3182,10 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
     clean_desc = clean_desc.replace('__ET__', 'EXTRA-THICK')
     clean_desc = clean_desc.replace('__E_THIN__', 'EXTRA-THIN')
     
-    strip_list = prefix_parts + ["PAL", "PROGRESSIVE", "PROG", "TRIFOCAL", "TRI", "BIFOCAL", "FLAT TOP", "SHORT", "SHRT", "SHT", "FSV", "SFSV", "SF", "SINGLE VISION", "FINISHED SINGLE VISION", "SEMI-FINISHED", "SEMI FINISHED", "DOUBLE D", "OCCUPATIONAL", "OCCUP", "OCC", "DD"]
+    # 2. Strip MFG name, prefix parts, SV, and structural noise words
+    mfg_clean_str = str(sample_row.get('MFG', '')).strip()
+    strip_list = prefix_parts + [mfg_clean_str, "PAL", "PROGRESSIVE", "PROG", "TRIFOCAL", "TRI", "BIFOCAL", "FLAT TOP", "SHORT", "SHRT", "SHT", "FSV", "SFSV", "SF", "SINGLE VISION", "FINISHED SINGLE VISION", "SEMI-FINISHED", "SEMI FINISHED", "DOUBLE D", "OCCUPATIONAL", "OCCUP", "OCC", "DD", "SV"]
+    
     if is_dd and dd_pct:
         strip_list.append(dd_pct)
     if seg_size:
@@ -3124,8 +3195,17 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
         if p_word and len(p_word) > 1:
             clean_desc = re.sub(rf'\b{re.escape(p_word)}\b', '', clean_desc, flags=re.IGNORECASE)
             
-    clean_desc = f"{prefix_str} {clean_desc}".replace("  ", " ").strip()
     clean_desc = re.sub(r'\s+', ' ', clean_desc).strip()
+    
+    # 3. Inject mathematically resolved material directly after prefix/brand
+    if resolved_mat:
+        clean_desc = f"{prefix_str} {resolved_mat} {clean_desc}".replace("  ", " ").strip()
+    else:
+        clean_desc = f"{prefix_str} {clean_desc}".replace("  ", " ").strip()
+        
+    # 4. Forcibly anchor PUCK to the extreme end of the string
+    if has_puck:
+        clean_desc = f"{clean_desc} PUCK".strip()
     
     return clean_desc, brief_desc, long_desc, tags, active_ar, prefix_str, prefix_parts, seg_size
 
@@ -4223,7 +4303,7 @@ def execute_generate_database():
     global global_mode, scroll_offset
     global_mode = "MASTER COMPILER"
     render_ui_skeleton("Master Compiler Initializing...")
-    
+   
     while True:
         sys.stdout.write(f"{C_BG}\033[2J\033[H")
         term_w, term_h = get_term_size()
@@ -4238,7 +4318,7 @@ def execute_generate_database():
         if not files:
             viewport_logs.clear()
             log_task(format_log("FATAL", "Cannot Compile: The Vault (/data/db/.vlp/) is empty.", C_ALERT), "RAW")
-            draw_viewport(progress_pct=100.0, active_file="HALTED", current_file_idx=0, total_files=0, is_interactive=True, action_text="( PRESS ENTER TO RETURN )")
+            draw_viewport(progress_pct=100.0, active_file="HALTED", current_file_idx=0, total_files=0, is_interactive=True, action_text="( PRESS ENTER TO RETURN )", frame_title="THE MASTER COMPILER: CRUCIBLE AUDIT & REBUILD")
             
             while True:
                 c = getch()
@@ -4258,7 +4338,7 @@ def execute_generate_database():
             try: total_raw_lines += sum(1 for _ in open(fpath, 'r', encoding='utf-8', errors='ignore')) - 1
             except: pass
             
-        draw_viewport(progress_pct=0.0, active_file="Pending Auth...", current_file_idx=0, total_files=max(1, total_raw_lines), total_types=0, total_lenses=0, is_interactive=False, action_text="( WAITING FOR INPUT )")
+        draw_viewport(progress_pct=0.0, active_file="Pending Auth...", current_file_idx=0, total_files=max(1, total_raw_lines), total_types=0, total_lenses=0, is_interactive=False, action_text="( WAITING FOR INPUT )", frame_title="THE MASTER COMPILER: CRUCIBLE AUDIT & REBUILD")
         sys.stdout.flush()
 
         ans = draw_z_index_modal("CRITICAL SYSTEM WARNING", "Type COMPILE to annihilate DB & rebuild:")
@@ -4295,46 +4375,6 @@ def execute_generate_database():
             n = re.sub(r'\bD\d{2,3}\b', '', n, flags=re.IGNORECASE)
             n = re.sub(r'\b\d{2,3}MM\b', '', n, flags=re.IGNORECASE)
             return n.strip()
-            
-        def apply_smart_casing(text, techs_list):
-            t = str(text).upper()
-            techs_upper = [str(x).upper() for x in techs_list]
-            
-            # Universal Translation Hooks
-            t = re.sub(r'\bPHOTOCHROMIC\b', 'PHOTOFUSION X', t)
-            t = re.sub(r'\bPHOTOFUSION(?!\s*X)\b', 'PHOTOFUSION X', t)
-            
-            if 'NUPOLAR' in techs_upper:
-                t = re.sub(r'\b(POLARIZED|POLAR|POLZ)\b', 'NUPOLAR', t)
-            elif 'TRUPOLAR' in techs_upper:
-                t = re.sub(r'\b(POLARIZED|POLAR|POLZ)\b', 'TRUPOLAR', t)
-                
-            t = t.title()
-
-            # The Dictionary Sweep
-            protections = {
-                r'\bGt2\b': 'GT2', r'\bCr-39\b': 'CR-39', r'\bCr39\b': 'CR39',
-                r'\bA/r\b': 'A/R', r'\bNupolar\b': 'NuPolar', r'\bTrupolar\b': 'TruPolar',
-                r'\bPhotofusion X\b': 'PhotoFusion X', r'\bPhotofusion\b': 'PhotoFusion',
-                r'\bSunsync\b': 'SunSync', r'\bLiferx\b': 'LifeRx', r'\bSunrx\b': 'SunRx',
-                r'\bHev\b': 'HEV', r'\bFsv\b': 'FSV', r'\bSfsv\b': 'SFSV', r'\bSf\b': 'SF',
-                r'\bFt(\d+)\b': r'FT\1', r'\bDd(\d+)\b': r'DD\1', r'\bExg\b': 'EXG',
-                r'\bUv\b': 'UV', r'\bUv(\d+)\b': r'UV\1', r'\bAr\b': 'AR', r'\bPg\b': 'PG',
-                r'\bUt\b': 'UT', r'\bYhc\b': 'YHC', r'\bUs\b': 'US', r'\bHc\b': 'HC', r'\bUc\b': 'UC',
-                r'\bBlueguard\b': 'BlueGuard', r'\bBlueprotect\b': 'BlueProtect', r'\bPfx\b': 'PFX',
-                r'\bPal\b': 'PAL', r'\bMm\b': 'MM', r'\bExec\b': 'EXEC', r'\bUltex\b': 'ULTEX',
-                r'\bAsph\b': 'ASPH', r'\bSv\b': 'SV', r'(?i)\b(\d+)x(\d+)\b': r'\1X\2',
-                r'\bUvprotect\b': 'UVProtect', r'\bClearview\b': 'ClearView',
-                r'\bFul-Protect\b': 'Ful-Protect', r'\bPuck\b': 'PUCK',
-                r'\bTri\b': 'TRI', r'\bRnd\b': 'RND', r'\bFt\b': 'FT', r'\bAs\b': 'AS',
-                r'\bHmc\b': 'HMC', r'\bHmc\+\b': 'HMC+', r'\bBmc\b': 'BMC', r'\bHct\b': 'HCT',
-                r'\bMr-7\b': 'MR-7', r'\bMr-8\b': 'MR-8', r'\bMr-8\+\b': 'MR-8+', r'\bMr-10\b': 'MR-10'
-            }
-            
-            for pat, repl in protections.items():
-                t = re.sub(pat, repl, t)
-                
-            return t
         
         for idx, fname in enumerate(files):
             fpath = os.path.join(VLP_ARCHIVE, fname)
@@ -4399,46 +4439,12 @@ def execute_generate_database():
                     is_universal_ar = not has_non_ar
                     
                     sample_row = group.iloc[0].to_dict()
-                    clean_desc, lms_brief, lms_long, tags, active_ar, prefix_str, prefix_parts, extracted_seg_size = synthesize_descriptions(sample_row, is_fsv, has_add, extracted_techs, extracted_coats, is_universal_ar)
+                    
+                    clean_desc, lms_brief, lms_long, tags, active_ar, prefix_str, prefix_parts, extracted_seg_size = synthesize_descriptions(
+                        sample_row, is_fsv, has_add, extracted_techs, extracted_coats, is_universal_ar, mat
+                    )
                     
                     base_raw_desc = str(sample_row.get('Description', '')).strip()
-                    
-                    base_raw_desc = re.sub(r'\b(?:HARD RESIN|RESIN|ORG)\b', 'CR-39', base_raw_desc, flags=re.IGNORECASE)
-                    base_raw_desc = re.sub(r'\bBLUE\s*GUARD\b', 'BLUEGUARD', base_raw_desc, flags=re.IGNORECASE)
-                    base_raw_desc = re.sub(r'\b(?:EXTRA\s*-?\s*THICK|EXTHK|ET)\b', '__ET__', base_raw_desc, flags=re.IGNORECASE)
-                    base_raw_desc = re.sub(r'\b(?:EXTRA\s*-?\s*THIN)\b', '__E_THIN__', base_raw_desc, flags=re.IGNORECASE)
-                    
-                    for word in [
-                        'PRO GRAY', 'PRO GREY', 'PRO BROWN', 'EXTRA-GRAY', 'EXTRA-GREY', 'EXTRA GRAY', 'EXTRA GREY', 'EXTRAGRAY', 'EXTRAGREY', 'XTRA-ACTIVE', 'XTRA ACTIVE', 'XTRA',
-                        'GRAY', 'GREY', 'GRY', 'BROWN', 'BRN', 'GREEN', 'GRN', 'G15', 'G-15', 'PIONEER', 'PIONEEER', 'PIO', 'EMERALD', 'BURGUNDY', 'BURG', 'BRG',
-                        'PINK', 'PNK', 'BLUE', 'BLU', 'PURPLE', 'PURP', 'PRO', 'EXTRA', 'XA', 'EXG'
-                    ]:
-                        base_raw_desc = re.sub(rf'\b{word}(?:\s*[-]?\s*[123ABC])?\b', '', base_raw_desc, flags=re.IGNORECASE)
-                    
-                    for word in [
-                        'DVC', 'DVP', 'DVG', 'DVS', 'ROCK', 'EASY', 'SAPPHIRE', 'VELA', 'AR', 'CRIZAL', 'DURAVISION', 'DURA', 
-                        'HC', 'SR', 'SHMC', 'PG', 'UT', 'YHC', 'US', 'UC', 'UNCOATED', 'THICK', 'THIN',
-                        'YOUNGERHC', 'YOUNGER HARDCOAT', 'YOUNGER HARD COAT', 'YOUNGER HARD-COAT',
-                        'PERMAGUARD', 'PERMA-GUARD', 'PERMA GUARD', 'ULTRATOUGH', 'ULTRA-TOUGH', 'ULTRA TOUGH',
-                        'ULTRASHIELD', 'ULTRA-SHIELD', 'ULTRA SHIELD', 'HARDCOAT', 'HARD COAT', 'HARD-COAT', 'HARD',
-                        'DOUBLE D', 'OCCUPATIONAL', 'OCCUP', 'OCC', 'DD'
-                    ]:
-                        base_raw_desc = re.sub(rf'\b{word}\b', '', base_raw_desc, flags=re.IGNORECASE)
-                    
-                    base_raw_desc = re.sub(r'\bUV400\b', 'UV', base_raw_desc, flags=re.IGNORECASE)
-                    base_raw_desc = base_raw_desc.replace('__ET__', 'EXTRA-THICK')
-                    base_raw_desc = base_raw_desc.replace('__E_THIN__', 'EXTRA-THIN')
-                    
-                    strip_list = prefix_parts + ["PAL", "PROGRESSIVE", "PROG", "TRIFOCAL", "TRI", "BIFOCAL", "FLAT TOP", "SHORT", "SHRT", "SHT", "FSV", "SFSV", "SF", "SINGLE VISION", "FINISHED SINGLE VISION", "SEMI-FINISHED", "SEMI FINISHED", "DOUBLE D", "OCCUPATIONAL", "OCCUP", "OCC", "DD"]
-                    if extracted_seg_size:
-                        strip_list.append(str(extracted_seg_size))
-                        
-                    for p_word in strip_list:
-                        if p_word and len(p_word) > 1:
-                            base_raw_desc = re.sub(rf'\b{re.escape(p_word)}\b', '', base_raw_desc, flags=re.IGNORECASE)
-                            
-                    base_raw_desc = f"{prefix_str} {base_raw_desc}".replace("  ", " ").strip()
-                    base_raw_desc = re.sub(r'\s+', ' ', base_raw_desc).strip()
                     
                     extra_dia_tags = []
                     if len(group) > 1:
@@ -4727,24 +4733,24 @@ def execute_generate_database():
                         if f == anim_frames: fake_i = total_in_group
                         
                         if f == anim_frames:
-                            spin_char = f"{C_STAGED} {check_char} {RESET}"
+                            spin_char = f"{C_STAGED}{check_char}{RESET}"
                         else:
                             spin_char = f"{C_TITLE}{spinner_chars[spinner_tick % len(spinner_chars)]}{RESET}"
                             spinner_tick += 1
                             
-                        clean_count = f"[+{fake_i}/{total_in_group}]    (|)" 
+                        clean_count = f"[+{fake_i}/{total_in_group}] (|)" 
                         
                         static_len = len(f'[COMPILE]  ("{b_id}"): {seed_str}') + len(clean_count)
-                        max_desc_len = max(5, (term_w - 14) - static_len)
+                        max_desc_len = max(5, (term_w - 16) - static_len)
                         disp_desc = clean_desc[:max_desc_len]
                         
                         clean_base = f"[COMPILE] {disp_desc} (\"{b_id}\"): {seed_str}"
-                        pad_len = max(1, (term_w - 14) - len(clean_base) - len(clean_count))
+                        pad_len = max(1, (term_w - 16) - len(clean_base) - len(clean_count))
                         
-                        header_str = f"{C_TITLE}[COMPILE]{RESET} {C_WARN}{disp_desc}{RESET} {C_SUBTEXT}(\"{b_id}\"):{RESET} {C_TITLE}{seed_str}{RESET}" + (" " * pad_len) + f"{C_PROMPT}[+{fake_i}/{total_in_group}]{RESET}    {spin_char}"
+                        header_str = f"{C_TITLE}[COMPILE]{RESET} {C_WARN}{disp_desc}{RESET} {C_SUBTEXT}(\"{b_id}\"):{RESET} {C_TITLE}{seed_str}{RESET}" + (" " * pad_len) + f"{C_PROMPT}[+{fake_i}/{total_in_group}]{RESET} {spin_char}"
                         viewport_logs[header_idx] = header_str
                         
-                        draw_viewport(progress_pct=pct, active_file=fname, current_file_idx=processed_lines, total_files=total_raw_lines, total_types=total_types, total_lenses=total_skus, action_text="( COMPILING )")
+                        draw_viewport(progress_pct=pct, active_file=fname, current_file_idx=processed_lines, total_files=total_raw_lines, total_types=total_types, total_lenses=total_skus, action_text="( COMPILING )", frame_title="THE MASTER COMPILER: CRUCIBLE AUDIT & REBUILD")
                         sys.stdout.flush()
                         if f < anim_frames: time.sleep(sleep_interval)
                         
@@ -4762,24 +4768,24 @@ def execute_generate_database():
                             if f == anim_frames: fake_i = total_in_group
                             
                             if f == anim_frames:
-                                spin_char = f"{C_STAGED} {check_char} {RESET}"
+                                spin_char = f"{C_STAGED}{check_char}{RESET}"
                             else:
                                 spin_char = f"{C_TITLE}{spinner_chars[spinner_tick % len(spinner_chars)]}{RESET}"
                                 spinner_tick += 1
                                 
-                            clean_count = f"[+{fake_i}/{total_in_group}]    (|)"
+                            clean_count = f"[+{fake_i}/{total_in_group}] (|)"
                             
                             static_len = len(f'[ MERGE ]  ("{b_id}"): {m_event}') + len(clean_count)
-                            max_desc_len = max(5, (term_w - 14) - static_len)
+                            max_desc_len = max(5, (term_w - 16) - static_len)
                             disp_desc = clean_desc[:max_desc_len]
                             
                             clean_base = f"[ MERGE ] {disp_desc} (\"{b_id}\"): {m_event}"
-                            pad_len = max(1, (term_w - 14) - len(clean_base) - len(clean_count))
+                            pad_len = max(1, (term_w - 16) - len(clean_base) - len(clean_count))
                             
-                            header_str = f"{C_PROMPT}[ MERGE ]{RESET} {C_WARN}{disp_desc}{RESET} {C_SUBTEXT}(\"{b_id}\"):{RESET} {C_STAGED}{m_event}{RESET}" + (" " * pad_len) + f"{C_PROMPT}[+{fake_i}/{total_in_group}]{RESET}    {spin_char}"
+                            header_str = f"{C_PROMPT}[ MERGE ]{RESET} {C_WARN}{disp_desc}{RESET} {C_SUBTEXT}(\"{b_id}\"):{RESET} {C_STAGED}{m_event}{RESET}" + (" " * pad_len) + f"{C_PROMPT}[+{fake_i}/{total_in_group}]{RESET} {spin_char}"
                             viewport_logs[m_header_idx] = header_str
                             
-                            draw_viewport(progress_pct=pct, active_file=fname, current_file_idx=processed_lines, total_files=total_raw_lines, total_types=total_types, total_lenses=total_skus, action_text="( MERGING NODE )")
+                            draw_viewport(progress_pct=pct, active_file=fname, current_file_idx=processed_lines, total_files=total_raw_lines, total_types=total_types, total_lenses=total_skus, action_text="( MERGING NODE )", frame_title="THE MASTER COMPILER: CRUCIBLE AUDIT & REBUILD")
                             sys.stdout.flush()
                             if f < anim_frames: time.sleep(sleep_interval)
 
@@ -4949,17 +4955,17 @@ def execute_generate_database():
             log_task(format_log("SUMMARY", pad_tel("Total Lenses Minted", f"{total_skus:,}"), C_STAGED), "RAW")
             
             log_task(format_log("PAYLOAD", pad_tel("File Size", f"{f_size / (1024*1024):.2f} MB ({f_size:,} bytes)"), C_PROMPT), "RAW")
-            log_task(format_log("Signature", pad_tel("Hash", f"{sig}"), C_WARN), "RAW")
+            log_task(format_log("Signature", f"{sig}", C_WARN), "RAW")
             
-            w_paths = wrap_ansi_text(db_abs_path, indent_spaces=41, max_w=term_w - 14, cont_char="")
-            log_task(format_log("DB Path", pad_tel("Directory", w_paths[0].strip()), C_STAGED), "RAW")
+            w_paths = wrap_ansi_text(db_abs_path, indent_spaces=15, max_w=term_w - 14, cont_char="")
+            log_task(format_log("DB Path", w_paths[0].strip(), C_STAGED), "RAW")
             for p_line in w_paths[1:]:
                 viewport_logs.append(p_line)
             
             vp_height = term_h - 12
             scroll_offset = max(0, len(viewport_logs) - vp_height)
             
-            draw_viewport(progress_pct=100.0, active_file="master_lens_db.json", current_file_idx=total_raw_lines, total_files=total_raw_lines, total_types=total_types, total_lenses=total_skus, is_interactive=True, action_text="( PRESS ENTER TO RETURN )")
+            draw_viewport(progress_pct=100.0, active_file="master_lens_db.json", current_file_idx=total_raw_lines, total_files=total_raw_lines, total_types=total_types, total_lenses=total_skus, is_interactive=True, action_text="( PRESS ENTER TO RETURN )", frame_title="THE MASTER COMPILER: CRUCIBLE AUDIT & REBUILD")
             
             while True:
                 c = getch()
@@ -4974,11 +4980,11 @@ def execute_generate_database():
                 elif c == '\x1b[5~' or c == 'PGUP': scroll_offset = max(0, scroll_offset - 10)
                 elif c == '\x1b[6~' or c == 'PGDN': scroll_offset = min(max_scroll, scroll_offset + 10)
                 
-                draw_viewport(progress_pct=100.0, active_file="master_lens_db.json", current_file_idx=total_raw_lines, total_files=total_raw_lines, total_types=total_types, total_lenses=total_skus, is_interactive=True, action_text="( PRESS ENTER TO RETURN )")
+                draw_viewport(progress_pct=100.0, active_file="master_lens_db.json", current_file_idx=total_raw_lines, total_files=total_raw_lines, total_types=total_types, total_lenses=total_skus, is_interactive=True, action_text="( PRESS ENTER TO RETURN )", frame_title="THE MASTER COMPILER: CRUCIBLE AUDIT & REBUILD")
      
         except Exception as e: 
             log_task(format_log("FATAL", f"{e}", C_ALERT), "RAW")
-            draw_viewport(progress_pct=100.0, active_file="ERROR", current_file_idx=total_raw_lines, total_files=total_raw_lines, is_interactive=True, action_text="( PRESS ENTER TO RETURN )")
+            draw_viewport(progress_pct=100.0, active_file="ERROR", current_file_idx=total_raw_lines, total_files=total_raw_lines, is_interactive=True, action_text="( PRESS ENTER TO RETURN )", frame_title="THE MASTER COMPILER: CRUCIBLE AUDIT & REBUILD")
             
             while True:
                 c = getch()
