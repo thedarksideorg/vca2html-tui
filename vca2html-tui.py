@@ -2569,7 +2569,8 @@ def map_style_code(row):
 
 def resolve_material(mat_str, mat_brand_str, index_val, desc_str, name_str, abbe_val, global_context=None):
     if global_context is None: global_context = {}
-
+    
+    import re
     c = f" {str(mat_str)} {str(mat_brand_str)} {str(desc_str)} {str(name_str)} ".upper()
     
     try: i_val = float(index_val)
@@ -2578,7 +2579,6 @@ def resolve_material(mat_str, mat_brand_str, index_val, desc_str, name_str, abbe
     try: a_val = float(abbe_val)
     except: a_val = 0.0
     
-    # Intercept Ultra-Flex
     if re.search(r'\b(ULTRA[\s\-]?FLEX|ULTFLX)\b', c):
         return "1.60 (MR-8+)"
     
@@ -2686,6 +2686,7 @@ def map_style_code(row):
     
 def apply_smart_casing(text, techs_list):
     """Translates generic manufacture terms, applies title case, and protects optical acronyms."""
+    import re
     t = str(text).upper()
     techs_upper = [str(x).upper() for x in techs_list]
     
@@ -2715,7 +2716,8 @@ def apply_smart_casing(text, techs_list):
         r'\bFul-Protect\b': 'Ful-Protect', r'\bPuck\b': 'PUCK',
         r'\bTri\b': 'TRI', r'\bRnd\b': 'RND', r'\bFt\b': 'FT', r'\bAs\b': 'AS',
         r'\bHmc\b': 'HMC', r'\bHmc\+\b': 'HMC+', r'\bBmc\b': 'BMC', r'\bHct\b': 'HCT',
-        r'\bMr-7\b': 'MR-7', r'\bMr-8\b': 'MR-8', r'\bMr-8\+\b': 'MR-8+', r'\bMr-10\b': 'MR-10', r'\bMr-74\b': 'MR-74'
+        r'\bMr-7\b': 'MR-7', r'\bMr-8\b': 'MR-8', r'\bMr-8\+\b': 'MR-8+', r'\bMr-10\b': 'MR-10', r'\bMr-74\b': 'MR-74',
+        r'\bSunlens\b': 'SunLens', r'\bDuravision\b': 'DuraVision'
     }
     
     for pat, repl in protections.items():
@@ -2724,6 +2726,7 @@ def apply_smart_casing(text, techs_list):
     return t
 
 def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_coats, is_universal_ar, resolved_mat):
+    import re
     raw_desc = str(sample_row.get('Description', '')).upper().strip()
     raw_name = str(sample_row.get('Name', '')).upper().strip()
     mfg = str(sample_row.get('MFG', '')).upper().strip()
@@ -2856,7 +2859,20 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
         elif any(x in ar_check_str for x in ['ULTRACLEAN', 'ULTRACLN']): active_ar = "Ultraclean"
         elif any(x in ar_check_str for x in ['HMC', 'BMC', 'SHMC', ' AR ', ' A/R ', 'ANTI-REFLECTIVE']): active_ar = "A/R"
 
-    if active_ar: tags.append("A/R") 
+    # Dual-Tagging Execution for DuraVision
+    if active_ar: 
+        tags.append("A/R") 
+        if "DuraVision" in active_ar:
+            if "DuraVision" not in tags: tags.append("DuraVision")
+        if active_ar not in tags: tags.append(active_ar)
+
+    # Dual-Tagging Execution for UV Protect
+    if "UV PROTECT" in combined_name_desc or any("UV PROTECT" in c.upper() for c in extracted_coats):
+        if "UV Protect" not in tags: tags.append("UV Protect")
+        if "PLUS PLATINUM" in combined_name_desc: tags.append("UV Protect Plus Platinum")
+        elif "PLUS CHROME" in combined_name_desc: tags.append("UV Protect Plus Chrome")
+        elif "PLUS SILVER" in combined_name_desc: tags.append("UV Protect Plus Silver")
+        elif "PLUS GOLD" in combined_name_desc: tags.append("UV Protect Plus Gold")
 
     color_keywords = ['PRO GRAY', 'PRO GREY', 'PRO BROWN', 'EXTRA-GRAY', 'EXTRA-GREY', 'EXTRA GRAY', 'EXTRA GREY', 'EXTRAGRAY', 'EXTRAGREY', 'GRAY', 'GREY', 'GRY', 'BROWN', 'BRN', 'GREEN', 'GRN', 'G15', 'G-15', 'PIONEER', 'PIONEEER', 'PIO', 'EMERALD', 'BURGUNDY', 'BURG', 'BRG', 'PINK', 'PNK', 'BLUE', 'BLU', 'PURPLE', 'PURP']
     
@@ -2923,23 +2939,235 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
             
     if has_polar: tags.append("Polarized")
     if active_blue: tech_list_full.append(active_blue)
+    
+    if "CLEARVIEW" in combined_name_desc:
+        tech_list_full.append("ClearView")
+        tags.append("ClearView")
 
     is_org = "ORG" in combined_name_desc
     is_asph = any(x in combined_name_desc for x in [' AS ', ' ASP ', ' ASPHERIC ', ' ASPH ']) and style_int not in [6, 7]
 
-    brief_desc = "TEMP_BRIEF"
-    long_desc = "TEMP_LONG"
+    def run_ratchet(target_len):
+        mat_cascades = {
+            "POLY": ["POLYCARBONATE", "POLYCARB", "POLY", "PY", "PY"],
+            "CR-39": ["CR-39", "CR-39", "CR39", "CR", "CR"],
+            "TRV": ["TRIVEX", "TRIVEX", "TRVX", "TX", "TX"],
+            "1.56": ["1.56", "1.56", "1.56", "1.56", "156"], 
+            "1.60": ["1.60", "1.60", "1.60", "1.60", "160"],
+            "1.67": ["1.67", "1.67", "1.67", "1.67", "167"], 
+            "1.74": ["1.74", "1.74", "1.74", "1.74", "174"],
+            "UF": ["ULTRA-FLEX", "ULTFLX", "UF", "UF", "UF"]
+        }
+        tech_cascades = {
+            "Transitions": ["TRANSITIONS", "TRANS", "TRN", "TRN"],
+            "PhotoFusion X Extra": ["PHOTOFUSION X EXTRA", "PFX EXTRA", "PFX EXG", "PFX EXG"],
+            "PhotoFusion X": ["PHOTOFUSION X", "PFX", "PF", "PF"],
+            "Quick-Change": ["QUICK-CHANGE", "QCHANGE", "QC", "QC"],
+            "Xtra-Active": ["XTRA-ACTIVE", "XTRA", "XA", "XA"],
+            "Sensitivity": ["SENSITIVITY", "SENS", "SENS", "SENS"],
+            "LifeRx": ["LIFERX", "LIFERX", "LRX", "LRX"],
+            "NuPolar": ["NUPOLAR", "NUPOLAR", "NPOL", "NPOL"],
+            "TruPolar": ["TRUPOLAR", "TRUPOLAR", "TPOL", "TPOL"],
+            "SunRx": ["SUNRX", "SUNRX", "SUN", "SUN"],
+            "Coppertone": ["COPPERTONE", "COPPER", "CT", "CT"],
+            "Polarized": ["POLARIZED", "POLAR", "POLZ", "POL"],
+            "BlueGuard": ["BLUEGUARD", "BLUEGUARD", "BG", "BG"],
+            "Blue Protect": ["BLUE PROTECT", "BLUEP", "BP", "BP"],
+            "Ful-Protect": ["FUL-PROTECT", "FUL-PRO", "FUL", "FUL"],
+            "HEV": ["UV420", "UV420", "HEV", "HEV"], 
+            "Blue Filter": ["BLUE FILTER", "BLUEF", "BF", "BF"],
+            "Photochromic": ["PHOTOCHROMIC", "PHOTO", "PHT", "PHT"],
+            "Pre-Tint": ["PRE-TINT", "TINT", "TINT", "TINT"],
+            "PermaGuard": ["PERMAGUARD", "PERMA", "PG", "PG"],
+            "UltraTough": ["ULTRATOUGH", "U-TOUGH", "UT", "UT"],
+            "Younger Hardcoat": ["YOUNGERHC", "YHC", "YHC", "YHC"],
+            "Ultra-Shield": ["ULTRA-SHIELD", "U-SHIELD", "US", "US"],
+            "ClearView": ["CLEARVIEW", "CLRVIEW", "CV", "CV"]
+        }
+        
+        ar_cascades = {
+            "DuraVision Chrome": ["DURAVISION CHROME", "DV CHROME", "DVC", "DVC"],
+            "DuraVision Platinum": ["DURAVISION PLATINUM", "DV PLAT", "DVP", "DVP"],
+            "DuraVision Silver": ["DURAVISION SILVER", "DV SILV", "DVS", "DVS"],
+            "DuraVision Gold": ["DURAVISION GOLD", "DV GOLD", "DVG", "DVG"],
+            "Vela": ["VELA AR", "VELA", "VELA", "VELA"],
+            "Crizal": ["CRIZAL AR", "CRIZAL", "CZ", "CZ"],
+            "Hoya Premium": ["HOYA PREMIUM", "HOYA PREM", "HOYA", "HOYA"],
+            "ECP": ["ECP AR", "ECP", "ECP", "ECP"],
+            "Ultraclean": ["ULTRACLEAN", "ULTRACLN", "UCLN", "UCLN"],
+            "A/R": ["A/R", "A/R", "AR", "AR"]
+        }
+        
+        puck_cascades = ["PUCK", "PUK", "PK", ""]
+        et_cascades = ["EXTRA-THICK", "EXTHK", "ET", "ET"]
+        ethin_cascades = ["EXTRA-THIN", "EX-THIN", "ETHIN", "ETHIN"]
+        
+        state_org = 1 if is_org else 0
+        state_asph = 1 if is_asph else 0
+        state_type = 0
+        state_tech = 0
+        state_mat = 0
+        state_puck = 0 if has_puck else 3
+        state_et = 0 if has_extra_thick else 4
+        state_ethin = 0 if has_extra_thin else 4
+        state_ar = 0 if active_ar else 4
+        b_str = brand_str
+        
+        working_techs = list(tech_list_full)
+        working_type_array = list(type_cascade_array)
+        
+        # LMS Matrix material generation
+        lms_mat_str = ""
+        c_mat = str(resolved_mat).upper()
+        if "POLYCARBONATE" in c_mat: lms_mat_str = "POLY"
+        elif "TRIVEX" in c_mat: lms_mat_str = "TRV"
+        elif "CR-39" in c_mat: lms_mat_str = "CR-39"
+        elif "1.56" in c_mat: lms_mat_str = "1.56"
+        elif "1.60" in c_mat: lms_mat_str = "1.60"
+        elif "1.67" in c_mat: lms_mat_str = "1.67"
+        elif "1.74" in c_mat: lms_mat_str = "1.74"
+        if "ULTRA" in c_mat or "FLEX" in c_mat: lms_mat_str = "UF"
+        
+        def build():
+            parts = []
+            if style_int == 6:
+                if b_str: parts.append(b_str)
+                if working_type_array: parts.append(working_type_array[min(state_type, len(working_type_array)-1)])
+            else:
+                if working_type_array: parts.append(working_type_array[min(state_type, len(working_type_array)-1)])
+                if b_str: parts.append(b_str)
+            if state_org == 1: parts.append("ORG")
+            
+            if lms_mat_str:
+                m_arr = mat_cascades.get(lms_mat_str, [lms_mat_str])
+                parts.append(m_arr[min(state_mat, len(m_arr)-1)])
+            
+            if state_asph == 1: parts.append("AS")
+            
+            for t in working_techs:
+                t_arr = tech_cascades.get(t, [t])
+                parts.append(t_arr[min(state_tech, len(t_arr)-1)])
+                
+            if state_et < 4: parts.append(et_cascades[state_et])
+            if state_ethin < 4: parts.append(ethin_cascades[state_ethin])
+                
+            if state_ar < 4 and active_ar:
+                a_arr = ar_cascades.get(active_ar, ["A/R", "A/R", "AR", "AR"])
+                parts.append(a_arr[min(state_ar, len(a_arr)-1)])
+                
+            if state_puck < 3: parts.append(puck_cascades[state_puck])
+                
+            clean_parts = []
+            for p in parts:
+                if p and p not in clean_parts:
+                    clean_parts.append(p)
+            return " ".join(clean_parts).replace("  ", " ").strip()
+
+        if len(build()) <= target_len: return build()
+        
+        # Priority Sacrifice: ClearView dies first to save space
+        if "ClearView" in working_techs:
+            working_techs.remove("ClearView")
+        if len(build()) <= target_len: return build()
+        
+        state_org = 0
+        if len(build()) <= target_len: return build()
+        state_asph = 0
+        if len(build()) <= target_len: return build()
+        
+        state_type = 1
+        if len(build()) <= target_len: return build()
+        
+        state_tech = 1
+        if len(build()) <= target_len: return build()
+        
+        state_mat = 1
+        if len(build()) <= target_len: return build()
+        
+        if active_ar: state_ar = 1
+        if len(build()) <= target_len: return build()
+        
+        state_type = 2
+        if len(build()) <= target_len: return build()
+        
+        state_tech = 2
+        if len(build()) <= target_len: return build()
+        
+        state_mat = 2
+        if len(build()) <= target_len: return build()
+        
+        if active_ar: state_ar = 2
+        if len(build()) <= target_len: return build()
+        
+        state_tech = 3
+        if len(build()) <= target_len: return build()
+        
+        state_mat = 3
+        if len(build()) <= target_len: return build()
+        
+        state_mat = 4
+        if len(build()) <= target_len: return build()
+        
+        if has_extra_thick: state_et = 1
+        if len(build()) <= target_len: return build()
+        if has_extra_thin: state_ethin = 1
+        if len(build()) <= target_len: return build()
+        
+        if has_extra_thick: state_et = 2
+        if len(build()) <= target_len: return build()
+        if has_extra_thin: state_ethin = 2
+        if len(build()) <= target_len: return build()
+        
+        if active_ar: state_ar = 3
+        if len(build()) <= target_len: return build()
+            
+        while len(working_techs) > 0:
+            working_techs.pop()
+            if len(build()) <= target_len: return build()
+            
+        if has_extra_thick: state_et = 3
+        if has_extra_thin: state_ethin = 3
+        if len(build()) <= target_len: return build()
+            
+        if working_type_array:
+            current_t = working_type_array[-1]
+            while len(current_t) > 0:
+                current_t = current_t[:-1].strip()
+                working_type_array = [current_t for _ in working_type_array]
+                if len(build()) <= target_len: return build()
+                
+        if has_extra_thick: state_et = 4
+        if has_extra_thin: state_ethin = 4
+        if len(build()) <= target_len: return build()
+        
+        if has_puck: state_puck = 1
+        if len(build()) <= target_len: return build()
+        if has_puck: state_puck = 2
+        if len(build()) <= target_len: return build()
+        if has_puck: state_puck = 3
+        if len(build()) <= target_len: return build()
+        
+        while len(b_str) > 0:
+            b_str = b_str[:-1].strip()
+            if len(build()) <= target_len: return build()
+        
+        return build()[:target_len].strip()
+
+    brief_desc = run_ratchet(15)
+    long_desc = run_ratchet(32)
     
     clean_desc = raw_desc
     
-    # 1. Purge generic plastics, indexes, mid/high index labels, and SV tags
-    clean_desc = re.sub(r'\b(?:HARD RESIN|RESIN|ORG|PLASTIC|STANDARD PLASTIC|HIGH-INDEX|HIGH INDEX|MID-INDEX|MID INDEX)\b', '', clean_desc, flags=re.IGNORECASE)
+    # 1. Structural Purge (Targeting Typos, Generics, and HA)
+    clean_desc = re.sub(r'\b(?:HARD RESIN|RESIN|ORG|PLASTIC|STANDARD PLASTIC|HIGH-INDEX|HIGH INDEX|MID-INDEX|MID INDEX|HA)\b', '', clean_desc, flags=re.IGNORECASE)
+    clean_desc = re.sub(r'\b(?:SINGLE VISON|SINGLE VISION)\b', '', clean_desc, flags=re.IGNORECASE)
     clean_desc = re.sub(r'\bBLUE\s*GUARD\b', 'BLUEGUARD', clean_desc, flags=re.IGNORECASE)
     clean_desc = re.sub(r'\b(?:EXTRA\s*-?\s*THICK|EXTHK|ET)\b', '__ET__', clean_desc, flags=re.IGNORECASE)
     clean_desc = re.sub(r'\b(?:EXTRA\s*-?\s*THIN)\b', '__E_THIN__', clean_desc, flags=re.IGNORECASE)
     
-    # Kill floating decimals and parentheticals
-    clean_desc = re.sub(r'(^|\s)\.\d{2,3}\b', ' ', clean_desc)
+    # Extreme Brute-Force for Manufacturer Index Typos and Parentheses
+    for i_typo in ['.59', '.5', '.50', '.67', '.74']:
+        clean_desc = clean_desc.replace(i_typo, ' ')
     clean_desc = re.sub(r'\(\s*MR-[\w\+\-]+\s*\)', '', clean_desc, flags=re.IGNORECASE)
     
     for word in [
@@ -2954,7 +3182,6 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
         clean_desc = re.sub(rf'\b{word}(?:\s*[-]?\s*[123ABC])?\b', '', clean_desc, flags=re.IGNORECASE)
         
     for word in [
-        'DVC', 'DVP', 'DVG', 'DVS', 'ROCK', 'EASY', 'SAPPHIRE', 'VELA', 'AR', 'CRIZAL', 'DURAVISION', 'DURA', 
         'HC', 'SR', 'SHMC', 'PG', 'UT', 'YHC', 'US', 'UC', 'UNCOATED', 'THICK', 'THIN', 'HCT',
         'YOUNGERHC', 'YOUNGER HARDCOAT', 'YOUNGER HARD COAT', 'YOUNGER HARD-COAT',
         'PERMAGUARD', 'PERMA-GUARD', 'PERMA GUARD', 'ULTRATOUGH', 'ULTRA-TOUGH', 'ULTRA TOUGH',
@@ -2972,7 +3199,7 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
     
     # 2. Strip MFG name, prefix parts, SV, and noise words
     mfg_clean_str = str(sample_row.get('MFG', '')).strip()
-    strip_list = prefix_parts + [mfg_clean_str, "PAL", "PROGRESSIVE", "PROG", "TRIFOCAL", "TRI", "BIFOCAL", "FLAT TOP", "SHORT", "SHRT", "SHT", "FSV", "SFSV", "SF", "SINGLE VISION", "FINISHED SINGLE VISION", "SEMI-FINISHED", "SEMI FINISHED", "DOUBLE D", "OCCUPATIONAL", "OCCUP", "OCC", "DD", "SV"]
+    strip_list = prefix_parts + [mfg_clean_str, "PAL", "PROGRESSIVE", "PROG", "TRIFOCAL", "TRI", "BIFOCAL", "FLAT TOP", "SHORT", "SHRT", "SHT", "FSV", "SFSV", "SF", "SEMI-FINISHED", "SEMI FINISHED", "DOUBLE D", "OCCUPATIONAL", "OCCUP", "OCC", "DD", "SV"]
     
     if is_dd and dd_pct:
         strip_list.append(dd_pct)
@@ -2985,23 +3212,16 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
             
     clean_desc = re.sub(r'\s+', ' ', clean_desc).strip()
     
-    # 3. Clean the Resolved Material for injection
+    # 3. Clean the Resolved Material
     mat_tag = str(resolved_mat).strip()
     mat_tag = re.sub(r'\(\s*MR-[\w\+\-]+\s*\)', '', mat_tag, flags=re.IGNORECASE).strip()
     
-    # Inject directly behind the prefix/brand
-    prefix_words = prefix_str.split()
-    if prefix_words:
-        first_token = prefix_words[0]
-        rest_tokens = " ".join(prefix_words[1:])
-        if rest_tokens:
-            clean_desc = f"{first_token} {mat_tag} {rest_tokens} {clean_desc}".replace("  ", " ").strip()
-        else:
-            clean_desc = f"{first_token} {mat_tag} {clean_desc}".replace("  ", " ").strip()
+    if resolved_mat:
+        clean_desc = f"{prefix_str} {mat_tag} {clean_desc}".replace("  ", " ").strip()
     else:
-        clean_desc = f"{mat_tag} {clean_desc}".replace("  ", " ").strip()
+        clean_desc = f"{prefix_str} {clean_desc}".replace("  ", " ").strip()
         
-    # 4. Forcibly anchor PUCK to the end if needed
+    # Forcibly anchor PUCK 
     if has_puck:
         clean_desc = f"{clean_desc} PUCK".strip()
     
@@ -4371,7 +4591,7 @@ def execute_generate_database():
                             coat_tier = "YHC"
                         elif 'US' in raw_coat_str.split() or 'ULTRASHIELD' in raw_coat_healed: 
                             coat_tier = "US"
-                        elif any(x in raw_coat_str.split() for x in ['HC', 'SR', 'HCT']) or 'HARD' in raw_coat_str: 
+                        elif any(x in raw_coat_str.split() for x in ['HC', 'SR', 'HCT', 'HA']) or 'HARD' in raw_coat_str: 
                             coat_tier = "HC"
                         elif 'UNCOAT' in raw_coat_str or 'UC' in raw_coat_str.split() or not raw_coat_str.strip() or 'NONE' in raw_coat_str.split(): 
                             coat_tier = "UC"
@@ -4547,16 +4767,17 @@ def execute_generate_database():
                             spin_char = f"{C_TITLE}{spinner_chars[spinner_tick % len(spinner_chars)]}{RESET}"
                             spinner_tick += 1
                             
-                        clean_count = f"[+{fake_i}/{total_in_group}] (|)" 
+                        fake_i_str = str(fake_i).rjust(len(str(total_in_group)))
+                        clean_count = f"[+{fake_i_str}/{total_in_group}] (|)" 
                         
                         static_len = len(f'[COMPILE]  ("{b_id}"): {seed_str}') + len(clean_count)
-                        max_desc_len = max(5, (term_w - 16) - static_len)
+                        max_desc_len = max(5, (term_w - 11) - static_len)
                         disp_desc = clean_desc[:max_desc_len]
                         
                         clean_base = f"[COMPILE] {disp_desc} (\"{b_id}\"): {seed_str}"
-                        pad_len = max(1, (term_w - 16) - len(clean_base) - len(clean_count))
+                        pad_len = max(1, (term_w - 11) - len(clean_base) - len(clean_count))
                         
-                        header_str = f"{C_TITLE}[COMPILE]{RESET} {C_WARN}{disp_desc}{RESET} {C_SUBTEXT}(\"{b_id}\"):{RESET} {C_TITLE}{seed_str}{RESET}" + (" " * pad_len) + f"{C_PROMPT}[+{fake_i}/{total_in_group}]{RESET} {spin_char}"
+                        header_str = f"{C_TITLE}[COMPILE]{RESET} {C_WARN}{disp_desc}{RESET} {C_SUBTEXT}(\"{b_id}\"):{RESET} {C_TITLE}{seed_str}{RESET}" + (" " * pad_len) + f"{C_PROMPT}[+{fake_i_str}/{total_in_group}]{RESET} {spin_char}"
                         viewport_logs[header_idx] = header_str
                         
                         draw_viewport(progress_pct=pct, active_file=fname, current_file_idx=processed_lines, total_files=total_raw_lines, total_types=total_types, total_lenses=total_skus, action_text="( COMPILING )", frame_title="THE MASTER COMPILER: CRUCIBLE AUDIT & REBUILD")
@@ -4582,16 +4803,17 @@ def execute_generate_database():
                                 spin_char = f"{C_TITLE}{spinner_chars[spinner_tick % len(spinner_chars)]}{RESET}"
                                 spinner_tick += 1
                                 
-                            clean_count = f"[+{fake_i}/{total_in_group}] (|)"
+                            fake_i_str = str(fake_i).rjust(len(str(total_in_group)))
+                            clean_count = f"[+{fake_i_str}/{total_in_group}] (|)"
                             
                             static_len = len(f'[ MERGE ]  ("{b_id}"): {m_event}') + len(clean_count)
-                            max_desc_len = max(5, (term_w - 16) - static_len)
+                            max_desc_len = max(5, (term_w - 11) - static_len)
                             disp_desc = clean_desc[:max_desc_len]
                             
                             clean_base = f"[ MERGE ] {disp_desc} (\"{b_id}\"): {m_event}"
-                            pad_len = max(1, (term_w - 16) - len(clean_base) - len(clean_count))
+                            pad_len = max(1, (term_w - 11) - len(clean_base) - len(clean_count))
                             
-                            header_str = f"{C_PROMPT}[ MERGE ]{RESET} {C_WARN}{disp_desc}{RESET} {C_SUBTEXT}(\"{b_id}\"):{RESET} {C_STAGED}{m_event}{RESET}" + (" " * pad_len) + f"{C_PROMPT}[+{fake_i}/{total_in_group}]{RESET} {spin_char}"
+                            header_str = f"{C_PROMPT}[ MERGE ]{RESET} {C_WARN}{disp_desc}{RESET} {C_SUBTEXT}(\"{b_id}\"):{RESET} {C_STAGED}{m_event}{RESET}" + (" " * pad_len) + f"{C_PROMPT}[+{fake_i_str}/{total_in_group}]{RESET} {spin_char}"
                             viewport_logs[m_header_idx] = header_str
                             
                             draw_viewport(progress_pct=pct, active_file=fname, current_file_idx=processed_lines, total_files=total_raw_lines, total_types=total_types, total_lenses=total_skus, action_text="( MERGING NODE )", frame_title="THE MASTER COMPILER: CRUCIBLE AUDIT & REBUILD")
