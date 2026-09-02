@@ -914,14 +914,19 @@ def render_ui_skeleton(loading_text="Initializing..."):
     if 'draw_universal_footer_ui' in globals(): draw_universal_footer_ui("Processing Request...")
     sys.stdout.flush()
 
+def clean_teardown():
+    """the terminal is wiped and color reset on exit/crash."""
+    sys.stdout.write("\033[?1049l\033[?25h\033[0m")
+    sys.stdout.flush()
+
 def clean_exit(msg=None):
-    sys.stdout.write(f"{C_BG}\033[2J\033[H{RESET}")
-    # Destroy Alternate Buffer
-    sys.stdout.write("\033[?1049l")
+    sys.stdout.write(f"{C_BG}\033[2J\033[H")
+    # Destroy Buffer, restore cursor, and execute hard color reset
+    sys.stdout.write("\033[?1049l\033[?25h\033[0m")
     sys.stdout.flush()
     
     if msg:
-        print(f"{C_ALERT}{msg}{RESET}")
+        print(f"{C_ALERT}{msg}\033[0m")
         
     sys.exit(0)
 
@@ -2535,7 +2540,7 @@ def map_style_code(row):
         except: pass
 
     # 3. Progressive Check
-    if any(x in c for x in [' PROG ', ' PR ', ' PAL ', ' PROGRESSIVE ']) or raw_style == 'PR': 
+    if any(x in c for x in [' PROG ', ' PAL ', ' PROGRESSIVE ']): 
         return 6
         
     # 4. Double Seg
@@ -2726,7 +2731,6 @@ def apply_smart_casing(text, techs_list):
     return t
 
 def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_coats, is_universal_ar, resolved_mat):
-    import re
     raw_desc = str(sample_row.get('Description', '')).upper().strip()
     raw_name = str(sample_row.get('Name', '')).upper().strip()
     mfg = str(sample_row.get('MFG', '')).upper().strip()
@@ -2740,6 +2744,7 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
     
     brand_str = ""
     is_short = False
+    is_long = False
     seg_size = ""
     is_zeiss = 'ZEISS' in mfg or 'ZEISS' in combined_name_desc
     
@@ -2751,15 +2756,26 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
         dd_pct = pct_match.group(1) if pct_match else ""
     
     if style_int == 6:
-        clean_name = raw_name
+        clean_name = raw_name if raw_name else raw_desc
         if mfg:
             if clean_name.startswith(mfg): clean_name = clean_name[len(mfg):].strip()
             else:
                 mfg_words = mfg.split()
                 if mfg_words and clean_name.startswith(mfg_words[0]):
                     clean_name = clean_name[len(mfg_words[0]):].strip()
-        brand_str = clean_name.split()[0] if clean_name else "PAL"
+                    
+        brand_scrub = clean_name
+        for word in ['SF', 'SFSV', 'FSV', 'FIN', 'ORG', 'PROG', 'PROGRESSIVE', 'PAL', 'SHORT', 'SHRT', 'SHT', 'LONG', 'LNG', 'RESIN', 'POLY', 'POLYCARBONATE', 'POLYCARB', 'CR39', 'CR-39', 'TRIVEX', 'TRV']:
+            brand_scrub = re.sub(rf'\b{word}\b', '', brand_scrub, flags=re.IGNORECASE)
+            
+        brand_scrub = re.sub(r'\s+', ' ', brand_scrub).strip()
+        brand_str = brand_scrub.split()[0] if brand_scrub else "PROG"
+        
+        if re.match(r'^(?:1\.\d{1,3}|0?\.\d{1,3}|D\d{2,3}|HC|UC|AR|PG|UT|US|YHC|HMC)$', brand_str, flags=re.IGNORECASE):
+            brand_str = "PROG"
+
         if re.search(r'\b(SHORT|SHRT|SHT)\b', combined_name_desc): is_short = True
+        elif re.search(r'\b(LONG|LNG)\b', combined_name_desc): is_long = True
 
     has_puck = "PUCK" in combined_name_desc and style_int in [1, 13, 14]
     has_extra_thick = bool(re.search(r'\b(EXTRA\s*-?\s*THICK|EXTHK|ET)\b', combined_name_desc))
@@ -2768,7 +2784,8 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
     prefix_parts = []
     if style_int == 6:
         if brand_str: prefix_parts.append(brand_str)
-        if is_short: prefix_parts.append("SHORT")
+        if is_short: prefix_parts.append("S")
+        elif is_long: prefix_parts.append("L")
     elif is_dd:
         if style_int == 9 or re.search(r'\b(?:EXEC|EXECUTIVE)\b', combined_name_desc):
             prefix_parts.append(f"DD EXEC {dd_pct}".strip())
@@ -2794,7 +2811,9 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
     elif style_int in [5, 17]:
         prefix_parts.append("ULTEX")
     elif style_int == 7:
-        prefix_parts.append("BLENDED")
+        match = re.search(r'\b(22|25|28|35|40|45)\b', combined_name_desc)
+        seg_size = match.group(1) if match else "28"
+        prefix_parts.append(f"BLENDED {seg_size}")
     else:
         prefix_parts.append("FSV" if is_fsv else "SFSV")
 
@@ -2813,8 +2832,11 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
     elif style_int in [3, 16]: type_cascade_array = [f"ROUND {seg_size}", f"RND{seg_size}", f"RND{seg_size}", f"RND{seg_size}"]
     elif style_int in [4]: type_cascade_array = ["EXECUTIVE", "EXEC", "EX", "EX"]
     elif style_int in [5, 17]: type_cascade_array = ["ULTEX", "ULTEX", "ULT", "ULT"]
-    elif style_int == 7: type_cascade_array = ["BLENDED", "BLEND", "BLND", "BLND"]
-    elif style_int == 6: type_cascade_array = ["SHORT", "SHRT", "SHT", "S"] if is_short else []
+    elif style_int == 7: type_cascade_array = [f"BLENDED {seg_size}", f"BLEND {seg_size}", f"BLND {seg_size}", f"BLND {seg_size}"]
+    elif style_int == 6: 
+        if is_short: type_cascade_array = ["S", "S", "S", "S"]
+        elif is_long: type_cascade_array = ["L", "L", "L", "L"]
+        else: type_cascade_array = []
     else: base_sv = "FSV" if is_fsv else "SFSV"; type_cascade_array = [base_sv, base_sv, base_sv, base_sv]
 
     tags = []
@@ -2837,8 +2859,9 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
         if seg_size and seg_size != "EXEC" and seg_size not in tags: tags.append(seg_size)
     else:
         if seg_size: tags.append(seg_size)
-        
+            
     if is_short: tags.append("Short")
+    elif is_long: tags.append("Long")
     if has_puck: tags.append("PUCK")
     if has_extra_thick: tags.append("Extra-Thick")
     if has_extra_thin: tags.append("Extra-Thin")
@@ -2859,14 +2882,12 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
         elif any(x in ar_check_str for x in ['ULTRACLEAN', 'ULTRACLN']): active_ar = "Ultraclean"
         elif any(x in ar_check_str for x in ['HMC', 'BMC', 'SHMC', ' AR ', ' A/R ', 'ANTI-REFLECTIVE']): active_ar = "A/R"
 
-    # Dual-Tagging Execution for DuraVision
     if active_ar: 
         tags.append("A/R") 
         if "DuraVision" in active_ar:
             if "DuraVision" not in tags: tags.append("DuraVision")
         if active_ar not in tags: tags.append(active_ar)
 
-    # Dual-Tagging Execution for UV Protect
     if "UV PROTECT" in combined_name_desc or any("UV PROTECT" in c.upper() for c in extracted_coats):
         if "UV Protect" not in tags: tags.append("UV Protect")
         if "PLUS PLATINUM" in combined_name_desc: tags.append("UV Protect Plus Platinum")
@@ -2947,6 +2968,17 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
     is_org = "ORG" in combined_name_desc
     is_asph = any(x in combined_name_desc for x in [' AS ', ' ASP ', ' ASPHERIC ', ' ASPH ']) and style_int not in [6, 7]
 
+    lms_mat_str = ""
+    c_mat = str(resolved_mat).upper()
+    if "POLYCARBONATE" in c_mat: lms_mat_str = "POLY"
+    elif "TRIVEX" in c_mat: lms_mat_str = "TRV"
+    elif "CR-39" in c_mat: lms_mat_str = "CR-39"
+    elif "1.56" in c_mat: lms_mat_str = "1.56"
+    elif "1.60" in c_mat: lms_mat_str = "1.60"
+    elif "1.67" in c_mat: lms_mat_str = "1.67"
+    elif "1.74" in c_mat: lms_mat_str = "1.74"
+    if "ULTRA" in c_mat or "FLEX" in c_mat: lms_mat_str = "UF"
+
     def run_ratchet(target_len):
         mat_cascades = {
             "POLY": ["POLYCARBONATE", "POLYCARB", "POLY", "PY", "PY"],
@@ -2961,16 +2993,16 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
         tech_cascades = {
             "Transitions": ["TRANSITIONS", "TRANS", "TRN", "TRN"],
             "PhotoFusion X Extra": ["PHOTOFUSION X EXTRA", "PFX EXTRA", "PFX EXG", "PFX EXG"],
-            "PhotoFusion X": ["PHOTOFUSION X", "PFX", "PF", "PF"],
+            "PhotoFusion X": ["PHOTOFUSION X", "PFX", "PFX", "PFX"],
             "Quick-Change": ["QUICK-CHANGE", "QCHANGE", "QC", "QC"],
             "Xtra-Active": ["XTRA-ACTIVE", "XTRA", "XA", "XA"],
             "Sensitivity": ["SENSITIVITY", "SENS", "SENS", "SENS"],
             "LifeRx": ["LIFERX", "LIFERX", "LRX", "LRX"],
-            "NuPolar": ["NUPOLAR", "NUPOLAR", "NPOL", "NPOL"],
-            "TruPolar": ["TRUPOLAR", "TRUPOLAR", "TPOL", "TPOL"],
+            "NuPolar": ["NUPOLAR", "NUPOLAR", "POLZ", "POLZ"],
+            "TruPolar": ["TRUPOLAR", "TRUPOLAR", "POLZ", "POLZ"],
             "SunRx": ["SUNRX", "SUNRX", "SUN", "SUN"],
             "Coppertone": ["COPPERTONE", "COPPER", "CT", "CT"],
-            "Polarized": ["POLARIZED", "POLAR", "POLZ", "POL"],
+            "Polarized": ["POLARIZED", "POLAR", "POLZ", "POLZ"],
             "BlueGuard": ["BLUEGUARD", "BLUEGUARD", "BG", "BG"],
             "Blue Protect": ["BLUE PROTECT", "BLUEP", "BP", "BP"],
             "Ful-Protect": ["FUL-PROTECT", "FUL-PRO", "FUL", "FUL"],
@@ -3016,18 +3048,6 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
         working_techs = list(tech_list_full)
         working_type_array = list(type_cascade_array)
         
-        # LMS Matrix material generation
-        lms_mat_str = ""
-        c_mat = str(resolved_mat).upper()
-        if "POLYCARBONATE" in c_mat: lms_mat_str = "POLY"
-        elif "TRIVEX" in c_mat: lms_mat_str = "TRV"
-        elif "CR-39" in c_mat: lms_mat_str = "CR-39"
-        elif "1.56" in c_mat: lms_mat_str = "1.56"
-        elif "1.60" in c_mat: lms_mat_str = "1.60"
-        elif "1.67" in c_mat: lms_mat_str = "1.67"
-        elif "1.74" in c_mat: lms_mat_str = "1.74"
-        if "ULTRA" in c_mat or "FLEX" in c_mat: lms_mat_str = "UF"
-        
         def build():
             parts = []
             if style_int == 6:
@@ -3065,7 +3085,6 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
 
         if len(build()) <= target_len: return build()
         
-        # Priority Sacrifice: ClearView dies first to save space
         if "ClearView" in working_techs:
             working_techs.remove("ClearView")
         if len(build()) <= target_len: return build()
@@ -3128,14 +3147,7 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
         if has_extra_thick: state_et = 3
         if has_extra_thin: state_ethin = 3
         if len(build()) <= target_len: return build()
-            
-        if working_type_array:
-            current_t = working_type_array[-1]
-            while len(current_t) > 0:
-                current_t = current_t[:-1].strip()
-                working_type_array = [current_t for _ in working_type_array]
-                if len(build()) <= target_len: return build()
-                
+        
         if has_extra_thick: state_et = 4
         if has_extra_thin: state_ethin = 4
         if len(build()) <= target_len: return build()
@@ -3147,40 +3159,33 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
         if has_puck: state_puck = 3
         if len(build()) <= target_len: return build()
         
-        while len(b_str) > 0:
-            b_str = b_str[:-1].strip()
-            if len(build()) <= target_len: return build()
-        
         return build()[:target_len].strip()
 
     brief_desc = run_ratchet(15)
     long_desc = run_ratchet(32)
-    
+
     clean_desc = raw_desc
-    
-    # 1. Structural Purge (Targeting Typos, Generics, and HA)
+
     clean_desc = re.sub(r'\b(?:HARD RESIN|RESIN|ORG|PLASTIC|STANDARD PLASTIC|HIGH-INDEX|HIGH INDEX|MID-INDEX|MID INDEX|HA)\b', '', clean_desc, flags=re.IGNORECASE)
-    clean_desc = re.sub(r'\b(?:SINGLE VISON|SINGLE VISION)\b', '', clean_desc, flags=re.IGNORECASE)
+    clean_desc = re.sub(r'\b(?:SINGLE VISON|SINGLE VISION|SV)\b', '', clean_desc, flags=re.IGNORECASE)
     clean_desc = re.sub(r'\bBLUE\s*GUARD\b', 'BLUEGUARD', clean_desc, flags=re.IGNORECASE)
     clean_desc = re.sub(r'\b(?:EXTRA\s*-?\s*THICK|EXTHK|ET)\b', '__ET__', clean_desc, flags=re.IGNORECASE)
     clean_desc = re.sub(r'\b(?:EXTRA\s*-?\s*THIN)\b', '__E_THIN__', clean_desc, flags=re.IGNORECASE)
-    
-    # Extreme Brute-Force for Manufacturer Index Typos and Parentheses
-    for i_typo in ['.59', '.5', '.50', '.67', '.74']:
-        clean_desc = clean_desc.replace(i_typo, ' ')
+
+    clean_desc = re.sub(r'(?:^|\s)(?:1\.\d{1,3}|0?\.\d{1,3})(?=\s|$)', ' ', clean_desc)
+    clean_desc = re.sub(r'\b(?:PUCK|PUK|PK)\b', '', clean_desc, flags=re.IGNORECASE)
+
     clean_desc = re.sub(r'\(\s*MR-[\w\+\-]+\s*\)', '', clean_desc, flags=re.IGNORECASE)
-    
+
     for word in [
         'PRO GRAY', 'PRO GREY', 'PRO BROWN', 'EXTRA-GRAY', 'EXTRA-GREY', 'EXTRA GRAY', 'EXTRA GREY', 'EXTRAGRAY', 'EXTRAGREY', 'XTRA-ACTIVE', 'XTRA ACTIVE', 'XTRA',
         'GRAY', 'GREY', 'GRY', 'BROWN', 'BRN', 'GREEN', 'GRN', 'G15', 'G-15', 'PIONEER', 'PIONEEER', 'PIO', 'EMERALD', 'BURGUNDY', 'BURG', 'BRG',
         'PINK', 'PNK', 'BLUE', 'BLU', 'PURPLE', 'PURP', 'PRO', 'EXTRA', 'XA', 'EXG',
         'POLYCARBONATE', 'POLYCARB', 'POLY', 'TRIVEX', 'TRV', 'CR39', 'CR-39', 'RESIN', 'HARD RESIN', 'PLASTIC', 'STANDARD PLASTIC',
-        '1.50', '1.500', '1.53', '1.547', '1.56', '1.586', '1.59', '1.60', '1.605', '1.61', '1.66', '1.67', '1.73', '1.74',
-        'MR-8', 'MR-8+', 'MR8', 'MR-7', 'MR7', 'MR-10', 'MR10', 'MR-74', 'MR74', 'HIGH-INDEX', 'HIGH INDEX', 'MID-INDEX', 'MID INDEX',
-        'PUCK', 'PUK', 'PK', 'ULTRA-FLEX', 'ULTRAFLEX', 'ULTRA FLEX', 'ULTFLX'
+        'MR-8', 'MR-8+', 'MR8', 'MR-7', 'MR7', 'MR-10', 'MR10', 'MR-74', 'MR74', 'HIGH-INDEX', 'HIGH INDEX', 'MID-INDEX', 'MID INDEX'
     ]:
         clean_desc = re.sub(rf'\b{word}(?:\s*[-]?\s*[123ABC])?\b', '', clean_desc, flags=re.IGNORECASE)
-        
+
     for word in [
         'HC', 'SR', 'SHMC', 'PG', 'UT', 'YHC', 'US', 'UC', 'UNCOATED', 'THICK', 'THIN', 'HCT',
         'YOUNGERHC', 'YOUNGER HARDCOAT', 'YOUNGER HARD COAT', 'YOUNGER HARD-COAT',
@@ -3189,42 +3194,39 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
         'DOUBLE D', 'OCCUPATIONAL', 'OCCUP', 'OCC', 'DD'
     ]:
         clean_desc = re.sub(rf'\b{word}\b', '', clean_desc, flags=re.IGNORECASE)
-        
+
     clean_desc = re.sub(r'\bD\d{2,3}\b', '', clean_desc, flags=re.IGNORECASE)
     clean_desc = re.sub(r'\b\d{2,3}MM\b', '', clean_desc, flags=re.IGNORECASE)
     clean_desc = re.sub(r'\bUV400\b', 'UV', clean_desc, flags=re.IGNORECASE)
-        
+
     clean_desc = clean_desc.replace('__ET__', 'EXTRA-THICK')
     clean_desc = clean_desc.replace('__E_THIN__', 'EXTRA-THIN')
-    
-    # 2. Strip MFG name, prefix parts, SV, and noise words
+
     mfg_clean_str = str(sample_row.get('MFG', '')).strip()
-    strip_list = prefix_parts + [mfg_clean_str, "PAL", "PROGRESSIVE", "PROG", "TRIFOCAL", "TRI", "BIFOCAL", "FLAT TOP", "SHORT", "SHRT", "SHT", "FSV", "SFSV", "SF", "SEMI-FINISHED", "SEMI FINISHED", "DOUBLE D", "OCCUPATIONAL", "OCCUP", "OCC", "DD", "SV"]
-    
+    strip_list = prefix_parts + [mfg_clean_str, "PAL", "PROGRESSIVE", "PROG", "TRIFOCAL", "TRI", "BIFOCAL", "FLAT TOP", "SHORT", "SHRT", "SHT", "LONG", "LNG", "FSV", "SFSV", "SF", "SEMI-FINISHED", "SEMI FINISHED", "DOUBLE D", "OCCUPATIONAL", "OCCUP", "OCC", "DD", "SV", "BLENDED", "BLEND", "BLND"]
+
     if is_dd and dd_pct:
         strip_list.append(dd_pct)
     if seg_size:
         strip_list.append(str(seg_size))
-        
+
     for p_word in strip_list:
         if p_word and len(p_word) > 1:
             clean_desc = re.sub(rf'\b{re.escape(p_word)}\b', '', clean_desc, flags=re.IGNORECASE)
-            
+
     clean_desc = re.sub(r'\s+', ' ', clean_desc).strip()
-    
-    # 3. Clean the Resolved Material
+
     mat_tag = str(resolved_mat).strip()
     mat_tag = re.sub(r'\(\s*MR-[\w\+\-]+\s*\)', '', mat_tag, flags=re.IGNORECASE).strip()
-    
+
     if resolved_mat:
         clean_desc = f"{prefix_str} {mat_tag} {clean_desc}".replace("  ", " ").strip()
     else:
         clean_desc = f"{prefix_str} {clean_desc}".replace("  ", " ").strip()
-        
-    # Forcibly anchor PUCK 
+
     if has_puck:
         clean_desc = f"{clean_desc} PUCK".strip()
-    
+
     return clean_desc, brief_desc, long_desc, tags, active_ar, prefix_str, prefix_parts, seg_size
 
 def aggregate_fsv_powers(group):
@@ -4322,16 +4324,9 @@ def execute_generate_database():
     global_mode = "MASTER COMPILER"
     render_ui_skeleton("Master Compiler Initializing...")
     
-    import re
-    import time
-    import stat
-    import hashlib
-    import platform
-    import shutil
-    import os
-    import json
-    import pandas as pd
-    from datetime import datetime
+    # Enable Screen Buffer & Hide Cursor to Lock Scroll History
+    sys.stdout.write("\033[?1049h\033[?25l")
+    sys.stdout.flush()
     
     while True:
         sys.stdout.write(f"{C_BG}\033[2J\033[H")
@@ -4355,6 +4350,9 @@ def execute_generate_database():
                     try: c = c.decode('utf-8')
                     except: continue
                 if c in ('\r', '\n', '\x1b'): break
+            
+            # Turn off screen buffer when exiting
+            sys.stdout.write("\033[?1049l\033[?25h")
             global_mode = "MAIN MENU"; return
 
         viewport_logs.clear()
@@ -4379,6 +4377,8 @@ def execute_generate_database():
         draw_status_bar()
         
         if ans != "COMPILE": 
+            # Turn off screen buffer when exiting
+            sys.stdout.write("\033[?1049l\033[?25h")
             global_mode = "MAIN MENU"
             return
             
@@ -4460,7 +4460,7 @@ def execute_generate_database():
                         
                         if 'UNCOAT' in coat_str or 'UC' in coat_str.split():
                             has_non_ar = True
-                        elif not is_ar_line and ('HC' in coat_str.split() or 'SR' in coat_str.split() or 'HARDCOAT' in coat_str):
+                        elif not is_ar_line and ('HC' in coat_str.split() or 'SR' in coat_str.split() or 'HARDCOAT' in coat_str or 'HA' in coat_str.split()):
                             has_non_ar = True
                         elif not is_ar_line and not coat_str.strip():
                             has_non_ar = True 
@@ -4762,7 +4762,7 @@ def execute_generate_database():
                         if f == anim_frames: fake_i = total_in_group
                         
                         if f == anim_frames:
-                            spin_char = f"{C_STAGED}{check_char}{RESET}"
+                            spin_char = f"{C_STAGED} {check_char} {RESET}"
                         else:
                             spin_char = f"{C_TITLE}{spinner_chars[spinner_tick % len(spinner_chars)]}{RESET}"
                             spinner_tick += 1
@@ -4798,7 +4798,7 @@ def execute_generate_database():
                             if f == anim_frames: fake_i = total_in_group
                             
                             if f == anim_frames:
-                                spin_char = f"{C_STAGED}{check_char}{RESET}"
+                                spin_char = f"{C_STAGED} {check_char} {RESET}"
                             else:
                                 spin_char = f"{C_TITLE}{spinner_chars[spinner_tick % len(spinner_chars)]}{RESET}"
                                 spinner_tick += 1
@@ -5024,6 +5024,8 @@ def execute_generate_database():
                     except: continue
                 if c in ('\r', '\n', '\x1b'): break
         
+        # Turn off screen buffer when exiting
+        sys.stdout.write("\033[?1049l\033[?25h")
         break
     global_mode = "MAIN MENU"
 
