@@ -1423,197 +1423,208 @@ def execute_admin_menu():
 
 #--- HTML COMPILER & SHARD ENGINE ---
 
-def bootstrap_web_templates():
+def bootstrap_web_templates(theme_css_block, theme_options_html, font_css_block, font_options_html, default_font_id):
     template_dir = os.path.join(HTML_DATA_DIR, '.templates')
     os.makedirs(template_dir, exist_ok=True)
 
     css_path = os.path.join(template_dir, 'styles.css')
     with open(css_path, 'w', encoding='utf-8') as f:
         f.write("""
-@font-face { font-family: 'Ubuntu Sans Nerd'; src: url('UbuntuSansNerdFont-Medium.ttf') format('truetype'); font-weight: 500; }
-@font-face { font-family: 'MS Sans Serif Local'; src: local('MS Sans Serif'), local('Microsoft Sans Serif'), url('MSSansSerif-Regular.ttf') format('truetype'); }
-@font-face { font-family: 'Arial Local'; src: local('Arial'), url('Arial-Regular.ttf') format('truetype'); }
-@font-face { font-family: 'Arial Bold Local'; src: local('Arial Bold'), url('Arial-Bold.ttf') format('truetype'); font-weight: bold; }
-@font-face { font-family: 'Tahoma Local'; src: local('Tahoma'), url('Tahoma-Regular.ttf') format('truetype'); }
+/* DYNAMIC FONT ENGINE */
+{{FONT_CSS_BLOCK}}
 
-:root, .modern-mode {
-    --bg-main: #24283b; --bg-table: #1f2335; --text-main: #c0caf5; --win-bg: #24283b; --win-highlight: #414868; --win-shadow: #1a1b26;
-    --win-dark-shadow: #15161e; --win-title: #24283b; --win-title-fade: #1f2335; --win-text: #c0caf5; --win-title-text: #7aa2f7;
-    --border-light: #414868; --border-dark: #1a1b26; --accent: #3d59a1; --row-even: #24283b; --row-odd: #1f2335;
-    --col-desc: #c0caf5; --col-filt: #9ece6a; --col-coat: #e0af68; --col-mat: #7dcfff; 
-    --col-idx: #bb9af7; --col-diam: #c0caf5; --col-base: #e0af68; --col-tfc: #c0caf5; --col-tbc: #7aa2f7; --col-sag: #f7768e;
-}
-.classic-mode {
-    --bg-main: #e1e2e7; --bg-table: #d0d5e3; --text-main: #3760bf; --win-bg: #d4d0c8; --win-highlight: #ffffff; --win-shadow: #808080;
-    --win-dark-shadow: #404040; --win-title: #e1e2e7; --win-title-fade: #d0d5e3; --win-text: #000000; --win-title-text: #3760bf;
-    --border-light: #b4b5b9; --border-dark: #a1a6c5; --accent: #b7c1e3; --row-even: #e1e2e7; --row-odd: #d0d5e3;
-    --col-desc: #3760bf; --col-filt: #587539; --col-coat: #8c6c3e; --col-mat: #007197; 
-    --col-idx: #9854f1; --col-diam: #3760bf; --col-base: #8c6c3e; --col-tfc: #3760bf; --col-tbc: #2e7de9; --col-sag: #f52a65;
+/* DYNAMIC THEME ENGINE */
+{{THEME_CSS_BLOCK}}
+
+:root {
+    --table-fs: 15px;
+    --table-th-fs: 12px;
 }
 
-body { background-color: var(--bg-main); color: var(--text-main); font-family: 'Ubuntu Sans Nerd', sans-serif; font-weight: 500; margin: 0; padding: 20px; transition: background-color 0.1s; font-variant-numeric: tabular-nums; }
+body { background-color: var(--bg-main); color: var(--text-main); font-weight: 500; margin: 0; padding: 20px; transition: background-color 0.1s; font-variant-numeric: tabular-nums; }
 
-.top-bar { display: flex; justify-content: space-between; align-items: center; background-color: var(--win-title); border: 1px solid var(--border-light); border-bottom: 2px solid var(--border-dark); padding: 12px 24px; margin-bottom: 20px; border-radius: 6px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-.classic-mode .top-bar { box-shadow: none; border-bottom: 2px solid var(--border-dark); }
+.top-bar { position: relative; display: flex; justify-content: space-between; align-items: flex-start; background-color: var(--win-title); border: 1px solid var(--border-light); border-bottom: 2px solid var(--border-dark); padding: 16px 24px; margin-bottom: 15px; border-radius: 6px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
 
-.top-bar-left, .top-bar-right { width: 260px; display: flex; align-items: center; }
-.top-bar-right { justify-content: flex-end; gap: 8px; }
-.top-bar-center { flex-grow: 1; text-align: center; color: var(--win-title-text); font-family: 'Ubuntu Sans Nerd', sans-serif !important; font-weight: 700 !important; font-size: 26px; text-transform: uppercase; letter-spacing: 2px; text-shadow: 1px 1px 2px rgba(0,0,0,0.2); }
+/* VCA Branding (Top Left) */
+.top-bar-left { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 4px; }
+.brand-title { font-size: 26px; font-weight: 900; color: var(--accent); letter-spacing: 1.5px; font-family: inherit; }
+.brand-sub { font-size: 14px; font-weight: bold; color: var(--col-idx); letter-spacing: 1px; }
 
-.nav-toggle { color: var(--win-title-text); text-decoration: none; font-size: 18px; font-weight: bold; opacity: 0.9; transition: opacity 0.2s; }
-.nav-toggle:hover { opacity: 1; text-decoration: underline; }
+/* True Center Master Title */
+.top-bar-center { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; color: var(--win-title-text); font-weight: 800 !important; font-size: 28px; text-transform: uppercase; letter-spacing: 3px; text-shadow: 1px 1px 2px rgba(0,0,0,0.2); white-space: nowrap; }
 
-.theme-switch { position: relative; display: inline-block; width: 50px; height: 26px; margin: 0 8px; }
-.theme-switch input { opacity: 0; width: 0; height: 0; }
-.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--win-dark-shadow); transition: .4s; border-radius: 26px; border: 1px solid var(--border-light); }
-.slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: var(--text-main); transition: .4s; border-radius: 50%; }
-input:checked + .slider { background-color: #7aa2f7; }
-input:checked + .slider:before { transform: translateX(24px); background-color: #15161e; }
-.classic-mode input:checked + .slider { background-color: #3760bf; }
-.classic-mode input:checked + .slider:before { background-color: #ffffff; }
+/* Symmetrical Dropdown Cluster (Top Right) */
+.top-bar-right { display: flex; flex-direction: column; gap: 10px; align-items: flex-end; }
+.dropdown-row { display: flex; gap: 12px; align-items: center; }
+.header-dropdown { background: var(--bg-table); color: var(--text-main); border: 1px solid var(--border-light); padding: 6px 8px; border-radius: 4px; font-family: inherit; cursor: pointer; outline: none; font-size: 14px; font-weight: bold; transition: border-color 0.2s; }
+.header-dropdown:hover { border-color: var(--col-desc); }
+.dd-icon { color: var(--win-title-text); font-size: 18px; width: 20px; text-align: center; }
 
-.theme-label { color: var(--win-title-text); font-size: 20px; opacity: 0.9; }
+/* ---------------------------------------------------
+   SPA SEARCH & PILL ENGINE
+--------------------------------------------------- */
+.stats-bar { background-color: var(--bg-table); padding: 20px 24px; border: 1px solid var(--border-light); border-radius: 6px; margin-bottom: 30px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.15); }
+.filter-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: flex-start; width: 100%; margin-bottom: 4px; }
+.pill-label { font-size: 14px; color: var(--col-desc); font-weight: bold; text-transform: uppercase; letter-spacing: 1px; width: 100px; text-align: right; margin-right: 10px; }
 
-.mfg-list { list-style-type: none; padding-left: 20px; } 
-.mfg-list li { margin: 16px 0; font-size: 24px; font-weight: bold; }
-.mfg-list a { color: var(--text-main); text-decoration: none; padding: 6px 12px; border-radius: 6px; transition: background 0.2s; } 
-.mfg-list a:hover { color: var(--col-desc); background: var(--win-highlight); }
+.mfg-pill { padding: 8px 24px; border-radius: 50px; background: var(--bg-main); color: var(--text-main); font-weight: bold; border: 2px solid var(--border-light); font-size: 16px; cursor: pointer; user-select: none; transition: all 0.1s; text-decoration: none;}
+.mfg-pill.active { background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 4px 8px rgba(0,0,0,0.3); }
 
+.stat-badge { padding: 5px 16px; border-radius: 50px; background: var(--bg-main); color: var(--text-main); font-weight: bold; border: 1px solid var(--border-light); font-size: 14px; cursor: pointer; user-select: none; transition: all 0.1s; text-decoration: none;}
+.stat-badge:hover, .mfg-pill:hover { border-color: var(--col-desc); }
+.stat-badge.active { background: var(--col-desc); color: var(--bg-main); border-color: var(--col-desc); }
+
+/* Custom Row Colors for active Pills */
+.filter-row.row-type .stat-badge.active { background: var(--col-filt); border-color: var(--col-filt); color: var(--bg-main); }
+.filter-row.row-mat .stat-badge.active { background: var(--col-mat); border-color: var(--col-mat); color: var(--bg-main); }
+.filter-row.row-tech .stat-badge.active { background: var(--col-idx); border-color: var(--col-idx); color: var(--bg-main); }
+.filter-row.row-coat .stat-badge.active { background: var(--col-coat); border-color: var(--col-coat); color: var(--bg-main); }
+
+.search-container { margin-top: 15px; border-top: 1px solid var(--border-dark); padding-top: 20px; width: 100%; display: flex; justify-content: center;}
+.search-box { width: 80%; padding: 14px 24px; border-radius: 50px; border: 1px solid var(--border-light); background: var(--bg-main); color: var(--text-main); font-family: inherit; font-size: 16px; font-weight: bold; box-sizing: border-box; outline: none; transition: border-color 0.2s; text-align: center; }
+.search-box:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(61, 89, 161, 0.3); }
+.search-box::placeholder { color: var(--col-mat); opacity: 0.8; font-style: italic; font-weight: normal; }
+
+.category-section { display: none; margin-bottom: 50px; }
+.cat-title { color: var(--win-title-text); font-size: 22px; font-weight: bold; border-bottom: 2px solid var(--border-dark); padding-bottom: 8px; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; }
+
+/* ---------------------------------------------------
+   RIGID DATA GRID (SCALED TYPOGRAPHY)
+--------------------------------------------------- */
 .table-container { border-radius: 12px; overflow: hidden; box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4); border: 1px solid var(--border-dark); }
-table.data-grid { width: 100%; border-collapse: collapse; background: var(--bg-table); }
-table.data-grid th, table.data-grid td { border: 1px solid var(--border-light); padding: 6px 10px; text-align: center; vertical-align: middle; }
-table.data-grid th { font-weight: 700; text-transform: uppercase; font-size: 0.9em; letter-spacing: 0.05em; }
+table.data-grid { width: 100%; border-collapse: collapse; background: var(--bg-table); table-layout: fixed; }
+table.data-grid th, table.data-grid td { border: 1px solid var(--border-light); padding: 8px 10px; text-align: center; vertical-align: middle; }
 
+table.data-grid th { font-weight: 800; text-transform: uppercase; font-size: var(--table-th-fs); letter-spacing: 0.05em; color: var(--bg-main) !important; text-shadow: 0px 0px 2px rgba(255,255,255,0.4); }
+table.data-grid td { font-size: var(--table-fs); }
 table.data-grid td.col-mat, table.data-grid td.col-diam { white-space: nowrap; }
 
 tr.row-even { background-color: var(--row-even); } tr.row-odd { background-color: var(--row-odd); }
-tr.group-hover td { background-color: var(--accent) !important; cursor: pointer; }
+tr.group-hover td { background-color: var(--win-highlight) !important; color: var(--bg-main) !important; cursor: pointer; }
+tr.group-hover td span { color: var(--bg-main) !important; text-shadow: none !important; }
 
 .col-desc { color: var(--col-desc); text-align: left !important; padding-left: 14px !important; }
 .col-filt { color: var(--col-filt); } .col-coat { color: var(--col-coat); }
 .col-mat  { color: var(--col-mat); } .col-idx  { color: var(--col-idx); }
 .col-diam { color: var(--col-diam); } .col-base { color: var(--col-base); }
 .col-tfc  { color: var(--col-tfc); } .col-tbc  { color: var(--col-tbc); } .col-sag  { color: var(--col-sag); }
-.empty-bullet { display: block; text-align: center; width: 100%; }
-.highlight-cyl { color: var(--col-idx); font-weight: bold; }
+.empty-bullet { display: block; text-align: center; width: 100%; opacity: 0.5;}
+.highlight-cyl { font-weight: bold; }
 
-th.bg-desc { background-color: var(--col-desc); color: var(--bg-main); }
-th.bg-filt { background-color: var(--col-filt); color: var(--bg-main); }
-th.bg-coat { background-color: var(--col-coat); color: var(--bg-main); }
-th.bg-mat  { background-color: var(--col-mat); color: var(--bg-main); }
-th.bg-idx  { background-color: var(--col-idx); color: var(--bg-main); }
-th.bg-diam { background-color: var(--col-diam); color: var(--bg-main); }
-th.bg-base { background-color: var(--col-base); color: var(--bg-main); }
-th.bg-tfc  { background-color: var(--col-tfc); color: var(--bg-main); }
-th.bg-tbc  { background-color: var(--col-tbc); color: var(--bg-main); }
-th.bg-sag  { background-color: var(--col-sag); color: var(--bg-main); }
+/* Enforced Proportions */
+th.bg-desc { background-color: var(--col-desc); width: 20%; }
+th.bg-filt { background-color: var(--col-filt); width: 10%; }
+th.bg-coat { background-color: var(--col-coat); width: 10%; }
+th.bg-mat  { background-color: var(--col-mat); width: 8%; }
+th.bg-idx  { background-color: var(--col-idx); width: 4.5%; }
+th.bg-diam { background-color: var(--col-diam); width: 5.5%; }
+th.bg-p1 { background-color: var(--col-base); width: 10.5%; }
+th.bg-p2 { background-color: var(--col-tfc); width: 10.5%; }
+th.bg-p3 { background-color: var(--col-tbc); width: 10.5%; }
+th.bg-p4 { background-color: var(--col-sag); width: 10.5%; }
 .header-divider { border: 0; height: 1px; background: var(--bg-main); opacity: 0.5; width: 85%; margin: 4px auto; }
 
-.modal-overlay { display: flex; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0,0,0,0.6); z-index: 9999; justify-content: center; align-items: center; }
+/* ---------------------------------------------------
+   LAYOUT ENGINE SWITCHES
+--------------------------------------------------- */
+html[data-modal-layout="legacy"] .modern-box { display: none !important; }
+html[data-modal-layout="legacy"] .dialog-box { display: flex; }
+html[data-modal-layout="modern"] .dialog-box { display: none !important; }
+html[data-modal-layout="modern"] .modern-box { display: flex; }
+
+html[data-modal-layout="legacy"] .modal-overlay { background-color: transparent; }
+html[data-modal-layout="modern"] .modal-overlay { background-color: rgba(0,0,0,0.75); }
+
+.modal-overlay { display: flex; position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999; justify-content: center; align-items: center; }
 .modal-overlay.hidden { display: none !important; }
-.dialog-box { background-color: var(--win-bg); width: 870px; display: flex; flex-direction: column; padding: 2px; transform: scale(1.1); transform-origin: center; }
-.modern-mode .dialog-box { display: none; }
-.dialog-box * { font-family: 'MS Sans Serif Local', 'Tahoma Local', 'Arial Local', 'MS Sans Serif', 'Tahoma', 'Arial', sans-serif; font-size: 11px; color: var(--win-text); -webkit-font-smoothing: none; text-rendering: crispEdges; }
-.outset-border { border-top: 1px solid var(--win-highlight); border-left: 1px solid var(--win-highlight); border-bottom: 1px solid var(--win-dark-shadow); border-right: 1px solid var(--win-dark-shadow); box-shadow: inset -1px -1px 0 var(--win-shadow), inset 1px 1px 0 var(--win-bg); }
-.inset-border { border-top: 1px solid var(--win-dark-shadow); border-left: 1px solid var(--win-dark-shadow); border-bottom: 1px solid var(--win-highlight); border-right: 1px solid var(--win-highlight); box-shadow: inset 1px 1px 0 var(--win-shadow), inset -1px -1px 0 var(--win-bg); background-color: var(--win-highlight); }
-.title-bar { background: linear-gradient(to right, var(--win-title), var(--win-title-fade)); color: white; padding: 2px 3px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; letter-spacing: 0.5px; }
-.classic-mode .title-bar { background: linear-gradient(to right, #0A246A, #A6CAF0); }
-.title-bar * { color: white; } .title-bar-left, .title-bar-right { display: flex; align-items: center; gap: 4px; width: auto; }
-.version-text { font-weight: normal; font-size: 10px; padding-right: 2px; }
-.faux-icon { height: 14px; background: white; color: black; border: 1px solid #ccc; font-size: 7px; display: flex; justify-content: center; align-items: center; font-weight: normal; box-sizing: border-box; padding: 1px 4px 0 4px; }
-.title-bar-close { background: var(--win-bg); color: black; font-weight: bold; font-size: 10px; border-top: 1px solid var(--win-highlight); border-left: 1px solid var(--win-highlight); border-bottom: 1px solid var(--win-dark-shadow); border-right: 1px solid var(--win-dark-shadow); width: 16px; height: 14px; display: flex; justify-content: center; align-items: center; cursor: default; padding: 0; box-sizing: border-box; outline: none; }
-.title-bar-close:active { border-top: 1px solid var(--win-dark-shadow); border-left: 1px solid var(--win-dark-shadow); border-bottom: 1px solid var(--win-highlight); border-right: 1px solid var(--win-highlight); padding-top: 1px; padding-left: 1px; }
 
-/* RE-ENGINEERED FLEXBOX MODAL */
-.tabs-container { margin-top: 8px; padding: 0 4px; position: relative; z-index: 10; }
-.tab-buttons { display: flex; gap: 2px; margin-left: 2px; }
-.tab { background: var(--win-bg); padding: 4px 12px; border-top: 1px solid var(--win-highlight); border-left: 1px solid var(--win-highlight); border-right: 1px solid var(--win-dark-shadow); border-bottom: 1px solid var(--win-highlight); cursor: pointer; position: relative; user-select: none; z-index: 1; }
-.tab.active { padding-top: 6px; margin-top: -2px; border-bottom: 1px solid var(--win-bg); margin-bottom: -1px; padding-bottom: 2px; z-index: 11; cursor: default; }
+/* ---------------------------------------------------
+   LEGACY LMS MODAL STYLES (v1.1.8 IMMUTABLE)
+--------------------------------------------------- */
+.dialog-box { background-color: #d4d0c8; width: 830px; display: flex; flex-direction: column; padding: 2px; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(1.2); z-index: 10001; }
+.dialog-box * { font-family: 'Microsoft Sans Serif', 'MS Sans Serif', Tahoma, sans-serif; font-size: 11px; color: #000000; -webkit-font-smoothing: none; text-rendering: crispEdges; }
 
-.dialog-content-wrapper { height: 510px; border-top: 1px solid var(--win-highlight); border-left: 1px solid var(--win-highlight); border-bottom: 1px solid var(--win-dark-shadow); border-right: 1px solid var(--win-dark-shadow); box-shadow: inset -1px -1px 0 var(--win-shadow); padding: 12px; position: relative; z-index: 5; box-sizing: border-box; display: flex; flex-direction: column;}
-.tab-pane { display: none; height: 100%; flex-grow: 1;} .tab-pane.active { display: block; }
-.grid-3-col { display: grid; grid-template-columns: 275px 235px 285px; gap: 16px; justify-content: center; height: 100%; }
+/* Dual-Tone Tactile Borders */
+.dialog-box .outset-border { border-top: 1px solid #dfdfdf; border-left: 1px solid #dfdfdf; border-bottom: 1px solid #000000; border-right: 1px solid #000000; box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #ffffff; }
+.dialog-box .inset-border { border-top: 1px solid #808080; border-left: 1px solid #808080; border-bottom: 1px solid #ffffff; border-right: 1px solid #ffffff; box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #000000; background-color: #ffffff; color: #000000 !important; }
 
-/* TOP-DOWN FLEX STACKING FOR THE MODAL COLUMNS */
-.col-flex { display: flex; flex-direction: column; height: 100%; justify-content: flex-start; gap: 12px; }
-.col-center { display: flex; justify-content: center; align-items: center; }
+.dialog-box .title-bar { background: linear-gradient(to right, #0A246A, #A6CAF0); color: white; padding: 2px 3px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; letter-spacing: 0.5px; }
+.dialog-box .title-bar * { color: white; } 
+.dialog-box .title-bar-left, .dialog-box .title-bar-right { display: flex; align-items: center; gap: 4px; width: auto; }
+.dialog-box .version-text { font-weight: normal; font-size: 10px; padding-right: 2px; color: #000000; }
+.dialog-box .faux-icon { height: 14px; background: white; color: black; border: 1px solid #ccc; font-size: 7px; display: flex; justify-content: center; align-items: center; font-weight: normal; box-sizing: border-box; padding: 1px 4px 0 4px; }
+.dialog-box .title-bar-close { background: #d4d0c8; color: black; font-weight: bold; font-size: 10px; width: 16px; height: 14px; display: flex; justify-content: center; align-items: center; cursor: default; padding: 0; box-sizing: border-box; outline: none; border-top: 1px solid #dfdfdf; border-left: 1px solid #dfdfdf; border-bottom: 1px solid #000000; border-right: 1px solid #000000; box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #ffffff; }
+.dialog-box .title-bar-close:active { border-top: 1px solid #000000; border-left: 1px solid #000000; border-bottom: 1px solid #dfdfdf; border-right: 1px solid #dfdfdf; box-shadow: inset -1px -1px 0 #ffffff, inset 1px 1px 0 #808080; padding-top: 1px; padding-left: 1px; }
 
-.grid-2-col { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; padding: 10px 40px; box-sizing: border-box; }
-.center-col { display: flex; flex-direction: column; align-items: center; padding-top: 20px; }
-.form-row { display: flex; align-items: center; margin-bottom: 4px; height: 19px; min-height: 19px; }
-.form-row label { width: 135px; flex-shrink: 0; }
-.form-row input[type="text"], .form-row select { flex-grow: 1; height: 19px !important; min-height: 19px !important; padding: 1px 3px; box-sizing: border-box; background: var(--win-highlight); color: var(--win-text);}
-.form-row select { height: 21px !important; min-height: 21px !important; border-radius: 0; }
-.fixed-width { flex-grow: 0 !important; } .uniform-dropdown-width { width: 125px !important; flex-grow: 0 !important; }
-.form-row input[readonly] { background-color: var(--win-bg); }
-.classic-table { border-collapse: collapse; background: var(--win-highlight); border: 1px solid var(--win-shadow); }
-.classic-table th { background: var(--win-bg); font-weight: normal; border-top: 1px solid var(--win-highlight); border-left: 1px solid var(--win-highlight); border-right: 1px solid var(--win-shadow); border-bottom: 1px solid var(--win-shadow); padding: 2px 4px; text-align: left; }
-.classic-table td { border-right: 1px solid var(--win-bg); border-bottom: 1px solid var(--win-bg); padding: 1px 4px; height: 15px; color: var(--win-text); background: var(--win-highlight); }
-.grid-lines td { border: 1px solid silver; }
-.table-title { background: var(--win-bg); font-weight: bold; text-align: center !important; border-top: 1px solid var(--win-highlight); border-left: 1px solid var(--win-highlight); border-right: 1px solid var(--win-shadow); border-bottom: 1px solid var(--win-shadow); padding: 4px !important; }
-fieldset { border-top: 1px solid var(--win-shadow); border-left: 1px solid var(--win-shadow); border-bottom: 1px solid var(--win-highlight); border-right: 1px solid var(--win-highlight); padding: 10px 8px 10px 8px; margin: 0; }
-legend { padding: 0 4px; margin-left: 4px; }
-.win-btn { padding: 3px 12px; min-width: 75px; background: var(--win-bg); cursor: default; }
-.win-btn:active { border-top: 1px solid var(--win-dark-shadow); border-left: 1px solid var(--win-dark-shadow); border-bottom: 1px solid var(--win-highlight); border-right: 1px solid var(--win-highlight); box-shadow: inset 1px 1px 0 var(--win-shadow), inset -1px -1px 0 var(--win-bg); padding-top: 4px; padding-left: 13px; }
-.footer { display: flex; justify-content: space-between; align-items: center; padding: 10px; }
+.dialog-box .tabs-container { margin-top: 8px; padding: 0 4px; position: relative; z-index: 10; }
+.dialog-box .tab-buttons { display: flex; gap: 2px; margin-left: 2px; }
+.dialog-box .tab { background: #d4d0c8; padding: 4px 12px; border-top: 1px solid #dfdfdf; border-left: 1px solid #dfdfdf; border-right: 1px solid #000000; border-bottom: 1px solid #dfdfdf; box-shadow: inset -1px 0 0 #808080, inset 1px 1px 0 #ffffff; cursor: pointer; position: relative; color: #000000; user-select: none; z-index: 1; }
+.dialog-box .tab.active { padding-top: 6px; margin-top: -2px; border-bottom: 1px solid #d4d0c8; margin-bottom: -1px; padding-bottom: 2px; z-index: 11; cursor: default; }
 
-.modern-box { display: none; background-color: var(--win-bg); width: 800px; border-radius: 12px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); border: 1px solid var(--border-light); font-family: 'Ubuntu Sans Nerd', sans-serif; color: var(--win-text); }
-.classic-mode .modern-box { display: none; } .modern-mode .modern-box { display: flex; flex-direction: column; gap: 20px; }
+.dialog-box .dialog-content-wrapper { height: 510px; border-top: 1px solid #ffffff; border-left: 1px solid #ffffff; border-bottom: 1px solid #404040; border-right: 1px solid #404040; box-shadow: inset -1px -1px 0 #808080; padding: 12px; position: relative; z-index: 5; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; }
+.dialog-box .tab-pane { display: none; height: 100%; flex-grow: 1;} 
+.dialog-box .tab-pane.active { display: block; }
+
+.dialog-box .grid-3-col { display: grid; grid-template-columns: 245px 235px 265px; gap: 16px; justify-content: center; }
+.dialog-box .grid-3-col > div { display: flex; flex-direction: column; }
+
+.dialog-box .grid-2-col { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; padding: 10px 40px; box-sizing: border-box; }
+.dialog-box .center-col { display: flex; flex-direction: column; align-items: center; padding-top: 20px; }
+
+.dialog-box .form-row { display: flex; align-items: center; margin-bottom: 4px; }
+.dialog-box .form-row label { width: 110px; flex-shrink: 0; }
+.dialog-box .form-row input[type="text"], .dialog-box .form-row select { flex-grow: 1; height: 19px; padding: 1px 3px; font-family: 'Microsoft Sans Serif', sans-serif; font-size: 11px; background: #ffffff; box-sizing: border-box; outline: none;}
+.dialog-box .fixed-width { flex-grow: 0 !important; }
+.dialog-box .form-row input[readonly] { background: #d4d0c8; }
+.dialog-box select { border-radius: 0; }
+
+.dialog-box .classic-table { border-collapse: collapse; background: #ffffff; border: 1px solid #808080; }
+.dialog-box .classic-table th { background: #d4d0c8; font-weight: normal; border-top: 1px solid #dfdfdf; border-left: 1px solid #dfdfdf; border-right: 1px solid #808080; border-bottom: 1px solid #808080; padding: 2px 4px; text-align: left; }
+.dialog-box .classic-table td { border-right: 1px solid #d4d0c8; border-bottom: 1px solid #d4d0c8; padding: 1px 4px; height: 14px; }
+.dialog-box .grid-lines td { border: 1px solid silver; }
+
+.dialog-box .table-title { background: #d4d0c8; font-weight: bold; text-align: center !important; border-top: 1px solid #dfdfdf; border-left: 1px solid #dfdfdf; border-right: 1px solid #808080; border-bottom: 1px solid #808080; padding: 4px !important; }
+.dialog-box fieldset { border-top: 1px solid #808080; border-left: 1px solid #808080; border-bottom: 1px solid #ffffff; border-right: 1px solid #ffffff; padding: 10px 8px; margin: 0 0 12px 0; }
+.dialog-box legend { color: #000000; padding: 0 4px; margin-left: 4px; }
+
+.dialog-box .win-btn { font-family: 'Microsoft Sans Serif', sans-serif; font-size: 11px; padding: 3px 12px; min-width: 75px; background: #d4d0c8; color: #000000; cursor: default; outline: none; }
+.dialog-box .win-btn:active { border-top: 1px solid #000000; border-left: 1px solid #000000; border-bottom: 1px solid #dfdfdf; border-right: 1px solid #dfdfdf; box-shadow: inset -1px -1px 0 #ffffff, inset 1px 1px 0 #808080; padding-top: 4px; padding-left: 13px; }
+.dialog-box .footer { display: flex; justify-content: space-between; align-items: center; padding: 10px; }
+
+/* ---------------------------------------------------
+   MODERN DASHBOARD STYLES (BENTO BOX)
+--------------------------------------------------- */
+.modern-box { background-color: var(--win-bg); width: 850px; border-radius: 12px; padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.8); border: 1px solid var(--border-light); color: var(--win-text); flex-direction: column; gap: 20px; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 10001;}
 .modern-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid var(--border-dark); padding-bottom: 15px; }
-.modern-title { font-size: 24px; font-weight: bold; color: var(--win-title-text); margin: 0; }
-.modern-subtitle { font-size: 14px; color: var(--col-desc); opacity: 0.8; margin-top: 4px; }
-.modern-close { background: none; border: none; color: var(--win-text); font-size: 20px; cursor: pointer; padding: 5px; opacity: 0.6; } .modern-close:hover { opacity: 1; color: var(--col-tfc); }
-.modern-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; }
-.mod-card { background: var(--bg-table); border: 1px solid var(--border-dark); border-radius: 8px; padding: 12px; }
-.mod-card-label { font-size: 12px; text-transform: uppercase; color: var(--col-mat); font-weight: bold; letter-spacing: 0.05em; margin-bottom: 5px; }
-.mod-card-val { font-size: 16px; color: var(--text-main); }
-.modern-grids { display: grid; grid-template-columns: 3fr 2fr; gap: 20px; }
+.modern-title { font-size: 26px; font-weight: bold; color: var(--win-title-text); margin: 0; letter-spacing: 0.5px; }
+.modern-subtitle { font-size: 14px; color: var(--col-desc); opacity: 0.8; margin-top: 6px; }
+.modern-close { background: none; border: none; color: var(--win-text); font-size: 24px; cursor: pointer; padding: 5px; opacity: 0.6; } .modern-close:hover { opacity: 1; color: var(--col-tfc); }
+
+.bento-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 10px; }
+.bento-card { background: var(--bg-table); border: 1px solid var(--border-light); border-top-width: 4px; border-radius: 8px; padding: 14px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); display: flex; flex-direction: column; gap: 8px; }
+.b-title { font-size: 12px; text-transform: uppercase; font-weight: 800; letter-spacing: 0.05em; margin-bottom: 4px; border-bottom: 1px solid var(--border-dark); padding-bottom: 6px; }
+.b-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--win-text); }
+.b-row span { opacity: 0.7; }
+.b-row b { font-weight: bold; color: var(--text-main); }
+
+.modern-grids { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .modern-table-wrap { background: var(--bg-table); border-radius: 8px; border: 1px solid var(--border-dark); overflow: hidden; }
 .modern-table-wrap table { width: 100%; border-collapse: collapse; }
-.modern-table-wrap th { background: var(--win-highlight); padding: 8px 12px; font-size: 12px; color: var(--win-text); text-align: left; font-weight: bold; }
-.modern-table-wrap td { padding: 8px 12px; border-bottom: 1px solid var(--border-dark); font-size: 14px; }
+.modern-table-wrap th { padding: 8px 12px; font-size: 13px; color: var(--bg-main) !important; text-align: center; font-weight: bold; text-transform: uppercase; }
+.modern-table-wrap td { padding: 8px 12px; border-bottom: 1px solid var(--border-dark); font-size: 15px; text-align: center; }
 .modern-table-wrap tr:last-child td { border-bottom: none; }
-        """.strip())
+        """.strip()
+        .replace("{{THEME_CSS_BLOCK}}", theme_css_block)
+        .replace("{{FONT_CSS_BLOCK}}", font_css_block))
 
     js_path = os.path.join(template_dir, 'app.js')
     with open(js_path, 'w', encoding='utf-8') as f:
         f.write(r"""
-async function pureSHA256(ascii) {
-    function rightRotate(value, amount) { return (value >>> amount) | (value << (32 - amount)); };
-    var mathPow = Math.pow; var maxWord = mathPow(2, 32); var lengthProperty = 'length'
-    var i, j; var result = ''; var words = []; var asciiBitLength = ascii[lengthProperty]*8;
-    var hash = [], k = []; var primeCounter = k[lengthProperty];
-    var isComposite = {};
-    for (var candidate = 2; primeCounter < 64; candidate++) {
-        if (!isComposite[candidate]) {
-            for (i = 0; i < 313; i += candidate) isComposite[i] = candidate;
-            hash[primeCounter] = (mathPow(candidate, .5)*maxWord)|0; k[primeCounter++] = (mathPow(candidate, 1/3)*maxWord)|0;
-        }
-    }
-    ascii += '\x80';
-    while (ascii[lengthProperty]%64 - 56) ascii += '\x00';
-    for (i = 0; i < ascii[lengthProperty]; i++) {
-        j = ascii.charCodeAt(i);
-        if (j>>8) return;
-        words[i>>2] |= j << ((3 - i)%4)*8;
-    }
-    words[words[lengthProperty]] = ((asciiBitLength/maxWord)|0); words[words[lengthProperty]] = (asciiBitLength)
-    for (j = 0; j < words[lengthProperty];) {
-        var w = words.slice(j, j += 16); var oldHash = hash; hash = hash.slice(0, 8);
-        for (i = 0; i < 64; i++) {
-            var w15 = w[i - 15], w2 = w[i - 2]; var a = hash[0], e = hash[4];
-            var temp1 = hash[7] + (rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25)) + ((e&hash[5])^((~e)&hash[6])) + k[i] + (w[i] = (i < 16) ? w[i] : (w[i - 16] + (rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15>>>3)) + w[i - 7] + (rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2>>>10)))|0);
-            var temp2 = (rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22)) + ((a&hash[1])^(a&hash[2])^(hash[1]&hash[2]));
-            hash = [(temp1 + temp2)|0].concat(hash); hash[4] = (hash[4] + temp1)|0;
-        }
-        for (i = 0; i < 8; i++) hash[i] = (hash[i] + oldHash[i])|0;
-    }
-    for (i = 0; i < 8; i++) {
-        for (j = 3; j + 1; j--) {
-            var b = (hash[i]>>(j*8))&255; result += ((b < 16) ? 0 : '') + b.toString(16);
-        }
-    }
-    return result;
+async function calculateHash(ascii) {
+    const msgBuffer = new TextEncoder().encode(ascii);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 function fmt(val, dec) {
@@ -1622,7 +1633,6 @@ function fmt(val, dec) {
     if (parsed === 0) return (0).toFixed(dec); return parsed.toFixed(dec);
 }
 
-// FORMAT POWER LOGIC UPDATE: PL and DASH
 function formatPower(val) {
     if (isNaN(val)) return '';
     if (Math.abs(val) === 0) return 'PL'; 
@@ -1634,246 +1644,495 @@ function getRangeString(arr, isCyl) {
     let minSph = Math.min(...arr.map(a => a.sph)); let maxSph = Math.max(...arr.map(a => a.sph));
     let isMinus = maxSph <= 0; let sphStr;
     if (minSph === maxSph) sphStr = formatPower(minSph);
-    else sphStr = isMinus ? `${formatPower(maxSph)} - ${formatPower(minSph)}` : `${formatPower(minSph)} - ${formatPower(maxSph)}`;
+    else sphStr = isMinus ? `${formatPower(maxSph)} to ${formatPower(minSph)}` : `${formatPower(minSph)} to ${formatPower(maxSph)}`;
     if (!isCyl) return sphStr;
     let minCyl = Math.min(...arr.map(a => a.cyl));
-    return `${sphStr}; <span class="highlight-cyl">${minCyl.toFixed(2)} cyl</span>`;
+    return `${sphStr} to <span class="highlight-cyl">${minCyl.toFixed(2)} cyl</span>`;
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-    const toggleCb = document.getElementById('theme-toggle-cb');
-    if (toggleCb) {
-        if(localStorage.getItem('ui-theme') === 'classic') {
-            document.documentElement.className = 'classic-mode';
-            toggleCb.checked = false;
-        } else {
-            toggleCb.checked = true;
-        }
-        toggleCb.addEventListener('change', (e) => {
-            const isClassic = !e.target.checked;
-            document.documentElement.className = isClassic ? 'classic-mode' : 'modern-mode';
-            localStorage.setItem('ui-theme', isClassic ? 'classic' : 'modern');
+    
+    const themeSelect = document.getElementById('theme-select');
+    const layoutSelect = document.getElementById('layout-select');
+    const fontSelect = document.getElementById('font-select');
+    const fontSizeSelect = document.getElementById('fontsize-select');
+
+    if (themeSelect) {
+        let savedTheme = localStorage.getItem('ui-theme') || 'tokyo-night';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        themeSelect.value = savedTheme;
+        themeSelect.addEventListener('change', (e) => {
+            document.documentElement.setAttribute('data-theme', e.target.value);
+            localStorage.setItem('ui-theme', e.target.value);
         });
     }
 
-    if (typeof CURRENT_MFG !== 'undefined' && typeof encodedShard !== 'undefined') {
-        const hashHex = await pureSHA256(encodedShard);
-        if (securityManifest.shards[CURRENT_MFG + '_shard.js'] === hashHex) {
-            const binaryString = atob(encodedShard);
+    if (layoutSelect) {
+        let savedLayout = localStorage.getItem('ui-layout') || 'legacy';
+        document.documentElement.setAttribute('data-modal-layout', savedLayout);
+        layoutSelect.value = savedLayout;
+        layoutSelect.addEventListener('change', (e) => {
+            document.documentElement.setAttribute('data-modal-layout', e.target.value);
+            localStorage.setItem('ui-layout', e.target.value);
+        });
+    }
+
+    if (fontSelect) {
+        let savedFont = localStorage.getItem('ui-font') || '{{DEFAULT_FONT_ID}}';
+        document.documentElement.setAttribute('data-font', savedFont);
+        fontSelect.value = savedFont;
+        fontSelect.addEventListener('change', (e) => {
+            document.documentElement.setAttribute('data-font', e.target.value);
+            localStorage.setItem('ui-font', e.target.value);
+        });
+    }
+    
+    if (fontSizeSelect) {
+        let savedFs = localStorage.getItem('ui-fontsize') || '15';
+        document.documentElement.style.setProperty('--table-fs', savedFs + 'px');
+        document.documentElement.style.setProperty('--table-th-fs', (parseInt(savedFs) - 3) + 'px');
+        fontSizeSelect.value = savedFs;
+        fontSizeSelect.addEventListener('change', (e) => {
+            let val = e.target.value;
+            document.documentElement.style.setProperty('--table-fs', val + 'px');
+            document.documentElement.style.setProperty('--table-th-fs', (parseInt(val) - 3) + 'px');
+            localStorage.setItem('ui-fontsize', val);
+        });
+    }
+
+    window.lensDatabase = [];
+    let tamperDetected = false;
+    let failedShard = "";
+
+    if (typeof securityManifest !== 'undefined' && typeof window.shards !== 'undefined') {
+        for (const [filename, hash] of Object.entries(securityManifest.shards)) {
+            const mfg = filename.replace('_shard.js', '');
+            const b64 = window.shards[mfg];
+            
+            if (!b64) continue;
+            
+            const calculatedHash = await calculateHash(b64);
+            
+            if (calculatedHash !== hash) {
+                tamperDetected = true;
+                failedShard = filename;
+                break;
+            }
+            
+            const binaryString = atob(b64);
             const bytes = new Uint8Array(binaryString.length);
             for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
             const jsonString = new TextDecoder('utf-8').decode(bytes);
             
             let rawData = JSON.parse(jsonString);
-            
-            rawData.sort((a, b) => {
-                let getWeight = (desc) => {
-                    if (desc.startsWith('FSV')) return 1;
-                    if (desc.startsWith('SFSV')) return 2;
-                    if (desc.includes('PAL')) return 3;
-                    if (desc.includes('BIFOCAL')) {
-                        let m = desc.match(/FT(\d+)/);
-                        return 4 + (m ? (parseInt(m[1])/1000) : 0);
-                    }
-                    if (desc.includes('TRIFOCAL')) {
-                        let m = desc.match(/(\d+)x/);
-                        return 5 + (m ? (parseInt(m[1])/1000) : 0);
-                    }
-                    return 6;
-                };
-                let descA = String(a.Description || a.Name || '').toUpperCase();
-                let descB = String(b.Description || b.Name || '').toUpperCase();
-                let wA = getWeight(descA);
-                let wB = getWeight(descB);
-                if (wA !== wB) return wA - wB;
-                return descA.localeCompare(descB);
-            });
-            window.lensDatabase = rawData;
-            renderTable(window.lensDatabase);
-        } else {
-            document.getElementById('table-container').innerHTML = `<h2 style="color: #ff757f; text-align: center;">󰅙 TAMPER ALERT: Signature invalid for ${CURRENT_MFG}. Execution Halted.</h2>`;
+            window.lensDatabase = window.lensDatabase.concat(rawData);
         }
     }
+
+    if (tamperDetected) {
+        document.body.innerHTML = `
+            <div style="display:flex; flex-direction:column; justify-content:center; align-items:center; height:100vh; background-color:var(--bg-main); color:var(--col-sag); font-family:inherit; text-align:center;">
+                <h1 style="font-size:48px; border-bottom:2px solid var(--col-sag); padding-bottom:10px; letter-spacing: 2px;">CRYPTOGRAPHIC MISMATCH</h1>
+                <p style="font-size:20px; max-width:600px; color:var(--text-main); margin-top: 20px;">The signature for <b>${failedShard}</b> does not match the securely signed manifest.</p>
+                <p style="font-size:16px; max-width:600px; color:var(--col-filt); margin-top:20px;">Please return to the VCA2HTML-TUI console and run the <b>(G)eneration Sequence</b> to completely rebuild the Vault.</p>
+            </div>
+        `;
+        return;
+    }
+
+    buildPillFilters(window.lensDatabase);
+    renderTable(window.lensDatabase);
 
     window.hoverGrp = function(gid) { document.querySelectorAll('.' + gid).forEach(el => el.classList.add('group-hover')); };
     window.leaveGrp = function(gid) { document.querySelectorAll('.' + gid).forEach(el => el.classList.remove('group-hover')); };
 
+    function buildPillFilters(data) {
+        let mfgSet = new Set();
+        data.forEach(lens => { if (lens.MFG) mfgSet.add(lens.MFG); });
+        
+        const mfgRow = document.getElementById('pill-row-mfg');
+        if (mfgRow) {
+            let mfgHtml = '';
+            Array.from(mfgSet).sort().forEach(m => {
+                mfgHtml += `<a href="#" class="mfg-pill" data-group="mfg" data-val="${m}">${m}</a>`;
+            });
+            mfgRow.innerHTML = mfgHtml;
+        }
+
+        const genPills = (id, label, arr, groupName) => {
+            const row = document.getElementById(id);
+            if (!row) return;
+            let html = `<span class="pill-label">${label}:</span>`;
+            html += `<a href="#" class="stat-badge tag-pill active" data-group="${groupName}" data-tag="all">All</a>`;
+            
+            arr.forEach(tag => {
+                let extraStyle = '';
+                if (groupName === 'basecolor') {
+                    const cMap = {
+                        'gray': '#808080', 'brown': '#8B4513', 'green': '#228B22', 
+                        'blue': '#4682B4', 'pink': '#FFC0CB', 'extra gray': '#696969'
+                    };
+                    let bg = cMap[tag.toLowerCase()];
+                    if(bg) extraStyle = `style="background-color: ${bg}; color: #fff; border-color: ${bg}; text-shadow: 1px 1px 1px rgba(0,0,0,0.5);"`;
+                }
+                html += `<a href="#" class="stat-badge tag-pill" data-group="${groupName}" data-tag="${tag}" ${extraStyle}>${tag}</a>`;
+            });
+            row.innerHTML = html;
+        };
+
+        genPills('pill-row-type', 'Type', ['FSV', 'SFSV', 'PAL', 'FT', 'TRI', 'Round', 'Exec', 'Occupational', 'Blend'], 'type');
+        genPills('pill-row-mat', 'Material', ['CR-39', 'Polycarbonate', 'Trivex', '1.60', '1.67', '1.74'], 'mat');
+        genPills('pill-row-tech', 'Tech', ['Blue Filter', 'Photochromic', 'Polarized', 'Short', 'Extra Thick', 'HEV', 'Blue Protect', 'BlueGuard', 'ClearView'], 'tech');
+        genPills('pill-row-coat', 'Coating', ['Hardcoated', 'Uncoated', 'A/R'], 'coat');
+        genPills('pill-row-basecolor', 'Color', ['Pink', 'Blue', 'Green', 'Brown', 'Gray', 'Extra Gray'], 'basecolor');
+        
+        const shadeRow = document.getElementById('pill-row-exactcolor');
+        if (shadeRow) {
+            let sHtml = `<span class="pill-label">Shade:</span>`;
+            sHtml += `<a href="#" class="stat-badge tag-pill active" data-group="exactcolor" data-tag="all">All</a>`;
+            ['Gray', 'Brown', 'Green', 'Blue', 'Pink', 'Extra Gray'].forEach(c => {
+                sHtml += `<a href="#" class="stat-badge tag-pill shade-pill" data-base="${c}" data-group="exactcolor" data-tag="${c}-1" style="display:none;">${c}-1</a>`;
+                sHtml += `<a href="#" class="stat-badge tag-pill shade-pill" data-base="${c}" data-group="exactcolor" data-tag="${c}-2" style="display:none;">${c}-2</a>`;
+                sHtml += `<a href="#" class="stat-badge tag-pill shade-pill" data-base="${c}" data-group="exactcolor" data-tag="${c}-3" style="display:none;">${c}-3</a>`;
+            });
+            shadeRow.innerHTML = sHtml;
+            shadeRow.style.display = 'none';
+        }
+    }
+
     function renderTable(data) {
         const container = document.getElementById('table-container');
-        window.activeViewData = [];
+        window.activeViewData = data; 
         
-        let html = `<div class="table-container"><table class="data-grid"><thead><tr>
-            <th class="bg-desc" style="text-align: left; padding-left: 14px;">Description</th>
-            <th class="bg-filt">Filter</th>
-            <th class="bg-coat">Coating</th>
-            <th class="bg-mat">Material</th>
-            <th class="bg-idx">Index</th>
-            <th class="bg-diam">Diameter</th>
-            <th class="bg-base">Minus Sph<hr class="header-divider">Base Curves</th>
-            <th class="bg-tfc">Minus with Cylinder<hr class="header-divider">True Front Curve</th>
-            <th class="bg-tbc">Plus Sph<hr class="header-divider">True Back Curve</th>
-            <th class="bg-sag">Plus with Cylinder<hr class="header-divider">SAG at 50mm</th>
-        </tr></thead><tbody>`;
-        
-        let buckets = {};
-        
-        data.forEach(lens => {
-            let cleanDesc = (lens['Description'] || lens['Name'] || '').trim();
-            let cleanFilt = (lens['Filter'] || '').trim();
-            
-            let colorRegex = /\b(EXG3|XTR|Extra\s*Active|Extra\s*Gr[ae]y|PGY3|Pro\s*Gr[ae]y|PBN3|Pro\s*Brown|PIO3|Pioneer|BRG[1-3]?|BURG|BURGUNDY|GRY[1-3]?|GRAY|GREY|BRN[1-3]?|BROWN|G-15|GRN[1-3]?|GREEN|BLU[1-3]?|BLUE|YEL[1-3]?|YLW|YELLOW|PNK[1-3]?|ROS[1-3]?|ROSE|PINK|PUR[1-3]?|PRP[1-3]?|PLUM|PURPLE)\b/ig;
-            let colors = [];
-            let hasExtra = false;
-            
-            let extColor = (match) => {
-                let c = match.toUpperCase();
-                if (c.match(/EXG3|XTR|EXTRA\s*ACTIVE/)) { hasExtra = true; return ''; }
-                if (c.match(/EXTRA\s*GR[AE]Y/)) { colors.push('Extra Gray'); return ''; }
-                if (c.match(/PGY3|PRO\s*GR[AE]Y/)) { colors.push('Gray'); return ''; }
-                if (c.match(/PBN3|PRO\s*BROWN/)) { colors.push('Brown'); return ''; }
-                if (c.match(/^PIO|PIONEER/)) { colors.push('G-15'); return ''; }
-                if (c.match(/BRG|BURG/)) { colors.push('Burgundy'); return ''; }
-                if (c.match(/^GRY|GRAY|GREY/)) { colors.push('Gray'); return ''; }
-                if (c.match(/^BRN|BROWN/)) { colors.push('Brown'); return ''; }
-                if (c === 'G-15') { colors.push('G-15'); return ''; }
-                if (c.match(/^GRN|GREEN/)) { colors.push('Green'); return ''; }
-                if (c.match(/^BLU|BLUE/)) { colors.push('Blue'); return ''; }
-                if (c.match(/^YEL|YLW|YELLOW/)) { colors.push('Yellow'); return ''; }
-                if (c.match(/^PNK|ROS|PINK/)) { colors.push('Pink'); return ''; }
-                if (c.match(/^PUR|PRP|PLUM/)) { colors.push('Purple'); return ''; }
-                return '';
-            };
+        let categories = {
+            'fsv': { title: 'Finished Single Vision', lenses: [] },
+            'sfsv': { title: 'Semi-Finished Single Vision', lenses: [] },
+            'pal': { title: 'Progressive Addition Lenses', lenses: [] },
+            'ft': { title: 'Multi-Focal Lenses', lenses: [] },
+            'other': { title: 'Other Lenses', lenses: [] }
+        };
 
-            cleanDesc = cleanDesc.replace(colorRegex, extColor).replace(/\s{2,}/g, ' ').trim();
-            cleanFilt = cleanFilt.replace(colorRegex, extColor).replace(/\s{2,}/g, ' ').trim();
-            
-            if (hasExtra && colors.length === 0) colors.push('Extra Gray');
-            let isPhoto = /PhotoFusion|Transition|Photochromic|Quick-Change|Sensitivity|LifeRx/i.test(cleanDesc);
-            if (isPhoto && colors.length === 0 && !hasExtra) colors.push('Gray');
-            if (hasExtra) colors = colors.map(col => col.startsWith('Extra') ? col : `Extra ${col}`);
-            
-            lens['_extractedColors'] = colors;
-            lens['_cleanFilt'] = cleanFilt || '';
-            
-            let baseCoat = (lens['Coating'] || 'Uncoated').trim();
-            let routeCoat = baseCoat;
-            if (['UC', 'SR', 'UNCOATED', 'HC', 'HARD COAT'].includes(baseCoat.toUpperCase())) routeCoat = 'Standard (UC/SR)';
-            else if (baseCoat.toUpperCase().includes('AR') || baseCoat.toUpperCase().includes('A/R') || baseCoat.toUpperCase().includes('HMC')) routeCoat = `Premium (${baseCoat})`;
-
-            const key = `${cleanDesc}:::${lens['_cleanFilt']}:::${routeCoat}:::${lens['Material'] || ''}:::${lens['Index'] || ''}:::${lens['Class'] || ''}`;
-            if(!buckets[key]) buckets[key] = [];
-            buckets[key].push({...lens});
+        data.forEach((lens, index) => {
+            lens.originalIndex = index;
+            let isFin = !!(lens.Specifications && lens.Specifications.FIN);
+            let style = parseInt(lens.Style);
+            if (isFin && style === 1) categories.fsv.lenses.push(lens);
+            else if (!isFin && style === 1) categories.sfsv.lenses.push(lens);
+            else if (style === 6) categories.pal.lenses.push(lens);
+            else if ([2,3,4,5,8,9,10,11,12,15,16,17].includes(style)) categories.ft.lenses.push(lens);
+            else categories.other.lenses.push(lens);
         });
 
-        let groupIndex = 0;
-        for (const [key, bucketData] of Object.entries(buckets)) {
-            const parts = key.split(':::');
-            const baseDesc = parts[0]; const baseFiltRaw = parts[1]; const routeCoat = parts[2];
-            const mat = parts[3]; let rawIdx = parseFloat(parts[4]);
-            const idx = isNaN(rawIdx) ? parts[4] : rawIdx.toFixed(3);
-            const lensClass = parts[5];
-            let folded = [];
+        let html = '';
+        for (const [catId, catData] of Object.entries(categories)) {
+            if (catData.lenses.length === 0) continue;
             
-            if (lensClass === 'FIN') {
-                let diamBuckets = {};
-                bucketData.forEach(r => {
-                    let d = String(r['Diameter']||'').replace(/mm/ig,'').trim();
-                    if(!diamBuckets[d]) diamBuckets[d] = [];
-                    diamBuckets[d].push({ sph: parseFloat(r['SPH/BASE']) || 0, cyl: parseFloat(r['CYL/ADD']) || 0, row: r });
-                });
-                for (const [d, powers] of Object.entries(diamBuckets)) {
-                    let minusSph = powers.filter(p => p.sph <= 0 && p.cyl === 0); let minusCyl = powers.filter(p => p.sph <= 0 && p.cyl < 0);
-                    let plusSph  = powers.filter(p => p.sph > 0 && p.cyl === 0);  let plusCyl  = powers.filter(p => p.sph > 0 && p.cyl < 0);
-                    folded.push({
-                        ...powers[0].row,
-                        'Diameter': d ? d : '<span class="empty-bullet">•</span>',
-                        'Base': getRangeString(minusSph, false), 'Front TC': getRangeString(minusCyl, true),
-                        'Back TC': getRangeString(plusSph, false), 'SAG': getRangeString(plusCyl, true)
+            html += `<div class="category-section" data-cat="${catId}">`;
+            html += `<h2 class="cat-title">${catData.title}</h2>`;
+            html += `<div class="table-container"><table class="data-grid"><thead><tr>
+                <th class="bg-desc">Description</th>
+                <th class="bg-filt">Filter</th>
+                <th class="bg-coat">Coating</th>
+                <th class="bg-mat">Material</th>
+                <th class="bg-idx">Index</th>
+                <th class="bg-diam">Diameter</th>
+                <th class="bg-p1">${catId === 'fsv' ? 'Minus Sph<hr class="header-divider">Base Curves' : 'Marked<hr class="header-divider">Base'}</th>
+                <th class="bg-p2">${catId === 'fsv' ? 'Minus with Cylinder<hr class="header-divider">True Front Curve' : 'True Curve<hr class="header-divider">Front TC'}</th>
+                <th class="bg-p3">${catId === 'fsv' ? 'Plus Sph<hr class="header-divider">True Back Curve' : 'True Curve<hr class="header-divider">Back TC'}</th>
+                <th class="bg-p4">${catId === 'fsv' ? 'Plus with Cylinder<hr class="header-divider">SAG at 50mm' : 'SAG<hr class="header-divider">50mm'}</th>
+            </tr></thead><tbody>`;
+            
+            catData.lenses.forEach((lens) => {
+                let isFin = !!(lens.Specifications && lens.Specifications.FIN);
+                let specArray = isFin ? lens.Specifications.FIN : lens.Specifications.SF;
+                
+                let rowData = [];
+                if (isFin) {
+                    let diamMap = {};
+                    specArray.forEach(s => {
+                        let diams = (s.Diameters && s.Diameters.length > 0) ? s.Diameters : ['N/A'];
+                        diams.forEach(d => {
+                            if (!diamMap[d]) diamMap[d] = [];
+                            diamMap[d].push({ sph: parseFloat(s.SPH)||0, cyl: parseFloat(s.CYL)||0 });
+                        });
+                    });
+                    
+                    let sortedDiams = Object.keys(diamMap).sort((a,b) => parseFloat(a) - parseFloat(b));
+                    sortedDiams.forEach(d => {
+                        let pArr = diamMap[d];
+                        let minSph = pArr.filter(p => p.sph <= 0 && p.cyl === 0);
+                        let minCyl = pArr.filter(p => p.sph <= 0 && p.cyl < 0);
+                        let pluSph = pArr.filter(p => p.sph > 0 && p.cyl === 0);
+                        let pluCyl = pArr.filter(p => p.sph > 0 && p.cyl < 0);
+                        rowData.push({
+                            col1: d === 'N/A' ? '<span class="empty-bullet">•</span>' : d,
+                            col2: getRangeString(minSph, false),
+                            col3: getRangeString(minCyl, true),
+                            col4: getRangeString(pluSph, false),
+                            col5: getRangeString(pluCyl, true)
+                        });
+                    });
+                } else {
+                    let baseMap = {};
+                    specArray.forEach(s => {
+                        let b = parseFloat(s.BASE);
+                        if(isNaN(b)) return;
+                        let bStr = b.toFixed(2);
+                        if (!baseMap[bStr]) {
+                            baseMap[bStr] = { 
+                                ftc: parseFloat(s['Front TC'])||0, 
+                                btc: parseFloat(s['Back TC'])||0, 
+                                sag: parseFloat(s['SAG'])||0,
+                                diams: new Set()
+                            };
+                        }
+                        (s.Diameters || []).forEach(dia => baseMap[bStr].diams.add(dia));
+                    });
+                    let sortedBases = Object.keys(baseMap).sort((a,b) => parseFloat(a) - parseFloat(b));
+                    sortedBases.forEach(bStr => {
+                        let m = baseMap[bStr];
+                        let dStr = Array.from(m.diams).sort((a,b)=>parseFloat(a)-parseFloat(b)).join(' / ') || '<span class="empty-bullet">•</span>';
+                        rowData.push({
+                            col1: dStr,
+                            col2: parseFloat(bStr) > 0 ? `+${bStr}` : bStr,
+                            col3: m.ftc === 0 ? '<span class="empty-bullet">•</span>' : m.ftc.toFixed(2),
+                            col4: m.btc === 0 ? '<span class="empty-bullet">•</span>' : m.btc.toFixed(2),
+                            col5: m.sag === 0 ? '<span class="empty-bullet">•</span>' : m.sag.toFixed(2)
+                        });
                     });
                 }
-            } else {
-                bucketData.forEach(row => {
-                    let merged = false;
-                    for(let f of folded) {
-                        let fDiam = String(f['Diameter']||'').replace(/mm/ig,'').trim();
-                        let rDiam = String(row['Diameter']||'').replace(/mm/ig,'').trim();
-                        
-                        if(parseFloat(f['SPH/BASE']) === parseFloat(row['SPH/BASE']) &&
-                           parseFloat(f['Front TC']) === parseFloat(row['Front TC']) &&
-                           parseFloat(f['SAG']) === parseFloat(row['SAG'])) {
-                            if (fDiam === rDiam || fDiam.includes(rDiam)) { merged = true; break; }
-                            else { f['Diameter'] = `${f['Diameter']} / ${rDiam}`; merged = true; break; }
+                
+                if (rowData.length === 0) {
+                    rowData.push({ col1: '<span class="empty-bullet">•</span>', col2: '<span class="empty-bullet">•</span>', col3: '<span class="empty-bullet">•</span>', col4: '<span class="empty-bullet">•</span>', col5: '<span class="empty-bullet">•</span>' });
+                }
+
+                let rowspan = rowData.length;
+                let grpId = `grp-${lens.originalIndex}`;
+                let rowClass = lens.originalIndex % 2 === 0 ? 'row-even' : 'row-odd';
+                
+                let desc = lens.Description || '';
+                let colorHtml = '';
+                if (lens.Colors && lens.Colors.length > 0) {
+                    let visibleColors = lens.Colors.filter(c => c !== 'Clear');
+                    if (visibleColors.length > 0) {
+                        colorHtml = `<br><span style="color:var(--col-coat); font-style:italic; font-size:smaller;">(${visibleColors.join(', ')})</span>`;
+                    }
+                }
+                desc = `${desc}${colorHtml}`;
+                
+                let filt = lens.Filter || '<span style="opacity:0.5;">None</span>';
+                let coat = (lens.Coatings || []).join('<br>');
+                if(!coat) coat = 'Uncoated';
+                
+                // Safe JSON compilation to prevent Javascript crashing
+                let searchIndex = [
+                    lens.Id || "", 
+                    lens.MFG || "", 
+                    lens.Material || "", 
+                    lens["Brief Description"] || "", 
+                    lens["Long Description"] || "", 
+                    lens.Description || "", 
+                    catId
+                ];
+                if (lens.FilterTags) lens.FilterTags.forEach(t => searchIndex.push(t));
+                if (lens.MappedShades) lens.MappedShades.forEach(t => searchIndex.push(t));
+                let safeSearch = JSON.stringify(searchIndex.map(s => String(s))).replace(/'/g, "&#39;");
+                
+                html += `<tr class="${rowClass} ${grpId} lens-row" data-cat="${catId}" data-mfg="${lens.MFG}" data-search='${safeSearch}' onmouseenter="hoverGrp('${grpId}')" onmouseleave="leaveGrp('${grpId}')" onclick='openModal(${lens.originalIndex})'>`;
+                html += `<td class="col-desc" rowspan="${rowspan}"><b>${desc}</b></td>`;
+                html += `<td class="col-filt" rowspan="${rowspan}">${filt}</td>`;
+                html += `<td class="col-coat" rowspan="${rowspan}">${coat}</td>`;
+                html += `<td class="col-mat" rowspan="${rowspan}">${lens.Material || ''}</td>`;
+                html += `<td class="col-idx" rowspan="${rowspan}">${lens.Index || ''}</td>`;
+                
+                html += `<td class="col-diam">${rowData[0].col1}</td>`;
+                html += `<td class="col-base">${rowData[0].col2}</td>`;
+                html += `<td class="col-tfc">${rowData[0].col3}</td>`;
+                html += `<td class="col-tbc">${rowData[0].col4}</td>`;
+                html += `<td class="col-sag">${rowData[0].col5}</td>`;
+                html += `</tr>`;
+                
+                for(let i=1; i<rowspan; i++) {
+                    html += `<tr class="${rowClass} ${grpId} lens-row" data-cat="${catId}" data-mfg="${lens.MFG}" data-search='${safeSearch}' onmouseenter="hoverGrp('${grpId}')" onmouseleave="leaveGrp('${grpId}')" onclick='openModal(${lens.originalIndex})'>`;
+                    html += `<td class="col-diam">${rowData[i].col1}</td>`;
+                    html += `<td class="col-base">${rowData[i].col2}</td>`;
+                    html += `<td class="col-tfc">${rowData[i].col3}</td>`;
+                    html += `<td class="col-tbc">${rowData[i].col4}</td>`;
+                    html += `<td class="col-sag">${rowData[i].col5}</td>`;
+                    html += `</tr>`;
+                }
+            });
+            
+            html += `</tbody></table></div></div>`;
+        }
+        
+        container.innerHTML = html;
+        applyFilters();
+    }
+
+    // High Performance Search Engine
+    function applyFilters() {
+        const btnAllLenses = document.getElementById('btn-all-lenses');
+        const mfgBadges = document.querySelectorAll('.mfg-pill');
+        const tagBadges = document.querySelectorAll('.tag-pill');
+        const searchInput = document.getElementById('text-search-box');
+        
+        let activeMfg = 'all';
+        let activeFilters = { type: 'all', mat: 'all', tech: 'all', coat: 'all', basecolor: 'all', exactcolor: 'all' };
+        
+        function updateDOM() {
+            let textQuery = searchInput ? searchInput.value.toLowerCase().trim() : '';
+            let qFlat = textQuery.replace(/[^a-z0-9]/gi, '');
+            const sections = document.querySelectorAll('.category-section');
+            const rows = document.querySelectorAll('tr.lens-row');
+            
+            sections.forEach(sec => { sec.style.display = 'block'; });
+            
+            rows.forEach(r => {
+                let searchData = [];
+                try { searchData = JSON.parse(r.getAttribute('data-search') || "[]"); } catch(e) {}
+                
+                const mfgMatch = (activeMfg === 'all') || (r.getAttribute('data-mfg') === activeMfg);
+                
+                let textMatch = false;
+                if (textQuery === '') {
+                    textMatch = true;
+                } else {
+                    const idVal = searchData[0] ? searchData[0].toLowerCase() : '';
+                    const mfg = searchData[1] ? searchData[1].toLowerCase() : '';
+                    const desc = searchData[5] ? searchData[5].toLowerCase() : '';
+                    
+                    if (desc.includes(textQuery) || mfg.includes(textQuery) || idVal.includes(textQuery)) {
+                        textMatch = true;
+                    } else {
+                        for (let t of searchData) {
+                            let tLow = t.toLowerCase();
+                            // Exact flat match or Word boundary match
+                            if (tLow === textQuery || tLow.replace(/[^a-z0-9]/gi, '') === qFlat) { textMatch = true; break; }
+                            try {
+                                let regex = new RegExp('\\b' + textQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b');
+                                if (regex.test(tLow)) { textMatch = true; break; }
+                            } catch(e) {}
                         }
                     }
-                    if(!merged) {
-                        let newRow = {...row};
-                        newRow['Diameter'] = String(newRow['Diameter']||'').replace(/mm/ig,'').trim();
-                        folded.push(newRow);
-                    }
-                });
-                folded.sort((a, b) => parseFloat(a['SPH/BASE']) - parseFloat(b['SPH/BASE']));
-                folded.forEach(f => {
-                    let d = f['Diameter'];
-                    f['Diameter'] = d ? d.split('/').map(x => x.trim()).join(' / ') : '<span class="empty-bullet">•</span>';
-                    f['BaseOut'] = fmt(f['SPH/BASE'], 2); f['FtcOut'] = fmt(f['Front TC'], 2);
-                    f['BtcOut'] = fmt(f['Back TC'], 2); f['SagOut'] = fmt(f['SAG'], 2);
-                });
-            }
-
-            let allColors = new Set();
-            bucketData.forEach(r => { if(r._extractedColors) r._extractedColors.forEach(c => allColors.add(c)); });
-            let colorArr = Array.from(allColors).sort((a,b) => {
-                let weight = { 'Gray': 1, 'Brown': 2, 'G-15': 3, 'Green': 4 };
-                let wA = weight[a] || 5; let wB = weight[b] || 5;
-                if(wA !== wB) return wA - wB;
-                return a.localeCompare(b);
-            });
-            
-            let colorStr = '';
-            if (colorArr.length > 0) {
-                let chunks = [];
-                for(let i=0; i<colorArr.length; i+=3) chunks.push(colorArr.slice(i, i+3).join(', '));
-                colorStr = chunks.join('<br>');
-            }
-            
-            let cleanBaseFilt = baseFiltRaw;
-            if(/none/i.test(cleanBaseFilt)) cleanBaseFilt = cleanBaseFilt.replace(/none/ig, '').trim();
-            
-            let finalFilter = cleanBaseFilt;
-            if(colorStr) finalFilter = cleanBaseFilt ? `${cleanBaseFilt}<br><span style="color:var(--col-coat); font-style:italic;">${colorStr}</span>` : `<span style="color:var(--col-coat); font-style:italic;">${colorStr}</span>`;
-            if(!finalFilter || finalFilter === '/' || finalFilter === '') finalFilter = 'Clear';
-
-            let coatArr = Array.from(new Set(bucketData.map(r => r['Coating'] || 'Uncoated')));
-            let finalCoat = routeCoat.includes('Standard') ? coatArr.join(' / ') : coatArr[0];
-
-            const rowspan = folded.length;
-            const rowClass = groupIndex % 2 === 0 ? 'row-even' : 'row-odd';
-            const grpId = `grp-${groupIndex}`;
-            let masterBucketObject = { bucket: bucketData, finalDesc: baseDesc, finalFilt: finalFilter, coat: finalCoat, mat: mat, idx: idx, isFin: lensClass === 'FIN', coatArr: coatArr, tabColorArr: colorArr };
-            
-            folded.forEach((row, i) => {
-                window.activeViewData.push({ repRow: row, master: masterBucketObject });
-                const dataIndex = window.activeViewData.length - 1;
-                html += `<tr class="${rowClass} ${grpId}" onmouseenter="hoverGrp('${grpId}')" onmouseleave="leaveGrp('${grpId}')" onclick='openModal(${dataIndex})'>`;
-                
-                if (i === 0) {
-                    html += `<td class="col-desc" rowspan="${rowspan}"><b>${baseDesc}</b></td>`;
-                    html += `<td class="col-filt" rowspan="${rowspan}">${finalFilter}</td>`;
-                    html += `<td class="col-coat" rowspan="${rowspan}">${finalCoat}</td>`;
-                    html += `<td class="col-mat" rowspan="${rowspan}">${mat}</td>`;
-                    html += `<td class="col-idx" rowspan="${rowspan}">${idx}</td>`;
                 }
                 
-                html += `<td class="col-diam">${row['Diameter']}</td>`;
-                html += `<td class="col-base">${lensClass === 'FIN' ? row['Base'] : row['BaseOut']}</td>`;
-                html += `<td class="col-tfc">${lensClass === 'FIN' ? row['Front TC'] : row['FtcOut']}</td>`;
-                html += `<td class="col-tbc">${lensClass === 'FIN' ? row['Back TC'] : row['BtcOut']}</td>`;
-                html += `<td class="col-sag">${lensClass === 'FIN' ? row['SAG'] : row['SagOut']}</td>`;
-                html += `</tr>`;
+                let tagsMatch = true;
+                for (const group in activeFilters) {
+                    if (activeFilters[group] !== 'all') {
+                        let targetFlat = activeFilters[group].replace(/[^a-z0-9]/gi, '').toLowerCase();
+                        if (group === 'mat') {
+                            if (!searchData.some(s => s.toLowerCase().includes(activeFilters[group].toLowerCase()))) tagsMatch = false;
+                        } else {
+                            if (!searchData.some(s => s.replace(/[^a-z0-9]/gi, '').toLowerCase() === targetFlat)) tagsMatch = false;
+                        }
+                    }
+                }
+                
+                if (mfgMatch && textMatch && tagsMatch) {
+                    r.style.display = '';
+                } else {
+                    r.style.display = 'none';
+                }
             });
-            groupIndex++;
+            
+            sections.forEach(sec => {
+                if (sec.style.display === 'block') {
+                    const visibleRows = sec.querySelectorAll('tr.lens-row:not([style*="display: none"])');
+                    if (visibleRows.length === 0) sec.style.display = 'none';
+                }
+            });
+
+            const shadeRow = document.getElementById('pill-row-exactcolor');
+            if (shadeRow) {
+                if (activeFilters.basecolor !== 'all' && activeFilters.basecolor !== 'clear') {
+                    shadeRow.style.display = 'flex';
+                    document.querySelectorAll('.shade-pill').forEach(sp => {
+                        if (sp.getAttribute('data-base').toLowerCase() === activeFilters.basecolor.toLowerCase()) {
+                            sp.style.display = 'inline-block';
+                        } else {
+                            sp.style.display = 'none';
+                            sp.classList.remove('active');
+                        }
+                    });
+                } else {
+                    shadeRow.style.display = 'none';
+                    activeFilters.exactcolor = 'all';
+                    document.querySelector('.tag-pill[data-group="exactcolor"][data-tag="all"]').classList.add('active');
+                    document.querySelectorAll('.shade-pill').forEach(sp => sp.classList.remove('active'));
+                }
+            }
         }
-        container.innerHTML = html + `</tbody></table></div>`;
+
+        if(searchInput) searchInput.addEventListener('input', updateDOM);
+
+        if(btnAllLenses) {
+            btnAllLenses.addEventListener('click', (e) => {
+                e.preventDefault();
+                mfgBadges.forEach(b => b.classList.remove('active'));
+                btnAllLenses.classList.add('active');
+                activeMfg = 'all';
+                
+                tagBadges.forEach(tb => {
+                    if (tb.getAttribute('data-tag') === 'all') tb.classList.add('active');
+                    else tb.classList.remove('active');
+                });
+                for (let g in activeFilters) activeFilters[g] = 'all';
+                if(searchInput) searchInput.value = '';
+                updateDOM();
+            });
+        }
+
+        mfgBadges.forEach(badge => {
+            badge.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (badge.classList.contains('active')) {
+                    badge.classList.remove('active');
+                    activeMfg = 'all';
+                    if(btnAllLenses) btnAllLenses.classList.add('active');
+                } else {
+                    mfgBadges.forEach(b => b.classList.remove('active'));
+                    if(btnAllLenses) btnAllLenses.classList.remove('active');
+                    badge.classList.add('active');
+                    activeMfg = badge.getAttribute('data-val');
+                }
+                updateDOM();
+            });
+        });
+        
+        tagBadges.forEach(badge => {
+            badge.addEventListener('click', (e) => {
+                e.preventDefault();
+                const tag = badge.getAttribute('data-tag');
+                const group = badge.getAttribute('data-group');
+                
+                if (tag === 'all') {
+                    document.querySelectorAll(`.tag-pill[data-group="${group}"]`).forEach(b => b.classList.remove('active'));
+                    badge.classList.add('active');
+                    activeFilters[group] = 'all';
+                } else {
+                    if (badge.classList.contains('active')) {
+                        badge.classList.remove('active');
+                        activeFilters[group] = 'all';
+                        document.querySelector(`.tag-pill[data-group="${group}"][data-tag="all"]`).classList.add('active');
+                    } else {
+                        document.querySelectorAll(`.tag-pill[data-group="${group}"]`).forEach(b => b.classList.remove('active'));
+                        badge.classList.add('active');
+                        activeFilters[group] = tag;
+                        
+                        if(group === 'basecolor') {
+                            activeFilters.exactcolor = 'all';
+                            document.querySelectorAll('.tag-pill[data-group="exactcolor"]').forEach(b => b.classList.remove('active'));
+                            document.querySelector('.tag-pill[data-group="exactcolor"][data-tag="all"]').classList.add('active');
+                        }
+                    }
+                }
+                updateDOM();
+            });
+        });
+        
+        // Force the initial load
+        updateDOM();
     }
 
     window.switchTab = function(tabIndex) {
@@ -1886,195 +2145,75 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     window.toggleProgressive = function() {
-        const lensTypeCode = document.getElementById('mod-type-code');
+        const lensTypeCode = document.getElementById('lens-type-code');
         const progressiveTypeRow = document.getElementById('progressive-type-row');
-        if (lensTypeCode && progressiveTypeRow) progressiveTypeRow.style.visibility = (lensTypeCode.value.includes('6.')) ? 'visible' : 'hidden';
+        if (lensTypeCode && progressiveTypeRow) progressiveTypeRow.style.display = (lensTypeCode.value.includes('6.')) ? 'flex' : 'none';
     };
 
-    // DYNAMIC LMS STRING GENERATOR 
-    function generateLmsNames(rep, master) {
-        let isFin = rep['Class'] === 'FIN';
-        let ast = isFin ? '*' : '';
-        let style = parseInt(rep['Style']);
-        
-        let s_type = '';
-        if ([10,11,12,15].includes(style)) {
-            let sw = rep['Seg Width'] ? rep['Seg Width'].toString().replace('.0','') : '';
-            let ih = rep['Intermediate Ht'] ? rep['Intermediate Ht'].toString().replace('.0','') : '';
-            if(sw && ih) s_type = `TRI ${ih}x${sw}`;
-            else {
-                let m = (rep['Description']||'').match(/(\d{1,2}x\d{2})/i);
-                s_type = m ? `TRI ${m[1].toLowerCase()}` : 'TRI';
-            }
-        } else if ([2,3,4,5,8,9,16].includes(style)) {
-            let sw = rep['Seg Width'] ? rep['Seg Width'].toString().replace('.0','') : '';
-            if(sw) s_type = `FT${sw}`;
-            else {
-                let m = (rep['Description']||'').match(/FT(\d{2})/i);
-                s_type = m ? `FT${m[1]}` : 'BIFOCAL';
-            }
-        } else if (style === 6) {
-            s_type = ''; // Stripping "PAL" explicitly per request
-        } else {
-            s_type = isFin ? 'FSV' : 'SFSV';
-        }
-
-        let rawText = ((rep['Description']||'') + ' ' + (rep['Name']||'') + ' ' + (master.finalFilt||'')).toUpperCase();
-        let s_brand = '';
-        if (style === 6) {
-            let b_clean = rawText.replace(/\b(FIN|SF|PAL|PROG|PROGRESSIVE|POLY|CR-39|TRIVEX|1\.\d{2}|AS|ASPHERIC|POLARIZED|POL|PHOT|PHT|PHOTOFUSION|TRANSITIONS?|LIFERX|BLUEGUARD|BG|HEV)\b/gi, '').trim();
-            b_clean = b_clean.replace(/[^A-Z0-9\s-]/g, '').replace(/\s{2,}/g, ' ').trim();
-            s_brand = b_clean.split(' ').slice(0, 2).join(' ');
-        }
-
-        let s_mat = '';
-        let mat = rep['Material'] || '';
-        let idx = rep['Index'] || '';
-        if (mat.includes('CR-39')) s_mat = 'CR-39';
-        else if (mat.includes('Poly')) s_mat = 'POLY';
-        else if (mat.includes('Trivex')) s_mat = 'TRIVEX';
-        else if (idx) s_mat = parseFloat(idx).toFixed(2); // Keeps 1.67 intact
-
-        let has_as = /\b(AS|ASPHERIC)\b/.test(rawText);
-        let has_pol = /\b(POL|POLARIZED|NUPOLAR|TRUPOLAR)\b/.test(rawText);
-        let has_pht = /\b(PHOT|PHT|PHOTOFUSION|TRANSITIONS?|LIFERX)\b/.test(rawText);
-        let has_bg = /\b(BG|BLUEGUARD)\b/.test(rawText);
-
-        // -- BRIEF DESCRIPTION ASSEMBLY (Max 15) --
-        function buildBrief(brandStr, incPHT, incBG, incPOL, incAS) {
-            let parts = [];
-            if (s_type) parts.push(s_type);
-            if (brandStr) parts.push(brandStr);
-            if (s_mat) parts.push(s_mat);
-            if (incAS && has_as) parts.push('AS');
-            if (incPOL && has_pol) parts.push('POL');
-            if (incBG && has_bg) parts.push('BG');
-            if (incPHT && has_pht) parts.push('PHT');
-            return ast + parts.join(' ').replace(/\s{2,}/g, ' ');
-        }
-
-        let briefDesc = "";
-        let curBrand = s_brand;
-        let pht = true, bg = true, pol = true, as = true;
-        
-        let testStr = buildBrief(curBrand, pht, bg, pol, as);
-        if (testStr.length <= 15) {
-            briefDesc = testStr;
-        } else {
-            // Crush the brand from the right side
-            while (curBrand.length > 0 && buildBrief(curBrand, pht, bg, pol, as).length > 15) {
-                curBrand = curBrand.slice(0, -1).trim();
-            }
-            if (buildBrief(curBrand, pht, bg, pol, as).length <= 15) {
-                briefDesc = buildBrief(curBrand, pht, bg, pol, as);
-            } else {
-                // If brand is totally gone and it's STILL > 15 chars, execute smart drop
-                pht = false;
-                if (buildBrief('', pht, bg, pol, as).length <= 15) briefDesc = buildBrief('', pht, bg, pol, as);
-                else {
-                    bg = false;
-                    if (buildBrief('', pht, bg, pol, as).length <= 15) briefDesc = buildBrief('', pht, bg, pol, as);
-                    else {
-                        pol = false;
-                        if (buildBrief('', pht, bg, pol, as).length <= 15) briefDesc = buildBrief('', pht, bg, pol, as);
-                        else {
-                            as = false; // Emergency drop
-                            briefDesc = buildBrief('', pht, bg, pol, as).substring(0,15);
-                        }
-                    }
-                }
-            }
-        }
-
-        // -- LONG DESCRIPTION ASSEMBLY (Max 32) --
-        let expandedPht = "";
-        if (has_pht) {
-            let pMatch = rawText.match(/\b(PHOTOFUSION(?:\s*X)?|TRANSITIONS?(?:\s*\w+)?|LIFERX)\b/);
-            expandedPht = pMatch ? pMatch[1] : "PHOTOCHROMIC";
-        }
-        let expandedPol = "";
-        if (has_pol) {
-            if (/\bNUPOLAR\b/.test(rawText)) expandedPol = "NUPOLAR";
-            else if (/\bTRUPOLAR\b/.test(rawText)) expandedPol = "TRUPOLAR";
-            else expandedPol = "POL"; 
-        }
-        
-        function buildLong(brandStr) {
-            let parts = [];
-            if (s_type) parts.push(s_type);
-            if (brandStr) parts.push(brandStr);
-            if (s_mat) parts.push(s_mat);
-            if (has_as) parts.push('AS');
-            if (expandedPol) parts.push(expandedPol);
-            if (has_bg) parts.push('BLUEGUARD');
-            if (expandedPht) parts.push(expandedPht);
-            return ast + parts.join(' ').replace(/\s{2,}/g, ' ');
-        }
-
-        let longDesc = "";
-        let curLongBrand = s_brand;
-        if (buildLong(curLongBrand).length <= 32) {
-            longDesc = buildLong(curLongBrand);
-        } else {
-            // Crush the brand if 32 is somehow breached
-            while (curLongBrand.length > 0 && buildLong(curLongBrand).length > 32) {
-                curLongBrand = curLongBrand.slice(0, -1).trim();
-            }
-            longDesc = buildLong(curLongBrand).substring(0, 32);
-        }
-
-        return { brief: briefDesc, long: longDesc };
-    }
-
     window.openModal = function(dataIndex) {
-        const viewItem = window.activeViewData[dataIndex];
-        if (!viewItem) return;
+        const lens = window.activeViewData[dataIndex];
+        if (!lens) return;
         
-        const rep = viewItem.master.bucket[0];
-        const isProg = parseInt(rep['Style']) === 6;
+        let isFin = !!(lens.Specifications && lens.Specifications.FIN);
+        let specArray = isFin ? lens.Specifications.FIN : lens.Specifications.SF;
+        let isProg = parseInt(lens.Style) === 6;
 
-        let idStr = rep['Description'] + rep['Index'];
+        let idStr = lens.Description + lens.Index;
         let hashNum = 0; for(let i=0;i<idStr.length;i++) hashNum = Math.imul(31, hashNum) + idStr.charCodeAt(i) | 0;
         let idDisplay = Math.abs(hashNum).toString().substring(0,6).padStart(6, '0');
         
-        // Generate the strict LMS strings dynamically!
-        let lmsData = generateLmsNames(rep, viewItem.master);
-        let modalLongDesc = lmsData.long;
-        let modalBriefDesc = lmsData.brief; 
-
-        // Preserve original descriptive view for the header
-        let webDesc = viewItem.master.isFin ? '*' + viewItem.master.finalDesc : viewItem.master.finalDesc;
-
+        let webDesc = isFin ? '*' + lens.Description : lens.Description;
         let lensTypeStr = "Single Vision";
         if(isProg) lensTypeStr = "Progressive";
-        else if([2,3,4,5,8,9,10,11,12,15,16].includes(parseInt(rep['Style']))) lensTypeStr = "Multi-Focal";
+        else if([2,3,4,5,8,9,10,11,12,15,16].includes(parseInt(lens.Style))) lensTypeStr = "Multi-Focal";
+        
+        let rep = specArray[0] || {};
+        
+        // OPC Extraction
+        let opcs = Object.values(rep['OPC'] || {});
+        let opcRange = "N/A";
+        let opcMin = ""; let opcMax = "";
+        if(opcs.length > 0) {
+            let sortedOpc = opcs.sort();
+            opcMin = sortedOpc[0];
+            opcMax = sortedOpc[sortedOpc.length - 1];
+            opcRange = opcMin + " to " + opcMax;
+        }
 
+        // Modern Bento Box Injections
         let modTitle = document.getElementById('mod-modern-title'); if(modTitle) modTitle.innerText = webDesc;
-        let modSub = document.getElementById('mod-modern-sub'); if(modSub) modSub.innerText = `${rep['MFG'] || 'Unknown'} | ID: ${idDisplay}`;
-        let modFilt = document.getElementById('mod-modern-filt'); if(modFilt) modFilt.innerHTML = `${viewItem.master.finalFilt} / ${viewItem.master.coat}`;
-        let modMat = document.getElementById('mod-modern-mat'); if(modMat) modMat.innerText = `${viewItem.master.mat} / ${viewItem.master.idx}`;
-        let modType = document.getElementById('mod-modern-type'); if(modType) modType.innerText = `${lensTypeStr} ${rep['Seg Width'] ? '(Seg: '+rep['Seg Width']+')' : ''}`;
+        let modSub = document.getElementById('mod-modern-sub'); if(modSub) modSub.innerText = `${lens.MFG || 'Unknown'} | ID: ${idDisplay}`;
         
+        let mBentoMfg = document.getElementById('mod-bento-mfg'); if(mBentoMfg) mBentoMfg.innerText = lens.MFG || 'Unknown';
+        let mBentoMat = document.getElementById('mod-bento-mat'); if(mBentoMat) mBentoMat.innerText = lens.Material;
+        let mBentoIdx = document.getElementById('mod-bento-idx'); if(mBentoIdx) mBentoIdx.innerText = lens.Index;
+        let mBentoType = document.getElementById('mod-bento-type'); if(mBentoType) mBentoType.innerText = lensTypeStr;
+        let mBentoSeg = document.getElementById('mod-bento-seg'); if(mBentoSeg) mBentoSeg.innerText = rep['Seg Width'] || 'N/A';
+        let mBentoInset = document.getElementById('mod-bento-inset'); if(mBentoInset) mBentoInset.innerText = `${rep['Inset'] || '0.0'} / ${rep['Drop'] || '0.0'}`;
+        let mBentoPrp = document.getElementById('mod-bento-prp'); if(mBentoPrp) mBentoPrp.innerText = `${rep['PRP Out'] || '0.0'} / ${rep['PRP Up'] || '0.0'}`;
+        let mBentoOpc = document.getElementById('mod-bento-opc'); if(mBentoOpc) mBentoOpc.innerText = opcRange;
+        
+        // Legacy Modal Injections
         let mid = document.getElementById('mod-id'); if(mid) mid.value = idDisplay;
-        let mmfg = document.getElementById('mod-mfg'); if(mmfg) mmfg.value = rep['MFG'] || '';
+        let mmfg = document.getElementById('mod-mfg'); if(mmfg) mmfg.value = lens.MFG || '';
+        let mbrief = document.getElementById('mod-brief'); if(mbrief) mbrief.value = lens['Brief Description'] || '';
+        let mlong = document.getElementById('mod-long'); if(mlong) mlong.value = lens['Long Description'] || '';
         
-        // Inject the LMS formatted strings into inputs
-        let mbrief = document.getElementById('mod-brief'); if(mbrief) mbrief.value = modalBriefDesc;
-        let mlong = document.getElementById('mod-long'); if(mlong) mlong.value = modalLongDesc;
-        
-        let selStyle = parseInt(rep['Style']);
-        let elType = document.getElementById('mod-type-code');
-        if(elType && !isNaN(selStyle)) { elType.selectedIndex = selStyle; toggleProgressive(); }
+        let selStyle = parseInt(lens.Style);
+        let elType = document.getElementById('lens-type-code');
+        if(elType && !isNaN(selStyle)) { 
+            elType.selectedIndex = selStyle; 
+            const progRow = document.getElementById('progressive-type-row');
+            if(progRow) progRow.style.display = selStyle === 6 ? 'flex' : 'none';
+        }
         
         let mseg = document.getElementById('mod-seg-width'); if(mseg) mseg.value = rep['Seg Width'] || '';
-        let mmatn = document.getElementById('mod-mat-name'); if(mmatn) mmatn.value = rep['Material Brand'] || rep['Material'] || '';
-        let mmatc = document.getElementById('mod-mat-cat'); if(mmatc) mmatc.innerHTML = `<option>${rep['Material']}</option>`;
-        let midx = document.getElementById('mod-idx'); if(midx) midx.value = rep['Index'] || '';
+        let mmatn = document.getElementById('mod-mat-name'); if(mmatn) mmatn.value = lens.Material || '';
+        let mmatc = document.getElementById('mod-mat-cat'); if(mmatc) mmatc.innerHTML = `<option>${lens.Material}</option>`;
+        let midx = document.getElementById('mod-idx'); if(midx) midx.value = lens.Index || '';
         
-        let mopcr = document.getElementById('mod-opc-right'); if(mopcr) mopcr.value = rep['Right OPC'] || '';
-        let mopcl = document.getElementById('mod-opc-left'); if(mopcl) mopcl.value = rep['Left OPC'] || '';
-        let needsLeft = (rep['Left OPC'] && rep['Left OPC'] !== rep['Right OPC']) ? 'Yes' : 'No';
-        let mrlsel = document.getElementById('mod-rl-sel'); if(mrlsel) mrlsel.innerHTML = `<option>${needsLeft}</option>`;
+        let mopcr = document.getElementById('mod-opc-right'); if(mopcr) mopcr.value = opcMin;
+        let mopcl = document.getElementById('mod-opc-left'); if(mopcl) mopcl.value = opcMax;
         
         let mbowl = document.getElementById('mod-bowl-dia'); if(mbowl) mbowl.value = rep['Bowl Dia'] || '0';
         
@@ -2085,69 +2224,120 @@ document.addEventListener('DOMContentLoaded', async () => {
             'High-Index 1.74': '1.4'
         };
         let mminct = document.getElementById('mod-min-ct'); 
-        if(mminct) mminct.value = ctcDict[rep['Material']] || '';
+        if(mminct) mminct.value = ctcDict[lens.Material] || '';
 
-        let asphFactor = isProg ? '-0.50' : '0.00';
+        // Modern Modal Dynamic Headers (FSV vs SF)
+        let mSurfHead = document.getElementById('mod-modern-surf-thead');
+        let mThickHead = document.getElementById('mod-modern-thick-thead');
+        if(mSurfHead && mThickHead) {
+            if(isFin) {
+                mSurfHead.innerHTML = `<tr><th style="background:var(--col-base);">Minus Sph</th><th style="background:var(--col-tfc);">Minus Cyl</th><th style="background:var(--win-highlight);">Plus Sph</th><th style="background:var(--col-tbc);">Plus Cyl</th></tr>`;
+                mThickHead.innerHTML = `<tr><th style="background:var(--col-diam);">Diameter</th><th style="background:var(--col-idx);">CT</th></tr>`;
+            } else {
+                mSurfHead.innerHTML = `<tr><th style="background:var(--col-base);">Base</th><th style="background:var(--col-tfc);">Front TC</th><th style="background:var(--win-highlight);">Asph</th><th style="background:var(--col-tbc);">Back TC</th></tr>`;
+                mThickHead.innerHTML = `<tr><th style="background:var(--col-diam);">Diameter</th><th style="background:var(--col-base);">Base</th><th style="background:var(--col-idx);">CT</th></tr>`;
+            }
+        }
+
         let surfHtml = '', thickHtml = '', blankHtml = '', modernSurf = '', modernThick = '';
-        let uniqueCurves = new Map(); let uniqueDiams = new Map();
 
-        viewItem.master.bucket.forEach(r => {
-            let bRaw = parseFloat(r['SPH/BASE']); let b = fmt(bRaw, 2);
-            let ftc = fmt(r['Front TC'], 2); let btc = fmt(r['Back TC'], 2);
-            let ct = fmt(r['Center Thick'], 2); let dia = String(r['Diameter']).replace(/mm/ig, '').trim();
-            let inset = fmt(r['Inset'], 2); let drop = fmt(r['Drop'], 2);
-
-            if (!isNaN(bRaw)) {
-                let curveKey = `${b}`; 
-                if (!uniqueCurves.has(curveKey)) uniqueCurves.set(curveKey, {b, ftc, btc, asphFactor});
-                let diamKey = `${dia}-${b}`;
-                if (dia && !uniqueDiams.has(diamKey)) uniqueDiams.set(diamKey, {dia, b, ct, inset, drop});
+        if (isFin) {
+            let diamMap = {};
+            specArray.forEach(s => {
+                let diams = (s.Diameters && s.Diameters.length > 0) ? s.Diameters : ['N/A'];
+                diams.forEach(d => {
+                    if (!diamMap[d]) diamMap[d] = [];
+                    diamMap[d].push({ sph: parseFloat(s.SPH)||0, cyl: parseFloat(s.CYL)||0 });
+                });
+            });
+            
+            let sortedDiams = Object.keys(diamMap).sort((a,b) => parseFloat(a) - parseFloat(b));
+            let dCount = 0;
+            sortedDiams.forEach(d => {
+                let pArr = diamMap[d];
+                let minSph = getRangeString(pArr.filter(p => p.sph <= 0 && p.cyl === 0), false);
+                let minCyl = getRangeString(pArr.filter(p => p.sph <= 0 && p.cyl < 0), true);
+                let pluSph = getRangeString(pArr.filter(p => p.sph > 0 && p.cyl === 0), false);
+                let pluCyl = getRangeString(pArr.filter(p => p.sph > 0 && p.cyl < 0), true);
+                
+                modernSurf += `<tr><td>${minSph}</td><td>${minCyl}</td><td>${pluSph}</td><td>${pluCyl}</td></tr>`;
+                modernThick += `<tr><td>${d}</td><td>-</td></tr>`;
+                
+                if(dCount < 12) {
+                    surfHtml += `<tr><td>&nbsp;</td><td></td><td></td><td></td></tr>`;
+                    thickHtml += `<tr><td><span class="arrow-indicator" style="color: #cc0000; font-size: 9px;">&#9654;</span> ${d}</td><td>-</td><td>-</td></tr>`;
+                    dCount++;
+                }
+            });
+            
+            for(let j=dCount; j<12; j++) {
+                surfHtml += `<tr><td>&nbsp;</td><td></td><td></td><td></td></tr>`;
+                thickHtml += `<tr><td>&nbsp;</td><td></td><td></td></tr>`;
             }
-        });
+            
+        } else {
+            let uniqueCurves = new Map(); let uniqueDiams = new Map();
+            let asphFactor = isProg ? '-0.50' : '.50';
 
-        let sortedCurves = Array.from(uniqueCurves.values()).sort((x,y) => parseFloat(x.b) - parseFloat(y.b));
-        let sortedDiams = Array.from(uniqueDiams.values()).sort((x,y) => {
-            if(parseFloat(x.dia) === parseFloat(y.dia)) return parseFloat(x.b) - parseFloat(y.b);
-            return parseFloat(x.dia) - parseFloat(y.dia);
-        });
+            specArray.forEach(r => {
+                let bRaw = parseFloat(r['BASE']);
+                let b = isNaN(bRaw) ? '' : bRaw.toFixed(2);
+                let ftc = parseFloat(r['Front TC']); ftc = isNaN(ftc) ? '' : ftc.toFixed(2);
+                let btc = parseFloat(r['Back TC']); btc = isNaN(btc) ? '' : btc.toFixed(2);
+                let ct = parseFloat(r['Center Thick']); ct = isNaN(ct) ? '' : ct.toFixed(2);
+                
+                if (b) {
+                    if (!uniqueCurves.has(b)) uniqueCurves.set(b, {b, ftc, btc, asphFactor});
+                    (r.Diameters || []).forEach(dia => {
+                        let diamKey = `${dia}-${b}`;
+                        if (!uniqueDiams.has(diamKey)) uniqueDiams.set(diamKey, {dia, b, ct, inset: r.Inset || '', drop: r.Drop || ''});
+                    });
+                }
+            });
 
-        for(let j=0; j<12; j++) {
-            if (viewItem.master.isFin) {
-                surfHtml += `<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>`;
-            } else if (j < sortedCurves.length) {
-                let c = sortedCurves[j];
-                surfHtml += `<tr><td>${c.b}</td><td>${c.ftc}</td><td>${c.asphFactor}</td><td>${c.btc}</td></tr>`;
-                modernSurf += `<tr><td>${c.b}</td><td>${c.ftc}</td><td>${c.asphFactor}</td><td>${c.btc}</td></tr>`;
-            } else { surfHtml += `<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>`; }
-        }
+            let sortedCurves = Array.from(uniqueCurves.values()).sort((x,y) => parseFloat(x.b) - parseFloat(y.b));
+            let sortedDiams = Array.from(uniqueDiams.values()).sort((x,y) => {
+                if(parseFloat(x.dia) === parseFloat(y.dia)) return parseFloat(x.b) - parseFloat(y.b);
+                return parseFloat(x.dia) - parseFloat(y.dia);
+            });
 
-        for(let j=0; j<22; j++) {
-            if(j < sortedDiams.length) {
-                let d = sortedDiams[j];
-                thickHtml += `<tr><td>&nbsp;&nbsp; ${d.dia}</td><td>${d.b}</td><td>${d.ct !== 'NaN' ? d.ct : ''}</td></tr>`;
-                modernThick += `<tr><td>${d.dia}</td><td>${d.b}</td><td>${d.ct !== 'NaN' ? d.ct : ''}</td></tr>`;
-            } else { thickHtml += `<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>`; }
-        }
-
-        let printedDiamsForBlank = new Set(); let bCount = 0;
-        sortedDiams.forEach(d => {
-            if(!printedDiamsForBlank.has(d.dia) && bCount < 5) {
-                blankHtml += `<tr><td>${d.dia}</td><td>${d.inset !== 'NaN' ? d.inset : ''}</td><td>${d.drop !== 'NaN' ? d.drop : ''}</td><td>${d.drop !== 'NaN' ? d.drop : ''}</td></tr>`;
-                printedDiamsForBlank.add(d.dia); bCount++;
+            for(let j=0; j<12; j++) {
+                if (j < sortedCurves.length) {
+                    let c = sortedCurves[j];
+                    surfHtml += `<tr><td>${c.b}</td><td>${c.ftc}</td><td>${c.asphFactor}</td><td>${c.btc}</td></tr>`;
+                    modernSurf += `<tr><td>${c.b}</td><td>${c.ftc}</td><td>${c.asphFactor}</td><td>${c.btc}</td></tr>`;
+                } else { surfHtml += `<tr><td>&nbsp;</td><td></td><td></td><td></td></tr>`; }
             }
-        });
-        for(let j=bCount; j<5; j++) blankHtml += `<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>`;
+
+            for(let j=0; j<12; j++) {
+                if(j < sortedDiams.length) {
+                    let d = sortedDiams[j];
+                    thickHtml += `<tr><td><span class="arrow-indicator" style="color: #cc0000; font-size: 9px;">&#9654;</span> ${d.dia}</td><td>${d.b}</td><td>${d.ct !== 'NaN' ? d.ct : ''}</td></tr>`;
+                    modernThick += `<tr><td>${d.dia}</td><td>${d.b}</td><td>${d.ct !== 'NaN' ? d.ct : ''}</td></tr>`;
+                } else { thickHtml += `<tr><td>&nbsp;</td><td></td><td></td></tr>`; }
+            }
+
+            let printedDiamsForBlank = new Set(); let bCount = 0;
+            sortedDiams.forEach(d => {
+                if(!printedDiamsForBlank.has(d.dia) && bCount < 5) {
+                    blankHtml += `<tr><td>${d.dia}</td><td>${d.inset !== 'NaN' ? parseFloat(d.inset).toFixed(2) : ''}</td><td>${d.drop !== 'NaN' ? parseFloat(d.drop).toFixed(2) : ''}</td><td>17.00</td></tr>`;
+                    printedDiamsForBlank.add(d.dia); bCount++;
+                }
+            });
+            for(let j=bCount; j<7; j++) blankHtml += `<tr><td>&nbsp;</td><td></td><td></td><td></td></tr>`;
+        }
         
         let modSurfBody = document.getElementById('mod-surf-tbody'); if(modSurfBody) modSurfBody.innerHTML = surfHtml;
         let modThickBody = document.getElementById('mod-thick-tbody'); if(modThickBody) modThickBody.innerHTML = thickHtml;
-        let modBlankBody = document.getElementById('mod-blank-tbody'); if(modBlankBody) modBlankBody.innerHTML = blankHtml;
+        let modBlankBody = document.getElementById('mod-blank-tbody'); if(modBlankBody && !isFin) modBlankBody.innerHTML = blankHtml;
         let mModSurf = document.getElementById('mod-modern-surf'); if(mModSurf) mModSurf.innerHTML = modernSurf;
         let mModThick = document.getElementById('mod-modern-thick'); if(mModThick) mModThick.innerHTML = modernThick;
 
-        let tabColorArr = viewItem.master.tabColorArr;
-        if(tabColorArr.length === 0) tabColorArr.push('Clear');
+        let tabColorArr = Array.from(lens.Colors || []);
+        if(tabColorArr.length === 0) tabColorArr.push('NONE');
         
-        let rawCoatArr = viewItem.master.coatArr;
+        let rawCoatArr = Array.from(lens.Coatings || []);
+        if(rawCoatArr.length === 0) rawCoatArr.push('UNCOATED');
         let modalCoats = [];
         rawCoatArr.forEach(c => {
             if(c.includes('/')) { modalCoats.push(...c.split('/').map(x => x.trim())); }
@@ -2156,12 +2346,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         modalCoats = Array.from(new Set(modalCoats));
         
         let colorsHtml = '', coatsHtml = '';
-        let maxRows = Math.max(25, tabColorArr.length, modalCoats.length);
+        let maxRows = 16;
         
         for(let j=0; j<maxRows; j++) {
-            let cText = j < tabColorArr.length ? tabColorArr[j] : '&nbsp;';
+            let cText = j < tabColorArr.length ? tabColorArr[j].toUpperCase() : '&nbsp;';
             colorsHtml += `<tr><td>${cText}</td><td>&nbsp;</td></tr>`;
-            let coatText = j < modalCoats.length ? modalCoats[j] : '&nbsp;';
+            let coatText = j < modalCoats.length ? modalCoats[j].toUpperCase() : '&nbsp;';
             coatsHtml += `<tr><td>${coatText}</td><td>&nbsp;</td></tr>`;
         }
         let modColBody = document.getElementById('mod-col-tbody'); if(modColBody) modColBody.innerHTML = colorsHtml;
@@ -2172,77 +2362,108 @@ document.addEventListener('DOMContentLoaded', async () => {
         if(modalOverlay) modalOverlay.classList.remove('hidden');
     };
 
-    window.closeModal = function() { document.getElementById('tech-modal').classList.add('hidden'); };
+    window.closeModal = function() { 
+        const m = document.getElementById('tech-modal');
+        if(m) m.classList.add('hidden'); 
+    };
+
     const modalOverlay = document.getElementById('tech-modal');
-    if(modalOverlay) modalOverlay.addEventListener('click', (e) => {
-        if(e.target === modalOverlay) closeModal();
-    });
+    if(modalOverlay) {
+        modalOverlay.addEventListener('click', (e) => {
+            if(e.target === modalOverlay) closeModal();
+        });
+    }
+
 });
-            """.strip())
+        """.strip().replace("{{DEFAULT_FONT_ID}}", default_font_id))
 
     root_path = os.path.join(template_dir, 'root_template.html')
     with open(root_path, 'w', encoding='utf-8') as f:
         f.write("""
 <!DOCTYPE html>
-<html lang="en" class="modern-mode">
+<html lang="en" data-theme="tokyo-storm" data-modal-layout="modern" data-font="{{DEFAULT_FONT_ID}}">
 <head>
     <meta charset="UTF-8">
     <title>VCA Vault Hub</title>
     <link rel="stylesheet" href="data/styles.css">
-    <script>if(localStorage.getItem('ui-theme') === 'classic') document.documentElement.className = 'classic-mode';</script>
+    <script>
+        let savedTheme = localStorage.getItem('ui-theme') || 'tokyo-night';
+        let savedLayout = localStorage.getItem('ui-layout') || 'modern';
+        let savedFont = localStorage.getItem('ui-font') || '{{DEFAULT_FONT_ID}}';
+        let savedFs = localStorage.getItem('ui-fontsize') || '15';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        document.documentElement.setAttribute('data-modal-layout', savedLayout);
+        document.documentElement.setAttribute('data-font', savedFont);
+        document.documentElement.style.setProperty('--table-fs', savedFs + 'px');
+        document.documentElement.style.setProperty('--table-th-fs', (parseInt(savedFs) - 3) + 'px');
+    </script>
 </head>
 <body>
     <header class="top-bar">
-        <div class="top-bar-left"><span class="theme-label" style="font-family: 'Ubuntu Sans Nerd', sans-serif;">VCA2HTML-TUI v4.0.0</span></div>
-        <div class="top-bar-center">MASTER LENS DATABASE BY MANUFACTURERS</div>
+        <div class="top-bar-left">
+            <span class="brand-title">VCA2HTML-TUI</span>
+            <span class="brand-sub">ENGINE v{{VERSION}}</span>
+        </div>
+        <div class="top-bar-center">
+            MASTER LENS DATABASE
+        </div>
         <div class="top-bar-right">
-            <span class="theme-label" style="font-size: 18px;">󰖨</span>
-            <label class="theme-switch">
-                <input type="checkbox" id="theme-toggle-cb" checked>
-                <span class="slider"></span>
-            </label>
-            <span class="theme-label" style="font-size: 18px;">󰖔</span>
+            <div class="dropdown-row">
+                <span class="dd-icon" title="Modal Layout">󰒓</span>
+                <select id="layout-select" class="header-dropdown" style="width: 100px;">
+                    <option value="legacy">LMS</option>
+                    <option value="modern">Grid</option>
+                </select>
+                <span class="dd-icon" title="Color Theme">󰔎</span>
+                <select id="theme-select" class="header-dropdown" style="width: 220px;">
+                    {{THEME_OPTIONS_HTML}}
+                </select>
+            </div>
+            <div class="dropdown-row">
+                <span class="dd-icon" title="Font Size">󰚺</span>
+                <select id="fontsize-select" class="header-dropdown" style="width: 100px;">
+                    <option value="12">12px</option>
+                    <option value="13">13px</option>
+                    <option value="14">14px</option>
+                    <option value="15">15px</option>
+                    <option value="16">16px</option>
+                    <option value="18">18px</option>
+                    <option value="20">20px</option>
+                    <option value="22">22px</option>
+                    <option value="24">24px</option>
+                </select>
+                <span class="dd-icon" title="Font"></span>
+                <select id="font-select" class="header-dropdown" style="width: 220px;">
+                    {{FONT_OPTIONS_HTML}}
+                </select>
+            </div>
         </div>
     </header>
-    <main class="hub-container">
-        <h2>Manufacturer Vaults</h2>
-        <ul class="mfg-list">{{MFG_LIST}}</ul>
-    </main>
-    <script src="data/app.js"></script>
-</body></html>
-        """.strip())
-
-    mfg_path = os.path.join(template_dir, 'mfg_template.html')
-    with open(mfg_path, 'w', encoding='utf-8') as f:
-        f.write("""
-<!DOCTYPE html>
-<html lang="en" class="modern-mode">
-<head>
-    <meta charset="UTF-8">
-    <title>{{CURRENT_MFG}} Data Grid</title>
-    <link rel="stylesheet" href="../data/styles.css">
-    <script>if(localStorage.getItem('ui-theme') === 'classic') document.documentElement.className = 'classic-mode';</script>
-</head>
-<body>
-    <header class="top-bar">
-        <div class="top-bar-left"><a href="../index.html" class="nav-toggle" style="font-family: 'Ubuntu Sans Nerd', sans-serif;">󰎹 « Back to Vault</a></div>
-        <div class="top-bar-center">MASTER DATABASE FOR {{CURRENT_MFG}}</div>
-        <div class="top-bar-right">
-            <span class="theme-label" style="font-size: 18px;">󰖨</span>
-            <label class="theme-switch">
-                <input type="checkbox" id="theme-toggle-cb" checked>
-                <span class="slider"></span>
-            </label>
-            <span class="theme-label" style="font-size: 18px;">󰖔</span>
+    
+    <div class="stats-bar" id="stats-container">
+        <div style="display: flex; width: 100%; align-items: center; justify-content: flex-start; margin-bottom: 5px;">
+            <a href="#" class="mfg-pill active" id="btn-all-lenses" style="padding: 10px 28px; font-size: 16px;" data-group="mfg" data-val="all">ALL LENSES</a>
         </div>
-    </header>
+        <div class="filter-row" id="pill-row-mfg" style="justify-content: center; margin-bottom: 15px; border-bottom: 1px solid var(--border-dark); padding-bottom: 15px;"></div>
+        <div class="filter-row row-type" id="pill-row-type"></div>
+        <div class="filter-row row-mat" id="pill-row-mat"></div>
+        <div class="filter-row row-tech" id="pill-row-tech"></div>
+        <div class="filter-row row-coat" id="pill-row-coat"></div>
+        <div class="filter-row row-basecolor" id="pill-row-basecolor"></div>
+        <div class="filter-row row-exactcolor" id="pill-row-exactcolor"></div>
+        
+        <div class="search-container">
+            <input type="text" id="text-search-box" class="search-box" placeholder="Search Tags, Description, ID...">
+        </div>
+    </div>
+    
     <main id="table-container"></main>
     
     <div class="modal-overlay hidden" id="tech-modal">
         <div class="dialog-box outset-border">
             <div class="title-bar">
                 <div class="title-bar-left"><div class="faux-icon">VLP</div><span class="title-text">Lens Blank Specifications</span></div>
-                <div class="title-bar-right"><span class="version-text">v4.0.0</span><button class="title-bar-close" onclick="closeModal()">X</button></div>
+                <div class="title-bar-right"><span class="version-text">v{{VERSION}}</span><button class="title-bar-close" onclick="closeModal()">X</button></div>
             </div>
             <div class="tabs-container">
                 <div class="tab-buttons">
@@ -2254,51 +2475,43 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div class="dialog-content-wrapper">
                 <div id="tab-content-1" class="tab-pane active">
                     <div class="grid-3-col">
-                        <div class="col-flex">
-                            <div style="margin-top: 5px;">
-                                <div class="form-row"><label>Unique ID Code</label><input type="text" id="mod-id" class="inset-border fixed-width" style="width: 75px;" readonly></div>
-                                <div class="form-row"><label>Manufacturer</label><input type="text" id="mod-mfg" class="inset-border fixed-width" style="width: 90px;"></div>
-                                <div class="form-row"><label>Brief Description</label><input type="text" id="mod-brief" class="inset-border fixed-width" style="width: 150px;"></div>
-                                <div class="form-row"><label>Long Description</label><div style="position: relative; flex-grow: 1; height: 19px;"><input type="text" id="mod-long" class="inset-border" style="position: absolute; left: 0; top: 0; width: 250px; z-index: 10;"></div></div>
-                                <div class="form-row"><label>Lens Type Code</label><select class="inset-border uniform-dropdown-width" id="mod-type-code" onchange="toggleProgressive()">
-                                    <option>0. None</option><option>1. Single Vision</option><option>2. Flat Top Bif</option><option>3. Round Bif</option><option>4. Exec Bif</option><option>5. Exec Bif</option><option>6. Progressive</option><option>7. Blend Seg</option><option>8. FT Dble Seg</option><option>9. Exec Dble Seg</option><option>10. FT Trif</option><option>11. Exec Trif</option><option>12. ED Trif</option><option>13. Other SV</option><option>14. Asph SV</option><option>15. Asph FT</option><option>16. Asph Rnd</option><option>17. Asph Ultex</option><option>18. Other Multi-focal</option>
-                                </select></div>
-                                <div class="form-row" id="progressive-type-row" style="visibility:hidden;"><label>Progressive Type</label><select class="inset-border uniform-dropdown-width"><option>Generic</option><option>Type 1</option><option selected>Type 2</option></select></div>
-                                <div class="form-row"><label>Seg Width</label><input type="text" id="mod-seg-width" class="inset-border fixed-width" style="width: 32px;"></div>
-                                <div class="form-row"><label>Material Name</label><input type="text" id="mod-mat-name" class="inset-border uniform-dropdown-width"></div>
-                                <div class="form-row"><label>Material Category</label><select class="inset-border uniform-dropdown-width" id="mod-mat-cat"></select></div>
-                                <div class="form-row"><label>Material Index</label><input type="text" id="mod-idx" class="inset-border fixed-width" style="width: 65px;"></div>
-                                <div class="form-row"><label>Rights and Lefts?</label><select class="inset-border fixed-width" id="mod-rl-sel" style="width: 65px;"></select></div>
-                                <div class="form-row"><label>Vertical OC Position</label><select class="inset-border uniform-dropdown-width"><option selected>Automatic</option><option>MM Above</option><option>MM Below</option><option>Even with GC</option></select></div>
-                                <div class="form-row"><label>Lenticular Field Size</label><input type="text" id="mod-bowl-dia" class="inset-border fixed-width" style="width: 32px;"></div>
-                            </div>
-                            <div>
-                                <div class="form-row"><label>Minus Center Thick</label><input type="text" id="mod-min-ct" class="inset-border fixed-width" style="width: 65px;"></div>
-                                <div class="form-row" style="align-items: flex-start; margin-bottom: 0;"><label style="line-height: normal; width: 135px;">True Curve<br>Reference Index if<br>not standard 1.530</label><input type="text" class="inset-border fixed-width" value="1.530" style="width: 65px; margin-top: 14px;"></div>
-                            </div>
+                        <div style="margin-top: 5px;">
+                            <div class="form-row"><label>Unique ID Code</label><input type="text" id="mod-id" class="inset-border" readonly></div>
+                            <div class="form-row"><label>Manufacturer</label><input type="text" id="mod-mfg" class="inset-border fixed-width" style="width: 100px;"></div>
+                            <div class="form-row"><label>Brief Description</label><input type="text" id="mod-brief" class="inset-border fixed-width" style="width: 150px;"></div>
+                            <div class="form-row"><label>Long Description</label><div style="position: relative; flex-grow: 1; height: 19px;"><input type="text" id="mod-long" class="inset-border" style="position: absolute; left: 0; top: 0; width: 275px; z-index: 10;"></div></div>
+                            <div class="form-row"><label>Lens Type Code</label><select class="inset-border" id="lens-type-code" onchange="toggleProgressive()">
+                                <option>0. None</option><option>1. Single Vision</option><option>2. Flat Top Bif</option><option>3. Round Bif</option><option>4. Exec Bif</option><option>5. Exec Bif</option><option>6. Progressive</option><option>7. Blend Seg</option><option>8. FT Dble Seg</option><option>9. Exec Dble Seg</option><option>10. FT Trif</option><option>11. Exec Trif</option><option>12. ED Trif</option><option>13. Other SV</option><option>14. Asph SV</option><option>15. Asph FT</option><option>16. Asph Rnd</option><option>17. Asph Ultex</option><option>18. Other Multi-focal</option>
+                            </select></div>
+                            <div class="form-row" id="progressive-type-row" style="display:none;"><label>Progressive Type</label><select class="inset-border"><option>Generic</option><option selected>Type 2</option></select></div>
+                            <div class="form-row"><label>Seg Width</label><input type="text" id="mod-seg-width" class="inset-border fixed-width" style="width: 25px;"></div>
+                            <div class="form-row"><label>Material Name</label><input type="text" id="mod-mat-name" class="inset-border"></div>
+                            <div class="form-row"><label>Material Category</label><select class="inset-border" id="mod-mat-cat"></select></div>
+                            <div class="form-row"><label>Material Index</label><input type="text" id="mod-idx" class="inset-border fixed-width" style="width: 65px;"></div>
+                            <div class="form-row"><label>Rights and Lefts?</label><select class="inset-border fixed-width" id="mod-rl-sel" style="width: 65px;"></select></div>
+                            <div class="form-row"><label>Vertical OC Position</label><select class="inset-border"><option selected>Automatic</option><option>MM Above</option><option>MM Below</option><option>Even with GC</option></select></div>
+                            <div class="form-row"><label>Lenticular Field Size</label><input type="text" id="mod-bowl-dia" class="inset-border fixed-width" style="width: 25px;"></div>
+                            <div class="form-row" style="margin-top: 36px;"><label>Minus Center Thick</label><input type="text" id="mod-min-ct" class="inset-border fixed-width" style="width: 65px;"></div>
+                            <div class="form-row" style="margin-top: 14px;"><label style="line-height: 1.2; width: 110px;">True Curve<br>Reference Index if<br>not standard 1.530</label><input type="text" class="inset-border fixed-width" value="1.530" style="width: 65px;"></div>
                         </div>
-                        <div class="col-flex">
-                            <div style="display: flex; justify-content: flex-end;">
+                        <div>
+                            <div style="display: flex; justify-content: flex-end; margin-bottom: 24px;">
                                 <table style="border-collapse: collapse;"><tr><td style="text-align: left; padding-bottom: 4px; padding-right: 5px;">Preferred Supplier?</td><td style="padding-bottom: 4px;"><select class="inset-border" style="width: 45px;"><option selected>No</option><option>Yes</option></select></td></tr><tr><td style="text-align: left; padding-bottom: 4px; padding-right: 5px;">On-Line Locally?</td><td style="padding-bottom: 4px;"><select class="inset-border" style="width: 45px;"><option selected>No</option><option>Yes</option></select></td></tr><tr><td style="text-align: left; padding-bottom: 4px; padding-right: 5px;">On-Line Remotely?</td><td style="padding-bottom: 4px;"><select class="inset-border" style="width: 45px;"><option selected>No</option><option>Yes</option></select></td></tr></table>
                             </div>
-                            <div class="col-center" style="flex-grow: 0;">
-                                <table class="classic-table grid-lines" style="width: 220px;"><thead><tr><th>Marked<br>Base</th><th>True<br>Curve</th><th>Asph<br>Factor</th><th>Minus<br>Back</th></tr></thead><tbody id="mod-surf-tbody"></tbody></table>
-                            </div>
-                            <div style="text-align: center;"><div style="margin-bottom: 3px;">Product OPC Range</div><input type="text" id="mod-opc-right" class="inset-border fixed-width" style="width: 80px;"><span style="margin: 0 4px;">To</span><input type="text" id="mod-opc-left" class="inset-border fixed-width" style="width: 80px;"></div>
+                            <table class="classic-table grid-lines" style="width: 195px; margin: 22px auto 4px auto;"><thead><tr><th>Marked<br>Base</th><th>True<br>Curve</th><th>Asph<br>Factor</th><th>Minus<br>Back</th></tr></thead><tbody id="mod-surf-tbody"></tbody></table>
+                            <div style="text-align: center; margin-top: 13px;"><div style="margin-bottom: 3px;">Product OPC Range</div><input type="text" id="mod-opc-right" class="inset-border fixed-width" style="width: 80px;"><span style="margin: 0 4px;">To</span><input type="text" id="mod-opc-left" class="inset-border fixed-width" style="width: 80px;"></div>
                         </div>
-                        <div class="col-flex">
-                            <div>
-                                <table class="classic-table grid-lines" style="width: calc(100% - 40px); margin: 0 auto 12px auto;"><thead><tr><th>Blank<br>Size</th><th>Inset</th><th>Drop</th><th>Reading<br>Level</th></tr></thead><tbody id="mod-blank-tbody"></tbody></table>
-                                <fieldset style="padding-bottom: 10px;"><legend>Custom Settings</legend><table style="width: 100%; border-collapse: collapse; margin-bottom: 8px;"><tr><td style="width: 135px; padding-bottom: 4px; text-align: left;">Fining Allowance:</td><td style="width: 35px; padding-bottom: 4px;"><input type="text" class="inset-border fixed-width" style="width: 30px;"></td><td style="padding-bottom: 4px; text-align: left;">&nbsp;&nbsp;mm</td></tr><tr><td style="padding-bottom: 4px; text-align: left;">Global Power Adjust</td><td style="padding-bottom: 4px;"><input type="text" class="inset-border fixed-width" style="width: 30px;"></td><td style="padding-bottom: 4px; text-align: left;">&nbsp;&nbsp;diopters</td></tr><tr><td style="padding-bottom: 4px; text-align: left;">Lens Flex Power Adjust</td><td style="padding-bottom: 4px;"><input type="text" class="inset-border fixed-width" style="width: 30px;"></td><td style="padding-bottom: 4px; text-align: left;">&nbsp;&nbsp;diopters</td></tr></table><div class="inset-border" style="background: var(--win-bg); padding: 4px; margin-top: 4px; line-height: 1.3;">Note: Enter a special fining allowance only if this lens requires a different value than the .300 mm allowance currently specified for CR-39 in the Lab Setup Menu.</div></fieldset>
-                            </div>
-                            <div style="text-align: center;"><button class="win-btn outset-border" style="width: 185px; padding: 4px 0;">Click Here to Set Prices</button></div>
+                        <div>
+                            <table class="classic-table grid-lines" style="width: calc(100% - 40px); margin: 0 auto 12px auto;"><thead><tr><th>Blank<br>Size</th><th>Inset</th><th>Drop</th><th>Reading<br>Level</th></tr></thead><tbody id="mod-blank-tbody"></tbody></table>
+                            <fieldset><legend>Custom Settings</legend><table style="width: 100%; border-collapse: collapse; margin-bottom: 8px;"><tr><td style="width: 135px; padding-bottom: 4px; text-align: left;">Fining Allowance:</td><td style="width: 35px; padding-bottom: 4px;"><input type="text" class="inset-border fixed-width" style="width: 30px;"></td><td style="padding-bottom: 4px; text-align: left;">&nbsp;&nbsp;mm</td></tr><tr><td style="padding-bottom: 4px; text-align: left;">Global Power Adjust</td><td style="padding-bottom: 4px;"><input type="text" class="inset-border fixed-width" style="width: 30px;"></td><td style="padding-bottom: 4px; text-align: left;">&nbsp;&nbsp;diopters</td></tr><tr><td style="padding-bottom: 4px; text-align: left;">Lens Flex Power Adjust</td><td style="padding-bottom: 4px;"><input type="text" class="inset-border fixed-width" style="width: 30px;"></td><td style="padding-bottom: 4px; text-align: left;">&nbsp;&nbsp;diopters</td></tr></table><div class="inset-border" style="background: #ece9d8; padding: 4px; margin-top: 4px; font-size: 10px; line-height: 1.3;">Note: Enter a special fining allowance only if this lens requires a different value than the .300 mm allowance currently specified for CR-39 in the Lab Setup Menu.</div></fieldset>
+                            <div style="text-align: center; margin-top: 26px;"><button class="win-btn outset-border" style="width: 150px; padding: 4px 0;">Click Here to Set Prices</button></div>
                         </div>
                     </div>
                 </div>
-                <div id="tab-content-2" class="tab-pane"><div style="height: calc(100% - 10px);" class="grid-2-col"><div><table class="classic-table grid-lines" style="width: 100%;"><thead><tr><th style="width: 60%;">Factory Colors</th><th style="width: 40%;">Pair Price</th></tr></thead><tbody id="mod-col-tbody"></tbody></table></div><div><table class="classic-table grid-lines" style="width: 100%;"><thead><tr><th style="width: 60%;">Factory Coatings</th><th style="width: 40%;">Pair Price</th></tr></thead><tbody id="mod-coat-tbody"></tbody></table></div></div></div>
-                <div id="tab-content-3" class="tab-pane"><div style="height: calc(100% - 10px);" class="center-col"><div style="width: 500px;"><table class="classic-table grid-lines" style="width: 100%;"><thead><tr><td colspan="3" class="table-title">Blank Thickness Table</td></tr><tr><th style="width: 30%;">Diameter</th><th style="width: 35%;">Base</th><th style="width: 35%;">Center Thickness</th></tr></thead><tbody id="mod-thick-tbody"></tbody></table><div style="text-align: center; margin-top: 15px; color: var(--win-shadow);">Left click any center thickness value you want to change.</div></div></div></div>
+                <div id="tab-content-2" class="tab-pane"><div class="grid-2-col" style="height: calc(100% - 10px);"><div><table class="classic-table grid-lines" style="width: 100%; height: 100%;"><thead><tr><th style="width: 60%;">Factory Colors</th><th style="width: 40%;">Pair Price</th></tr></thead><tbody id="mod-col-tbody"></tbody></table></div><div><table class="classic-table grid-lines" style="width: 100%; height: 100%;"><thead><tr><th style="width: 60%;">Factory Coatings</th><th style="width: 40%;">Pair Price</th></tr></thead><tbody id="mod-coat-tbody"></tbody></table></div></div></div>
+                <div id="tab-content-3" class="tab-pane"><div class="center-col" style="height: calc(100% - 10px);"><div style="width: 500px;"><table class="classic-table grid-lines" style="width: 100%;"><thead><tr><td colspan="3" class="table-title">Blank Thickness Table</td></tr><tr><th style="width: 30%;">Diameter</th><th style="width: 35%;">Base</th><th style="width: 35%;">Center Thickness</th></tr></thead><tbody id="mod-thick-tbody"></tbody></table><div style="text-align: center; margin-top: 15px; font-size: 11px; color: #808080;">Left click any center thickness value you want to change.</div></div></div></div>
             </div>
-            <div class="footer"><button class="win-btn outset-border">Print This Form</button><div style="font-weight: bold;">Warning: Incorrect data in this form will cause calculations errors!</div><div style="display: flex; gap: 15px;"><button class="win-btn outset-border" onclick="closeModal()">Cancel</button><button class="win-btn outset-border" onclick="closeModal()">Save</button></div></div>
+            <div class="footer"><button class="win-btn outset-border">Print This Form</button><div style="font-weight: bold;">Warning: Incorrect data in this form will cause calculations errors!</div><div><button class="win-btn outset-border" onclick="closeModal()">Cancel</button><button class="win-btn outset-border" onclick="closeModal()">Save</button></div></div>
         </div>
 
         <div class="modern-box">
@@ -2309,57 +2522,67 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </div>
                 <button class="modern-close" onclick="closeModal()">✖</button>
             </div>
-            <div class="modern-cards">
-                <div class="mod-card"><div class="mod-card-label">Filter & Coating</div><div class="mod-card-val" id="mod-modern-filt">Clear / HC</div></div>
-                <div class="mod-card"><div class="mod-card-label">Material & Index</div><div class="mod-card-val" id="mod-modern-mat">Poly / 1.590</div></div>
-                <div class="mod-card"><div class="mod-card-label">Lens Type</div><div class="mod-card-val" id="mod-modern-type">Single Vision</div></div>
+            <div class="bento-grid">
+                <div class="bento-card" style="border-top-color: var(--col-mat);">
+                    <div class="b-title" style="color:var(--col-mat)">Identity</div>
+                    <div class="b-row"><span>MFG:</span> <b id="mod-bento-mfg"></b></div>
+                    <div class="b-row"><span>Material:</span> <b id="mod-bento-mat"></b></div>
+                    <div class="b-row"><span>Index:</span> <b id="mod-bento-idx"></b></div>
+                </div>
+                <div class="bento-card" style="border-top-color: var(--col-idx);">
+                    <div class="b-title" style="color:var(--col-idx)">Geometry</div>
+                    <div class="b-row"><span>Type:</span> <b id="mod-bento-type"></b></div>
+                    <div class="b-row"><span>Seg Width:</span> <b id="mod-bento-seg"></b></div>
+                    <div class="b-row"><span>Inset / Drop:</span> <b id="mod-bento-inset"></b></div>
+                </div>
+                <div class="bento-card" style="border-top-color: var(--col-coat);">
+                    <div class="b-title" style="color:var(--col-coat)">Lab Settings</div>
+                    <div class="b-row"><span>True Curve Ref:</span> <b>1.530</b></div>
+                    <div class="b-row"><span>PRP (Out/Up):</span> <b id="mod-bento-prp"></b></div>
+                    <div class="b-row"><span>Fining Allowance:</span> <b>-</b></div>
+                </div>
+                <div class="bento-card" style="border-top-color: var(--col-filt);">
+                    <div class="b-title" style="color:var(--col-filt)">OPC Codes</div>
+                    <div class="b-row"><span>Range:</span> <b id="mod-bento-opc"></b></div>
+                </div>
             </div>
             <div class="modern-grids">
                 <div class="modern-table-wrap">
-                    <table><thead><tr><th>Base</th><th>Front TC</th><th>Asph Factor</th><th>Back TC</th></tr></thead><tbody id="mod-modern-surf"></tbody></table>
+                    <table id="mod-modern-surf-table"><thead id="mod-modern-surf-thead"><tr><th style="background:var(--col-base);">Base</th><th style="background:var(--col-tfc);">Front TC</th><th style="background:var(--win-highlight);">Asph</th><th style="background:var(--col-tbc);">Back TC</th></tr></thead><tbody id="mod-modern-surf"></tbody></table>
                 </div>
                 <div class="modern-table-wrap">
-                    <table><thead><tr><th>Diameter</th><th>Base</th><th>CT</th></tr></thead><tbody id="mod-modern-thick"></tbody></table>
+                    <table id="mod-modern-thick-table"><thead id="mod-modern-thick-thead"><tr><th style="background:var(--col-diam);">Diameter</th><th style="background:var(--col-base);">Base</th><th style="background:var(--col-idx);">CT</th></tr></thead><tbody id="mod-modern-thick"></tbody></table>
                 </div>
             </div>
         </div>
     </div>
     
-    <script src="../data/db/security_manifest.js"></script>
-    <script src="../data/db/{{CURRENT_MFG}}_shard.js"></script>
-    <script>const CURRENT_MFG = "{{CURRENT_MFG}}";</script>
-    <script src="../data/app.js"></script>
+    <script src="data/db/manifest.js"></script>
+    {{SHARD_SCRIPTS}}
+    <script src="data/app.js"></script>
 </body></html>
-        """.strip())
+        """.strip().replace("{{THEME_OPTIONS_HTML}}", theme_options_html)
+           .replace("{{FONT_OPTIONS_HTML}}", font_options_html)
+           .replace("{{DEFAULT_FONT_ID}}", default_font_id))
     
     return template_dir
 
 def execute_html_generation():
     global global_mode, scroll_offset
-    from datetime import datetime, timezone
-    import shutil
-    import re
-    import base64
-    import hashlib
-    import json
-    import stat
-    import pandas as pd
+    global_version = str(globals().get('VERSION', '4.0.0')).replace('v', '')
     
-    # 1. STANDARDIZED SKELETON SETUP
     sys.stdout.write(f"{C_BG}\033[2J\033[H")
     term_w, term_h = get_term_size()
     draw_top_bar()
     for r in range(2, term_h - 1): draw_frame_line("", row=r)
     draw_frame_line(f"{C_SIZE}STATIC SITE GENERATOR: HTML DEPLOYMENT{RESET}", row=2, align="center")
-    
-    draw_universal_footer() # THE FLOOR SEAL
+    draw_status_bar()
     
     if not os.path.exists(DB_FILE):
         draw_frame_line(f"{C_ALERT}Error: Master database not found.{RESET}", 6, align="center")
-        getch()
+        draw_universal_footer() 
         global_mode = "MAIN MENU"; return
         
-    # 2. INITIALIZE VIEWPORT
     viewport_logs.clear()
     scroll_offset = 0
     log_task(format_log("SYSTEM", "Awaiting SSG deployment authorization...", C_TITLE), "RAW")
@@ -2367,12 +2590,11 @@ def execute_html_generation():
     
     ans = draw_modal("DEPLOYMENT AUTHORIZATION", "Type DEPLOY to generate web shards:", is_password=False)
     
-    # Repaint Skeleton after Modal
     sys.stdout.write(f"{C_BG}\033[2J\033[H")
     draw_top_bar()
     for r in range(2, term_h - 1): draw_frame_line("", row=r)
     draw_frame_line(f"{C_SIZE}STATIC SITE GENERATOR: HTML DEPLOYMENT{RESET}", row=2, align="center")
-    draw_universal_footer()
+    draw_status_bar()
     
     if ans != "DEPLOY": global_mode = "MAIN MENU"; return
 
@@ -2386,10 +2608,70 @@ def execute_html_generation():
         os.makedirs(HTML_DATA_DIR, exist_ok=True)
         os.makedirs(HTML_DB_DIR, exist_ok=True)
         
-        log_task(format_log("DEPLOYMENT", "Bootstrapping Web Templates & Assets...", C_TITLE), "RAW")
-        template_dir = bootstrap_web_templates()
+        themes_dir = os.path.join(HTML_DATA_DIR, 'themes')
+        os.makedirs(themes_dir, exist_ok=True)
         
-        # ASSET ROUTING (Leaving existing fonts in /HTML/data/ alone)
+        if not os.listdir(themes_dir):
+            default_themes = {
+                "tokyo-storm.json": { "theme_name": "Tokyo Storm", "ui_colors": { "--bg-main": "#24283b", "--bg-table": "#1f2335", "--text-main": "#c0caf5", "--win-bg": "#24283b", "--win-highlight": "#414868", "--win-shadow": "#1a1b26", "--win-dark-shadow": "#15161e", "--win-title": "#24283b", "--win-title-fade": "#1f2335", "--win-text": "#c0caf5", "--win-title-text": "#7aa2f7", "--border-light": "#414868", "--border-dark": "#1a1b26", "--accent": "#3d59a1", "--row-even": "#24283b", "--row-odd": "#1f2335" }, "data_colors": { "--col-desc": "#c0caf5", "--col-filt": "#9ece6a", "--col-coat": "#e0af68", "--col-mat": "#7dcfff", "--col-idx": "#bb9af7", "--col-diam": "#c0caf5", "--col-base": "#e0af68", "--col-tfc": "#c0caf5", "--col-tbc": "#7aa2f7", "--col-sag": "#f7768e" } },
+                "tokyo-day.json": { "theme_name": "Tokyo Day", "ui_colors": { "--bg-main": "#f0f2f5", "--bg-table": "#ffffff", "--text-main": "#1a1b26", "--win-bg": "#f0f2f5", "--win-highlight": "#e1e4ed", "--win-shadow": "#a1a6c5", "--win-dark-shadow": "#8086a8", "--win-title": "#d0d5e3", "--win-title-fade": "#ffffff", "--win-text": "#1a1b26", "--win-title-text": "#3760bf", "--border-light": "#c0c5ce", "--border-dark": "#a1a6c5", "--accent": "#3760bf", "--row-even": "#f8f9fa", "--row-odd": "#ffffff" }, "data_colors": { "--col-desc": "#3760bf", "--col-filt": "#587539", "--col-coat": "#8c6c3e", "--col-mat": "#007197", "--col-idx": "#9854f1", "--col-diam": "#3760bf", "--col-base": "#8c6c3e", "--col-tfc": "#3760bf", "--col-tbc": "#2e7de9", "--col-sag": "#f52a65" } },
+                "tokyo-night.json": { "theme_name": "Tokyo Night", "ui_colors": { "--bg-main": "#1a1b26", "--bg-table": "#16161e", "--text-main": "#c0caf5", "--win-bg": "#1a1b26", "--win-highlight": "#414868", "--win-shadow": "#15161e", "--win-dark-shadow": "#101014", "--win-title": "#1a1b26", "--win-title-fade": "#16161e", "--win-text": "#c0caf5", "--win-title-text": "#7aa2f7", "--border-light": "#292e42", "--border-dark": "#15161e", "--accent": "#3d59a1", "--row-even": "#1a1b26", "--row-odd": "#16161e" }, "data_colors": { "--col-desc": "#c0caf5", "--col-filt": "#9ece6a", "--col-coat": "#e0af68", "--col-mat": "#7dcfff", "--col-idx": "#bb9af7", "--col-diam": "#c0caf5", "--col-base": "#e0af68", "--col-tfc": "#c0caf5", "--col-tbc": "#7aa2f7", "--col-sag": "#f7768e" } },
+                "tokyo-moon.json": { "theme_name": "Tokyo Moon", "ui_colors": { "--bg-main": "#222436", "--bg-table": "#1e2030", "--text-main": "#c8d3f5", "--win-bg": "#222436", "--win-highlight": "#444a73", "--win-shadow": "#191a2a", "--win-dark-shadow": "#131421", "--win-title": "#222436", "--win-title-fade": "#1e2030", "--win-text": "#c8d3f5", "--win-title-text": "#82aaff", "--border-light": "#2f334d", "--border-dark": "#1e2030", "--accent": "#3e68d7", "--row-even": "#222436", "--row-odd": "#1e2030" }, "data_colors": { "--col-desc": "#c8d3f5", "--col-filt": "#c3e88d", "--col-coat": "#ffc777", "--col-mat": "#86e1fc", "--col-idx": "#fca7ea", "--col-diam": "#c8d3f5", "--col-base": "#ffc777", "--col-tfc": "#c8d3f5", "--col-tbc": "#82aaff", "--col-sag": "#ff757f" } }
+            }
+            for fn, payload in default_themes.items():
+                with open(os.path.join(themes_dir, fn), 'w', encoding='utf-8') as f:
+                    json.dump(payload, f, indent=4)
+                    
+        theme_css_block = ""
+        theme_options_html = ""
+        
+        for file in sorted(os.listdir(themes_dir)):
+            if not file.endswith('.json'): continue
+            theme_key = file.replace('.json', '')
+            try:
+                with open(os.path.join(themes_dir, file), 'r', encoding='utf-8') as f:
+                    theme_data = json.load(f)
+                
+                t_name = theme_data.get("theme_name", theme_key)
+                ui_cols = theme_data.get("ui_colors", {})
+                data_cols = theme_data.get("data_colors", {})
+                
+                css_lines = []
+                for k, v in ui_cols.items(): css_lines.append(f"{k}: {v};")
+                for k, v in data_cols.items(): css_lines.append(f"{k}: {v};")
+                
+                theme_css_block += f"html[data-theme=\"{theme_key}\"] {{\n    " + " ".join(css_lines) + "\n}\n"
+                theme_options_html += f'<option value="{theme_key}">{t_name}</option>\n'
+                
+            except Exception as e:
+                log_task(format_log("THEME_ERR", f"Failed to parse {file}: {e}", C_ALERT), "RAW")
+
+        font_css_block = ""
+        font_options_html = ""
+        default_font_id = "sans-serif"
+        
+        try: fonts_found = [f for f in os.listdir(HTML_FONT_DIR) if f.lower().endswith(('.ttf', '.woff', '.woff2'))]
+        except: fonts_found = []
+        
+        if fonts_found:
+            default_font_id = os.path.splitext(fonts_found[0])[0]
+            for f in sorted(fonts_found):
+                font_id = os.path.splitext(f)[0]
+                if "UbuntuSansNerdFont-Medium" in font_id: default_font_id = font_id
+            
+            for f in sorted(fonts_found):
+                font_id = os.path.splitext(f)[0]
+                display_name = font_id.replace('-', ' ')
+                
+                font_css_block += f"@font-face {{ font-family: '{font_id}'; src: url('fonts/{f}') format('truetype'); }}\n"
+                font_css_block += f"html[data-font=\"{font_id}\"] body {{ font-family: '{font_id}', sans-serif !important; }}\n"
+                font_options_html += f'<option value="{font_id}">{display_name}</option>\n'
+        else:
+            font_options_html += '<option value="sans-serif">System Sans-Serif</option>\n'
+
+        log_task(format_log("DEPLOYMENT", "Bootstrapping Web Templates & Assets...", C_TITLE), "RAW")
+        template_dir = bootstrap_web_templates(theme_css_block, theme_options_html, font_css_block, font_options_html, default_font_id)
+        
         for item in ['styles.css', 'app.js']:
             src_path = os.path.join(template_dir, item)
             dest_path = os.path.join(HTML_DATA_DIR, item)
@@ -2406,21 +2688,90 @@ def execute_html_generation():
         df = pd.DataFrame.from_dict(lenses, orient='index')
         manufacturers = sorted(df['MFG'].dropna().unique())
         
-        if 'shards' not in db_data: db_data['shards'] = {}
-        total_mfgs = len(manufacturers)
+        db_manifest = db_data.get('manifest', db_data.get('__security_manifest__', {}))
+        shards_manifest = db_manifest.get('shards', {})
         
-        with open(os.path.join(template_dir, 'mfg_template.html'), 'r', encoding='utf-8') as f:
-            mfg_template_str = f.read()
+        total_mfgs = len(manufacturers)
+        shard_scripts_html = ""
+        
+        # Tech Whitelist
+        tech_whitelist = {
+            "blue filter", "blueguard", "blue-guard", "blue protect", "clear blue filter", 
+            "cbf", "blue capture", "blue uv capture", "hev", "uv420", 
+            "photochromic", "photofusion", "q-change", "transitions", "liferx", 
+            "polarized", "nupolar", "uv", "uvri", "uv protect", "drivesafe"
+        }
 
-        root_list_html = ""
-
-        # SHARD COMPILATION LOOP
+        # SHARD COMPILATION LOOP (SPA Payload)
         for idx, mfg in enumerate(manufacturers):
             clean_mfg = re.sub(r'[^a-zA-Z0-9_-]', '_', str(mfg))
             mfg_data = df[df['MFG'] == mfg].fillna("").to_dict(orient='records')
             
+            for lens_obj in mfg_data:
+                raw_tags = lens_obj.get("FilterTags", [])
+                mapped_shades = []
+                base_colors = set()
+                
+                # Dynamic BaseColor
+                for tag in raw_tags:
+                    t_up = tag.upper()
+                    if t_up == "PRO GRAY": mapped_shades.append("Gray-2")
+                    elif t_up == "PRO BROWN": mapped_shades.append("Brown-2")
+                    elif t_up in ["GRAY", "GREY"]: mapped_shades.append("Gray-3")
+                    elif t_up == "BROWN": mapped_shades.append("Brown-3")
+                    elif t_up == "BLUE": mapped_shades.append("Blue-3")
+                    elif t_up == "ROSE": mapped_shades.append("Rose-3")
+                    elif t_up == "PURPLE": mapped_shades.append("Purple-3")
+                    elif t_up == "BURGUNDY": mapped_shades.append("Burgundy-3")
+                    elif t_up == "YELLOW": mapped_shades.append("Yellow-3")
+                    elif t_up == "GREEN": mapped_shades.append("Green-3")
+                    elif t_up == "PINK": mapped_shades.append("Pink-3")
+                    elif t_up == "EXTRA GRAY": mapped_shades.append("Extra Gray-3")
+                    elif re.match(r"^[A-Z\s]+-[123]$", t_up): mapped_shades.append(tag)
+                
+                for s in mapped_shades:
+                    base_colors.add(s.split('-')[0].strip())
+                    
+                lens_obj["MappedShades"] = sorted(list(set(mapped_shades)))
+                lens_obj["BaseColors"] = sorted(list(base_colors))
+                
+                base_map = {}
+                for s in lens_obj["MappedShades"]:
+                    b = s.split('-')[0].strip()
+                    if b not in base_map: base_map[b] = []
+                    base_map[b].append(s)
+                    
+                smart_colors = []
+                for b, variants in base_map.items():
+                    if len(variants) == 1: smart_colors.append(b)
+                    else: smart_colors.extend(variants)
+                lens_obj["SmartColors"] = sorted(list(set(smart_colors)))
+
+                pure_filters = []
+                for tag in raw_tags:
+                    t_low = tag.lower()
+                    if t_low in tech_whitelist:
+                        pure_filters.append(tag)
+                    elif "blue" in t_low and not re.match(r"blue(?:-|\s*)[1-3]", t_low):
+                        if "blue" not in [c.lower() for c in lens_obj["BaseColors"]]:
+                            pure_filters.append(tag)
+                
+                if pure_filters:
+                    lens_obj["Filter"] = "<br>".join(sorted(list(set(pure_filters))))
+                else:
+                    lens_obj["Filter"] = '<span style="opacity:0.5;">None</span>'
+                
+                cat = "other"
+                is_fin = bool(lens_obj.get("Specifications", {}).get("FIN"))
+                style = int(lens_obj.get("Style", 0))
+                
+                if is_fin and style == 1: cat = "fsv"
+                elif not is_fin and style == 1: cat = "sfsv"
+                elif style == 6: cat = "pal"
+                elif style in [2,3,4,5,8,9,10,11,12,15,16,17]: cat = "ft"
+                lens_obj["Category"] = cat
+
             log_task(format_log("BASE_SHARD", f"{mfg} -> Base64 Encoding...", C_TITLE), "RAW")
-            
             json_string = json.dumps(mfg_data, separators=(',', ':'))
             b64_bytes = base64.b64encode(json_string.encode('utf-8'))
             b64_string = b64_bytes.decode('utf-8')
@@ -2429,21 +2780,15 @@ def execute_html_generation():
             log_task(format_log("SHARD_HASH", f"{shard_hash}", C_WARN), "RAW")
             
             shard_filename = f"{clean_mfg}_shard.js"
-            db_data['shards'][shard_filename] = shard_hash
+            shards_manifest[shard_filename] = shard_hash
             
             shard_path = os.path.join(HTML_DB_DIR, shard_filename)
             with open(shard_path, 'w', encoding='utf-8') as f:
-                f.write(f'const encodedShard = "{b64_string}";\n')
+                f.write(f'window.shards = window.shards || {{}};\nwindow.shards["{clean_mfg}"] = "{b64_string}";\n')
                 
             log_task(format_log("SHARD_OUT", f"{shard_filename} ({os.path.getsize(shard_path) / (1024*1024):.2f} MB)", C_STAGED), "RAW")
-                
-            mfg_dir = os.path.join(HTML_DIR, clean_mfg)
-            os.makedirs(mfg_dir, exist_ok=True)
             
-            mfg_html = mfg_template_str.replace('{{CURRENT_MFG}}', clean_mfg)
-            with open(os.path.join(mfg_dir, 'index.html'), 'w', encoding='utf-8') as f: f.write(mfg_html)
-                
-            root_list_html += f'<li><a href="{clean_mfg}/index.html">󰉖  {mfg}</a></li>\n'
+            shard_scripts_html += f'<script src="data/db/{shard_filename}"></script>\n    '
             
             pct = ((idx + 1) / total_mfgs) * 100.0
             draw_viewport(progress_pct=pct, active_file=shard_filename, current_file_idx=idx+1, total_files=total_mfgs)
@@ -2452,7 +2797,7 @@ def execute_html_generation():
         with open(os.path.join(template_dir, 'root_template.html'), 'r', encoding='utf-8') as f:
             root_template_str = f.read()
         
-        root_html = root_template_str.replace('{{MFG_LIST}}', root_list_html)
+        root_html = root_template_str.replace('{{SHARD_SCRIPTS}}', shard_scripts_html).replace('{{VERSION}}', global_version)
         with open(os.path.join(HTML_DIR, 'index.html'), 'w', encoding='utf-8') as f: f.write(root_html)
 
         sign_master_database()
@@ -2461,15 +2806,17 @@ def execute_html_generation():
         if os.path.exists(SIG_FILE):
             with open(SIG_FILE, 'r') as sf: master_sig = sf.read().strip()
                 
-        # TIMEZONE & DIRECT MANIFEST INJECTION
         manifest_data = {
             "masterSignature": master_sig, 
             "compiled_at": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
-            "shards": {k: v for k, v in db_data['shards'].items() if k.endswith('_shard.js')}
+            "shards": shards_manifest
         }
         
         log_task(format_log("WEB_MANIFEST", f"Compiling with {len(manifest_data['shards'])} Shard Signatures", C_PROMPT), "RAW")
-        db_data['__security_manifest__'] = manifest_data
+        db_data['manifest'] = manifest_data
+        
+        if 'shards' in db_data: db_data.pop('shards', None)
+        if '__security_manifest__' in db_data: db_data.pop('__security_manifest__', None)
         
         try: os.chmod(DB_FILE, stat.S_IWRITE)
         except: pass
@@ -2479,14 +2826,13 @@ def execute_html_generation():
         
         log_task(format_log("TETHER_LOCK", "Security Manifest injected directly into Master Vault.", C_TITLE), "RAW")
         
-        manifest_path = os.path.join(HTML_DB_DIR, 'security_manifest.js')
+        manifest_path = os.path.join(HTML_DB_DIR, 'manifest.js')
         with open(manifest_path, 'w', encoding='utf-8') as f:
             f.write(f"const securityManifest = {json.dumps(manifest_data, indent=4)};\n")
             
         log_task(format_log("SECURITY", "SSG Payload cryptographically sealed.", C_STAGED), "RAW")
         
-        # FIXED INTERACTIVE SCROLL LOOP
-        draw_viewport(progress_pct=100.0, active_file="security_manifest.js", current_file_idx=total_mfgs, total_files=total_mfgs, is_interactive=True)
+        draw_viewport(progress_pct=100.0, active_file="manifest.js", current_file_idx=total_mfgs, total_files=total_mfgs, is_interactive=True)
         
         while True:
             c = getch()
@@ -2503,12 +2849,18 @@ def execute_html_generation():
             elif c == '\x1b[5~' or c == 'PGUP': scroll_offset = max(0, scroll_offset - 10)
             elif c == '\x1b[6~' or c == 'PGDN': scroll_offset = min(max_scroll, scroll_offset + 10)
             
-            draw_viewport(progress_pct=100.0, active_file="security_manifest.js", current_file_idx=total_mfgs, total_files=total_mfgs, is_interactive=True)
+            draw_viewport(progress_pct=100.0, active_file="manifest.js", current_file_idx=total_mfgs, total_files=total_mfgs, is_interactive=True)
 
     except Exception as e:
         log_task(format_log("FATAL_I/O", f"{str(e)}", C_ALERT), "RAW")
         draw_viewport(progress_pct=100.0, active_file="ERROR", current_file_idx=total_mfgs, total_files=total_mfgs, is_interactive=True)
-        getch()
+        
+        while True:
+            c = getch()
+            if isinstance(c, bytes):
+                try: c = c.decode('utf-8')
+                except: continue
+            if c in ('\r', '\n', '\x1b'): break
         
     global_mode = "MAIN MENU"
 
@@ -2722,7 +3074,7 @@ def apply_smart_casing(text, techs_list):
         r'\bTri\b': 'TRI', r'\bRnd\b': 'RND', r'\bFt\b': 'FT', r'\bAs\b': 'AS',
         r'\bHmc\b': 'HMC', r'\bHmc\+\b': 'HMC+', r'\bBmc\b': 'BMC', r'\bHct\b': 'HCT',
         r'\bMr-7\b': 'MR-7', r'\bMr-8\b': 'MR-8', r'\bMr-8\+\b': 'MR-8+', r'\bMr-10\b': 'MR-10', r'\bMr-74\b': 'MR-74',
-        r'\bSunlens\b': 'SunLens', r'\bDuravision\b': 'DuraVision'
+        r'\bSunlens\b': 'SunLens', r'\bDuravision\b': 'DuraVision', r'\bUvri\b': 'UVRI'
     }
     
     for pat, repl in protections.items():
@@ -2731,6 +3083,7 @@ def apply_smart_casing(text, techs_list):
     return t
 
 def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_coats, is_universal_ar, resolved_mat):
+    import re
     raw_desc = str(sample_row.get('Description', '')).upper().strip()
     raw_name = str(sample_row.get('Name', '')).upper().strip()
     mfg = str(sample_row.get('MFG', '')).upper().strip()
@@ -2845,7 +3198,7 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
     style_tag_map = {
         1: ["Single Vision"], 2: ["Flat Top", "Bifocal"], 3: ["Round", "Bifocal"], 4: ["Executive", "Bifocal"],
         5: ["Ultex", "Bifocal"], 6: ["Progressive"], 7: ["Blended Seg"], 8: ["Double Seg", "Flat Top"],
-        9: ["Double Seg", "Executive"], 10: ["Trifocal", "Flat Top"], 11: ["Trifocal", "Executive"], 12: ["Trifocal", "ED"],
+        9: ["Double Seg", "Executive"], 10: ["Trifocal", "TRI"], 11: ["Trifocal", "Executive", "TRI"], 12: ["Trifocal", "ED", "TRI"],
         13: ["Other SV", "Single Vision"], 14: ["Aspheric", "Single Vision"], 15: ["Aspheric", "Flat Top", "Bifocal"], 
         16: ["Aspheric", "Round", "Bifocal"], 17: ["Aspheric", "Ultex", "Bifocal"], 18: ["Other Multi-focal"]
     }
@@ -2888,14 +3241,17 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
             if "DuraVision" not in tags: tags.append("DuraVision")
         if active_ar not in tags: tags.append(active_ar)
 
-    if "UV PROTECT" in combined_name_desc or any("UV PROTECT" in c.upper() for c in extracted_coats):
+    if "UV PROTECT" in combined_name_desc or 'UV Protect' in techs_found or any("UV PROTECT" in c.upper() for c in extracted_coats):
         if "UV Protect" not in tags: tags.append("UV Protect")
         if "PLUS PLATINUM" in combined_name_desc: tags.append("UV Protect Plus Platinum")
         elif "PLUS CHROME" in combined_name_desc: tags.append("UV Protect Plus Chrome")
         elif "PLUS SILVER" in combined_name_desc: tags.append("UV Protect Plus Silver")
         elif "PLUS GOLD" in combined_name_desc: tags.append("UV Protect Plus Gold")
 
-    color_keywords = ['PRO GRAY', 'PRO GREY', 'PRO BROWN', 'EXTRA-GRAY', 'EXTRA-GREY', 'EXTRA GRAY', 'EXTRA GREY', 'EXTRAGRAY', 'EXTRAGREY', 'GRAY', 'GREY', 'GRY', 'BROWN', 'BRN', 'GREEN', 'GRN', 'G15', 'G-15', 'PIONEER', 'PIONEEER', 'PIO', 'EMERALD', 'BURGUNDY', 'BURG', 'BRG', 'PINK', 'PNK', 'BLUE', 'BLU', 'PURPLE', 'PURP']
+    if 'UVRI' in techs_found and 'UVRI' not in tags:
+        tags.append('UVRI')
+
+    color_keywords = ['PRO GRAY', 'PRO GREY', 'PRO BROWN', 'EXTRA-GRAY', 'EXTRA-GREY', 'EXTRA GRAY', 'EXTRA GREY', 'EXTRAGRAY', 'EXTRAGREY', 'GRAY', 'GREY', 'GRY', 'BROWN', 'BRN', 'GREEN', 'GRN', 'G15', 'G-15', 'PIONEER', 'PIONEEER', 'PIO', 'EMERALD', 'BURGUNDY', 'BURG', 'BRG', 'PINK', 'PNK', 'BLUE', 'BLU', 'PURPLE', 'PURP', 'PLUM', 'YELLOW', 'YEL', 'YLW', 'ROSE', 'ROS', 'ORANGE']
     
     c_pad_desc = f" {combined_name_desc} ".replace('-', ' ').replace('/', ' ').upper()
     c_pad_color = c_pad_desc.replace('BLUE FILTER', '').replace('BLUE BLOCKER', '').replace('BLUE PROTECT', '').replace('BLUE GUARD', '').replace('BLUE-GUARD', '').replace('BLUEGUARD', '').replace('BLUEP', '').replace('UV420', '').replace('FUL PROTECT', '').replace('FUL-PROTECT', '').replace('GUARD', '')
@@ -3089,6 +3445,12 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
             working_techs.remove("ClearView")
         if len(build()) <= target_len: return build()
         
+        if target_len <= 15 and has_puck:
+            state_puck = 2
+            if len(build()) <= target_len: return build()
+            state_puck = 3 
+            if len(build()) <= target_len: return build()
+        
         state_org = 0
         if len(build()) <= target_len: return build()
         state_asph = 0
@@ -3177,22 +3539,10 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
 
     clean_desc = re.sub(r'\(\s*MR-[\w\+\-]+\s*\)', '', clean_desc, flags=re.IGNORECASE)
 
-    for word in [
-        'PRO GRAY', 'PRO GREY', 'PRO BROWN', 'EXTRA-GRAY', 'EXTRA-GREY', 'EXTRA GRAY', 'EXTRA GREY', 'EXTRAGRAY', 'EXTRAGREY', 'XTRA-ACTIVE', 'XTRA ACTIVE', 'XTRA',
-        'GRAY', 'GREY', 'GRY', 'BROWN', 'BRN', 'GREEN', 'GRN', 'G15', 'G-15', 'PIONEER', 'PIONEEER', 'PIO', 'EMERALD', 'BURGUNDY', 'BURG', 'BRG',
-        'PINK', 'PNK', 'BLUE', 'BLU', 'PURPLE', 'PURP', 'PRO', 'EXTRA', 'XA', 'EXG',
-        'POLYCARBONATE', 'POLYCARB', 'POLY', 'TRIVEX', 'TRV', 'CR39', 'CR-39', 'RESIN', 'HARD RESIN', 'PLASTIC', 'STANDARD PLASTIC',
-        'MR-8', 'MR-8+', 'MR8', 'MR-7', 'MR7', 'MR-10', 'MR10', 'MR-74', 'MR74', 'HIGH-INDEX', 'HIGH INDEX', 'MID-INDEX', 'MID INDEX'
-    ]:
+    for word in ['PRO GRAY', 'PRO GREY', 'PRO BROWN', 'EXTRA-GRAY', 'EXTRA-GREY', 'EXTRA GRAY', 'EXTRA GREY', 'EXTRAGRAY', 'EXTRAGREY', 'XTRA-ACTIVE', 'XTRA ACTIVE', 'XTRA', 'GRAY', 'GREY', 'GRY', 'BROWN', 'BRN', 'GREEN', 'GRN', 'G15', 'G-15', 'PIONEER', 'PIONEEER', 'PIO', 'EMERALD', 'BURGUNDY', 'BURG', 'BRG', 'PINK', 'PNK', 'BLUE', 'BLU', 'PURPLE', 'PURP', 'PLUM', 'YELLOW', 'YEL', 'YLW', 'ROSE', 'ROS', 'ORANGE', 'PRO', 'EXTRA', 'XA', 'EXG', 'POLYCARBONATE', 'POLYCARB', 'POLY', 'TRIVEX', 'TRV', 'CR39', 'CR-39', 'RESIN', 'HARD RESIN', 'PLASTIC', 'STANDARD PLASTIC', 'MR-8', 'MR-8+', 'MR8', 'MR-7', 'MR7', 'MR-10', 'MR10', 'MR-74', 'MR74', 'HIGH-INDEX', 'HIGH INDEX', 'MID-INDEX', 'MID INDEX']:
         clean_desc = re.sub(rf'\b{word}(?:\s*[-]?\s*[123ABC])?\b', '', clean_desc, flags=re.IGNORECASE)
 
-    for word in [
-        'HC', 'SR', 'SHMC', 'PG', 'UT', 'YHC', 'US', 'UC', 'UNCOATED', 'THICK', 'THIN', 'HCT',
-        'YOUNGERHC', 'YOUNGER HARDCOAT', 'YOUNGER HARD COAT', 'YOUNGER HARD-COAT',
-        'PERMAGUARD', 'PERMA-GUARD', 'PERMA GUARD', 'ULTRATOUGH', 'ULTRA-TOUGH', 'ULTRA TOUGH',
-        'ULTRASHIELD', 'ULTRA-SHIELD', 'ULTRA SHIELD', 'HARDCOAT', 'HARD COAT', 'HARD-COAT', 'HARD',
-        'DOUBLE D', 'OCCUPATIONAL', 'OCCUP', 'OCC', 'DD'
-    ]:
+    for word in ['HC', 'SR', 'SHMC', 'PG', 'UT', 'YHC', 'US', 'UC', 'UNCOATED', 'THICK', 'THIN', 'HCT', 'YOUNGERHC', 'YOUNGER HARDCOAT', 'YOUNGER HARD COAT', 'YOUNGER HARD-COAT', 'PERMAGUARD', 'PERMA-GUARD', 'PERMA GUARD', 'ULTRATOUGH', 'ULTRA-TOUGH', 'ULTRA TOUGH', 'ULTRASHIELD', 'ULTRA-SHIELD', 'ULTRA SHIELD', 'HARDCOAT', 'HARD COAT', 'HARD-COAT', 'HARD', 'DOUBLE D', 'OCCUPATIONAL', 'OCCUP', 'OCC', 'DD', 'UVRI']:
         clean_desc = re.sub(rf'\b{word}\b', '', clean_desc, flags=re.IGNORECASE)
 
     clean_desc = re.sub(r'\bD\d{2,3}\b', '', clean_desc, flags=re.IGNORECASE)
@@ -3396,7 +3746,7 @@ def extract_lens_colors_coatings(group_df):
 
         has_pigment = False
         
-        shade_match = re.search(r'\b(GRAY|GREY|GRY|BROWN|BRN|GREEN|GRN|PIO|BURGUNDY|BURG|BRG|PINK|PNK|BLUE|BLU|PURPLE|PURP)\s*[-]?\s*([123ABC])\b', c_pad_color)
+        shade_match = re.search(r'\b(GRAY|GREY|GRY|BROWN|BRN|GREEN|GRN|PIO|BURGUNDY|BURG|BRG|PINK|PNK|BLUE|BLU|PURPLE|PURP|PLUM|YELLOW|YEL|YLW|ROSE|ROS|ORANGE)\s*[-]?\s*([123ABC])\b', c_pad_color)
         if shade_match:
             base = shade_match.group(1)
             shade_val = shade_match.group(2).upper()
@@ -3411,7 +3761,10 @@ def extract_lens_colors_coatings(group_df):
             elif base in ['BURGUNDY', 'BURG', 'BRG']: base_mapped = "Burgundy"
             elif base in ['PINK', 'PNK']: base_mapped = "Pink"
             elif base in ['BLUE', 'BLU']: base_mapped = "Blue"
-            elif base in ['PURPLE', 'PURP']: base_mapped = "Purple"
+            elif base in ['PURPLE', 'PURP', 'PLUM']: base_mapped = "Purple"
+            elif base in ['YELLOW', 'YEL', 'YLW']: base_mapped = "Yellow"
+            elif base in ['ROSE', 'ROS']: base_mapped = "Rose"
+            elif base in ['ORANGE']: base_mapped = "Orange"
             else: base_mapped = base.title()
             
             colors_found.add(base_mapped)
@@ -3419,8 +3772,14 @@ def extract_lens_colors_coatings(group_df):
             has_pigment = True
             
         else:
-            if any(x in c_pad_color for x in [' PRO GRAY', ' PRO GREY']): colors_found.add('Pro Gray'); has_pigment = True
-            elif any(x in c_pad_color for x in [' PRO BROWN']): colors_found.add('Pro Brown'); has_pigment = True
+            if any(x in c_pad_color for x in [' PRO GRAY', ' PRO GREY']): 
+                colors_found.add('Pro Gray')
+                techs_found.add('Gray-2')
+                has_pigment = True
+            elif any(x in c_pad_color for x in [' PRO BROWN']): 
+                colors_found.add('Pro Brown')
+                techs_found.add('Brown-2')
+                has_pigment = True
             elif any(x in c_pad_color for x in [' EXTRAGREY', ' EXTRAGRAY', ' EXTRA GREY', ' EXTRA GRAY', ' EXTRA-GREY', ' EXTRA-GRAY', ' EXTRA ', ' EXG ']): colors_found.add('Extra Gray'); has_pigment = True
             elif any(x in c_pad_color for x in [' GRAY', ' GREY', ' GRY ']): colors_found.add('Gray'); has_pigment = True
             elif any(x in c_pad_color for x in [' BROWN', ' BRN ']): colors_found.add('Brown'); has_pigment = True
@@ -3428,7 +3787,10 @@ def extract_lens_colors_coatings(group_df):
             elif any(x in c_pad_color for x in [' BURGUNDY', ' BURG ', ' BRG ']): colors_found.add('Burgundy'); has_pigment = True
             elif any(x in c_pad_color for x in [' PINK', ' PNK ']): colors_found.add('Pink'); has_pigment = True
             elif any(x in c_pad_color for x in [' BLUE ', ' BLUE1', ' BLUE2', ' BLUE3', ' BLU ']): colors_found.add('Blue'); has_pigment = True
-            elif any(x in c_pad_color for x in [' PURPLE', ' PURP ']): colors_found.add('Purple'); has_pigment = True
+            elif any(x in c_pad_color for x in [' PURPLE', ' PURP ', ' PLUM ']): colors_found.add('Purple'); has_pigment = True
+            elif any(x in c_pad_color for x in [' YELLOW', ' YEL ', ' YLW ']): colors_found.add('Yellow'); has_pigment = True
+            elif any(x in c_pad_color for x in [' ROSE', ' ROS ']): colors_found.add('Rose'); has_pigment = True
+            elif any(x in c_pad_color for x in [' ORANGE']): colors_found.add('Orange'); has_pigment = True
 
         is_photochromic = False
         is_polarized = False
@@ -3454,6 +3816,9 @@ def extract_lens_colors_coatings(group_df):
         elif ' HEV' in c_pad or ' UV420' in c_pad: techs_found.add('HEV')
         elif ' FUL PROTECT ' in c_pad or ' FUL-PROTECT ' in c_pad: techs_found.add('Ful-Protect')
         elif any(x in c_pad for x in [" BLUE BLOCKER", " BLUE FILTER"]): techs_found.add('Blue Filter')
+        
+        if ' UVRI ' in c_pad or 'UVRI' in c_pad: techs_found.add('UVRI')
+        if ' UV PROTECT' in c_pad: techs_found.add('UV Protect')
 
         if not has_pigment:
             if is_photochromic or is_polarized: colors_found.add('Gray')
@@ -3485,10 +3850,8 @@ def extract_lens_colors_coatings(group_df):
 
     color_str = ", ".join(sorted(colors_found)) if colors_found else "Clear"
     return color_str, list(colors_found), list(techs_found), list(coats_found)
-
+    
 def normalize_lens_grouping_name(raw_name):
-    """Strips pigments, coatings, and reactive brands so physical blanks fold together perfectly."""
-    import re
     n = str(raw_name).upper()
     
     n = re.sub(r'\b(?:HARD RESIN|RESIN|ORG)\b', 'CR-39', n)
@@ -3498,17 +3861,18 @@ def normalize_lens_grouping_name(raw_name):
     n = re.sub(r'\b(?:EXTRA\s*-?\s*THIN)\b', '__E_THIN__', n)
     n = re.sub(r'\b(?:DOUBLE\s*-?\s*D|OCCUPATIONAL|OCCUP|OCC|DD)\b', '__DD__', n)
     
-    n = re.sub(r'\b(PRO GRAY|PRO GREY|PRO BROWN|EXTRA-GRAY|EXTRA-GREY|EXTRA GRAY|EXTRA GREY|EXTRAGRAY|EXTRAGREY|XTRA-ACTIVE|XTRA ACTIVE|GRAY|GREY|GRY|BROWN|BRN|GREEN|GRN|G15|G-15|PIONEER|PIONEEER|PIO|EMERALD|BURGUNDY|BURG|BRG|PINK|PNK|BLUE|BLU|PURPLE|PURP|PRO|EXTRA|XTRA|XA|EXG)(?:\s*[-]?\s*[123ABC])?\b', '', n)
+    # Upgraded Color Matrix Injection
+    n = re.sub(r'\b(PRO GRAY|PRO GREY|PRO BROWN|EXTRA-GRAY|EXTRA-GREY|EXTRA GRAY|EXTRA GREY|EXTRAGRAY|EXTRAGREY|GRAY|GREY|GRY|BROWN|BRN|GREEN|GRN|G15|G-15|PIONEER|PIONEEER|PIO|EMERALD|BURGUNDY|BURG|BRG|PINK|PNK|BLUE|BLU|PURPLE|PURP|PLUM|YELLOW|YEL|YLW|ROSE|ROS|ORANGE|PRO|EXTRA|XTRA|XA|EXG)(?:\s*[-]?\s*[123ABC])?\b', '', n)
         
     for word in [
         'PHOTOFUSION X', 'PHOTOFUSION', 'TRANSITIONS', 'TRANS', 'TRN', 'SENSITIVITY', 'SENS', 'LIFERX', 'LRX',
         'QUICK CHANGE', 'QUICK-CHANGE', 'QC', 'NUPOLAR', 'NPOL', 'TRUPOLAR', 'TPOL', 'SUNRX', 'SUN', 'COPPERTONE', 'COPPER', 'CT', 
         'POLARIZED', 'POLAR', 'POLZ', 'PHOTOCHROMIC', 'PHOTO', 'PHT',
         'DVC', 'DVP', 'DVG', 'DVS', 'ROCK', 'EASY', 'SAPPHIRE', 'VELA', 'AR', 'CRIZAL', 'DURAVISION', 'DURA', 
-        'HC', 'SR', 'SHMC', 'PG', 'UT', 'YHC', 'US', 'UC', 'UNCOATED', 'THICK',
+        'HC', 'SR', 'SHMC', 'PG', 'UT', 'YHC', 'US', 'UC', 'UNCOATED', 'THICK', 'THIN', 'HCT',
         'YOUNGERHC', 'YOUNGER HARDCOAT', 'YOUNGER HARD COAT', 'YOUNGER HARD-COAT',
         'PERMAGUARD', 'PERMA-GUARD', 'PERMA GUARD', 'ULTRATOUGH', 'ULTRA-TOUGH', 'ULTRA TOUGH',
-        'ULTRASHIELD', 'ULTRA-SHIELD', 'ULTRA SHIELD', 'HARDCOAT', 'HARD COAT', 'HARD-COAT', 'HARD'
+        'ULTRASHIELD', 'ULTRA-SHIELD', 'ULTRA SHIELD', 'HARDCOAT', 'HARD COAT', 'HARD-COAT', 'HARD', 'UVRI'
     ]:
         n = re.sub(rf'\b{word}\b', '', n)
         
@@ -4323,8 +4687,7 @@ def execute_generate_database():
     global global_mode, scroll_offset
     global_mode = "MASTER COMPILER"
     render_ui_skeleton("Master Compiler Initializing...")
-    
-    # Enable Screen Buffer & Hide Cursor to Lock Scroll History
+
     sys.stdout.write("\033[?1049h\033[?25l")
     sys.stdout.flush()
     
@@ -4351,8 +4714,7 @@ def execute_generate_database():
                     except: continue
                 if c in ('\r', '\n', '\x1b'): break
             
-            # Turn off screen buffer when exiting
-            sys.stdout.write("\033[?1049l\033[?25h")
+            sys.stdout.write("\033[?1049l\033[?25h\033[0m")
             global_mode = "MAIN MENU"; return
 
         viewport_logs.clear()
@@ -4377,8 +4739,7 @@ def execute_generate_database():
         draw_status_bar()
         
         if ans != "COMPILE": 
-            # Turn off screen buffer when exiting
-            sys.stdout.write("\033[?1049l\033[?25h")
+            sys.stdout.write("\033[?1049l\033[?25h\033[0m")
             global_mode = "MAIN MENU"
             return
             
@@ -4488,6 +4849,17 @@ def execute_generate_database():
                     raw_vca_description = base_raw_desc
                     if extra_dia_tags:
                         raw_vca_description += " " + " ".join(extra_dia_tags)
+
+                    _tmp_raw = re.sub(r'\bBLUE\s*GUARD\b', 'BLUEGUARD', raw_vca_description, flags=re.IGNORECASE)
+                    _tmp_raw = re.sub(r'\bBLUE\s*PROTECT\b', 'BLUEPROTECT', _tmp_raw, flags=re.IGNORECASE)
+                    _tmp_raw = re.sub(r'\bBLUE\s*FILTER\b', 'BLUEFILTER', _tmp_raw, flags=re.IGNORECASE)
+                    
+                    _color_strip_list = ['PRO GRAY', 'PRO GREY', 'PRO BROWN', 'EXTRA-GRAY', 'EXTRA-GREY', 'EXTRA GRAY', 'EXTRA GREY', 'EXTRAGRAY', 'EXTRAGREY', 'GRAY', 'GREY', 'GRY', 'BROWN', 'BRN', 'GREEN', 'GRN', 'G15', 'G-15', 'PIONEER', 'PIONEEER', 'PIO', 'EMERALD', 'BURGUNDY', 'BURG', 'BRG', 'PINK', 'PNK', 'BLUE', 'BLU', 'PURPLE', 'PURP', 'PLUM', 'YELLOW', 'YEL', 'YLW', 'ROSE', 'ROS', 'ORANGE']
+                    for _cw in _color_strip_list:
+                        _tmp_raw = re.sub(rf'\b{_cw}(?:\s*[-]?\s*[123ABC])?\b', '', _tmp_raw, flags=re.IGNORECASE)
+                        
+                    _tmp_raw = _tmp_raw.replace('BLUEGUARD', 'BlueGuard').replace('BLUEPROTECT', 'Blue Protect').replace('BLUEFILTER', 'Blue Filter')
+                    raw_vca_description = re.sub(r'\s+', ' ', _tmp_raw).strip()
                     
                     tags.extend(extracted_coats)
                     tags.extend(extracted_colors) 
@@ -4529,7 +4901,7 @@ def execute_generate_database():
                         c_pad_color = c_pad_row.replace('BLUE FILTER', '').replace('BLUE BLOCKER', '').replace('BLUE PROTECT', '').replace('BLUE GUARD', '').replace('BLUE-GUARD', '').replace('BLUEGUARD', '').replace('BLUEP', '').replace('UV420', '').replace('FUL PROTECT', '').replace('FUL-PROTECT', '').replace('GUARD', '')
                         c_pad_coat = c_pad_row.replace('-', '').replace(' ', '')
                         
-                        shade_match = re.search(r'\b(GRAY|GREY|GRY|BROWN|BRN|GREEN|GRN|PIO|BURGUNDY|BURG|BRG|PINK|PNK|BLUE|BLU|PURPLE|PURP)\s*[-]?\s*([123ABC])\b', c_pad_color)
+                        shade_match = re.search(r'\b(GRAY|GREY|GRY|BROWN|BRN|GREEN|GRN|PIO|BURGUNDY|BURG|BRG|PINK|PNK|BLUE|BLU|PURPLE|PURP|PLUM|YELLOW|YEL|YLW|ROSE|ROS|ORANGE)\s*[-]?\s*([123ABC])\b', c_pad_color)
                         if shade_match:
                             base = shade_match.group(1)
                             shade_val = shade_match.group(2).upper()
@@ -4543,7 +4915,10 @@ def execute_generate_database():
                             elif base in ['BURGUNDY', 'BURG', 'BRG']: base_mapped = "Burgundy"
                             elif base in ['PINK', 'PNK']: base_mapped = "Pink"
                             elif base in ['BLUE', 'BLU']: base_mapped = "Blue"
-                            elif base in ['PURPLE', 'PURP']: base_mapped = "Purple"
+                            elif base in ['PURPLE', 'PURP', 'PLUM']: base_mapped = "Purple"
+                            elif base in ['YELLOW', 'YEL', 'YLW']: base_mapped = "Yellow"
+                            elif base in ['ROSE', 'ROS']: base_mapped = "Rose"
+                            elif base in ['ORANGE']: base_mapped = "Orange"
                             else: base_mapped = base.title()
                             
                             exact_shade = f"{base_mapped}-{shade_val}"
@@ -4553,8 +4928,16 @@ def execute_generate_database():
                             
                         else:
                             has_pigment = False
-                            if any(x in c_pad_color for x in [' PRO GRAY', ' PRO GREY']): row_color = 'Pro Gray'; has_pigment = True
-                            elif any(x in c_pad_color for x in [' PRO BROWN']): row_color = 'Pro Brown'; has_pigment = True
+                            if any(x in c_pad_color for x in [' PRO GRAY', ' PRO GREY']): 
+                                row_color = 'Pro Gray'
+                                exact_shade = 'Gray-2'
+                                all_exact_shades.add(exact_shade)
+                                has_pigment = True
+                            elif any(x in c_pad_color for x in [' PRO BROWN']): 
+                                row_color = 'Pro Brown'
+                                exact_shade = 'Brown-2'
+                                all_exact_shades.add(exact_shade)
+                                has_pigment = True
                             elif any(x in c_pad_color for x in [' EXTRAGREY', ' EXTRAGRAY', ' EXTRA GREY', ' EXTRA GRAY', ' EXTRA-GREY', ' EXTRA-GRAY', ' EXTRA ', ' EXG ']): row_color = 'Extra Gray'; has_pigment = True
                             elif any(x in c_pad_color for x in [' GRAY', ' GREY', ' GRY ']): row_color = 'Gray'; has_pigment = True
                             elif any(x in c_pad_color for x in [' BROWN', ' BRN ']): row_color = 'Brown'; has_pigment = True
@@ -4562,7 +4945,10 @@ def execute_generate_database():
                             elif any(x in c_pad_color for x in [' BURGUNDY', ' BURG ', ' BRG ']): row_color = 'Burgundy'; has_pigment = True
                             elif any(x in c_pad_color for x in [' PINK', ' PNK ']): row_color = 'Pink'; has_pigment = True
                             elif any(x in c_pad_color for x in [' BLUE ', ' BLUE1', ' BLUE2', ' BLUE3', ' BLU ']): row_color = 'Blue'; has_pigment = True
-                            elif any(x in c_pad_color for x in [' PURPLE', ' PURP ']): row_color = 'Purple'; has_pigment = True
+                            elif any(x in c_pad_color for x in [' PURPLE', ' PURP ', ' PLUM ']): row_color = 'Purple'; has_pigment = True
+                            elif any(x in c_pad_color for x in [' YELLOW', ' YEL ', ' YLW ']): row_color = 'Yellow'; has_pigment = True
+                            elif any(x in c_pad_color for x in [' ROSE', ' ROS ']): row_color = 'Rose'; has_pigment = True
+                            elif any(x in c_pad_color for x in [' ORANGE']): row_color = 'Orange'; has_pigment = True
                             
                             is_photochromic = False
                             is_polarized = False
@@ -5024,8 +5410,7 @@ def execute_generate_database():
                     except: continue
                 if c in ('\r', '\n', '\x1b'): break
         
-        # Turn off screen buffer when exiting
-        sys.stdout.write("\033[?1049l\033[?25h")
+        sys.stdout.write("\033[?1049l\033[?25h\033[0m")
         break
     global_mode = "MAIN MENU"
 
