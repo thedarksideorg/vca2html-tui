@@ -2,4 +2,7 @@ Taking industry "standard VCA files" and trying to format them into something hu
 
 Still working on internals; Instructions to come.
 
+09.01.2026 - Started complete re-write now that I have a little more experience with python.
+
+
 If playing, the files in ./.org/ are "proper" vca files (public files)
