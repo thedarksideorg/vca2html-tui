@@ -3,6 +3,72 @@ import sys
 import time
 import stat
 import textwrap
+import pandas as pd
+import numpy as np
+import difflib
+import re
+
+GLOBAL_LICENSE = "Copyright © 2026 Daniel Casada. This program is free software; You can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation. This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
+GLOBAL_DISCLAIMER = "This application was created to help optical lab technicians get lens technical specifications into legacy LMS systems. This tool tries to take industry \"standard VCA files\", parse them properly, then format them into a human readable format. It is not affiliated with National Optronics™ (DAC Vision™) or any proprietary LMS manufacturer. There is absolutely no support for this tool and I am not responsible for any invalid information, errors, or any data loss. This application comes as is and you must use at your own risk."
+
+POLL_RATE = 0.01
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, 'data')
+DB_DIR = os.path.join(DATA_DIR, 'db')
+IMPORT_DIR = os.path.join(DATA_DIR, 'import')
+ORIGINALS_DIR = os.path.join(DATA_DIR, 'originals')
+VAULT_DIR = os.path.join(DB_DIR,'.vault')
+PURGED_DIR = os.path.join(DB_DIR,'purged')
+CORRUPT_DIR = os.path.join(DB_DIR,'currupt')
+TEMP_DIR = os.path.join(DATA_DIR,'.temp')
+HTML_DIR = os.path.join(DATA_DIR,'HTML')
+HTML_DATA_DIR = os.path.join(HTML_DIR, 'data')
+HTML_FONT_DIR = os.path.join(HTML_DATA_DIR,'fonts')
+HTML_DB_DIR = os.path.join(HTML_DATA_DIR, 'db')
+
+CONFIG_FILE = os.path.join(DATA_DIR, '.config')
+DB_FILE = os.path.join(DB_DIR, 'master_lens_db.json')
+SIG_FILE = os.path.join(DB_DIR, '.sig')
+
+CUSTOM_SCHEMA = [
+    "MFG", "CLASS", "DESCRIPTION", "MATCODE", "MATBRAND", "PRODUCT", "STYLE", 
+    "FILTER", "COAT", "COATBRAND", "OPCR", "OPCL", "DIAMETER", "SPH/BASE", 
+    "CYL/ADD", "RADIUSF", "RADIUSB", "CT", "ET", "INSET", "DROP", "DINDEX", 
+    "NINDEX", "EINDEX", "ABBE", "DENSITY", "PRPOUT", "PRPUP", "SEGW", "SEGT", 
+    "INTHT", "SLAB", "CARRAD", "BOWLD", "VERTD", "DIADIA", "SEGSEP", "UPADD", 
+    "SPECIAL", "CATCODE", "FILTERBRAND", "DRPIN", "DRPUP", "NRPIN", "NRPUP", 
+    "DIAH", "DIAN", "OBJCLEAR", "OBJRADIUS", 
+    "SAFE_INDEX", "TRUE_FRONT", "TRUE_BACK", "SAG" 
+]
+
+SCHEMA_LOOKUP = {re.sub(r'[^a-zA-Z0-9]', '', col).lower(): col for col in CUSTOM_SCHEMA}
+
+SCHEMA_ALIAS = {
+    "frntrad": "RADIUSF", "frontradius": "RADIUSF",
+    "bckrad": "RADIUSB", "backradius": "RADIUSB",
+    "cthk": "CT", "centerthick": "CT",
+    "ethk": "ET", "edgethick": "ET",
+    "segwd": "SEGW", "segwidth": "SEGW",
+    "segthk": "SEGT", "segthick": "SEGT",
+    "intht": "INTHT", "intermediateht": "INTHT",
+    "bwldiam": "BOWLD", "bowldia": "BOWLD",
+    "verdiam": "VERTD", "verdia": "VERTD",
+    "hordiam": "DIAH", "horizontaldia": "DIAH",
+    "nomdiam": "DIAN", "nominaldia": "DIAN",
+    "lrpin": "INSET", "lrpdown": "DROP",
+    "nref": "NINDEX", "carrad": "CARRAD", "carrierradius": "CARRAD",
+    "diam": "DIAMETER", "material": "MATCODE"
+}
+
+ascii_art = [
+    r"██╗   ██╗ ██████╗ █████╗   ██████╗ ██╗  ██╗████████╗███╗   ███╗██╗        ████████╗██╗   ██╗██╗",
+    r"██║   ██║██╔════╝██╔══██╗ ╚════██╗ ██║  ██║╚══██╔══╝████╗ ████║██║        ╚══██╔══╝██║   ██║██║",
+    r"██║   ██║██║     ███████║  █████╔╝ ███████║   ██║   ██╔████╔██║██║           ██║   ██║   ██║██║",
+    r"╚██╗ ██╔╝██║     ██╔══██║ ██╔═══╝  ██╔══██║   ██║   ██║╚██╔╝██║██║           ██║   ██║   ██║██║",
+    r" ╚████╔╝ ╚██████╗██║  ██║ ███████╗ ██║  ██║   ██║   ██║ ╚═╝ ██║███████╗      ██║   ╚██████╔╝██║",
+    r"  ╚═══╝   ╚═════╝╚═╝  ╚═╝ ╚══════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝     ╚═╝╚══════╝      ╚═╝    ╚═════╝ ╚═╝"
+]
 
 # ----- UTILITY FUNCTIONS ----- #
 
@@ -65,9 +131,9 @@ def warn_term_size():
             try: termios.tcflush(sys.stdin, termios.TCIOFLUSH)
             except: pass
             
-        time.sleep(0.1)
+        time.sleep(POLL_RATE)
 
-def getch_timeout(timeout=0.1):
+def getch_timeout(timeout=POLL_RATE):
     if os.name == 'nt':
         import msvcrt
         start = time.time()
@@ -155,74 +221,179 @@ def update_file_mgr_data(term_h, ctx):
 
 # ----- DRAWING UTILITES ----- #
 
-def draw_z_modal(title, prompt, mask=False, bg_render_func=None):
+def draw_viewport(term_w, term_h, ctx, progress_pct, active_file, current_idx, total_files, is_interactive=False, title="Convert VCA", action_text="", frame_title=""):
+    draw_skeleton(title, "Data Sanitization & Math Engine")
+    
+    log_lines = ctx.get('log_lines', [])
+    inner_l = 4
+    inner_r = term_w - 3
+    box_w = inner_r - inner_l + 1
+    
+    # ----- Progress Bar Rows ----- #
+    pb_r1 = term_h - 5
+    pb_r2 = term_h - 4
+    pb_r3 = term_h - 3
+    
+    # ----- Viewport Rows ------ #
+    vp_start_row = 5
+    vp_end_row = pb_r1 - 1
+    vp_height = vp_end_row - vp_start_row - 1
+    total_logs = max(1, len(log_lines))
+    
+    # ----- Scrolling ----- #
+    if not is_interactive:
+        offset = max(0, total_logs - vp_height)
+        ctx['scroll_offset'] = offset
+    else:
+        offset = ctx.get('scroll_offset', 0)
+        
+    # ----- Frame Title ----- #
+    if frame_title:
+        pad_title = max(1, (term_w - len(frame_title)) // 2)
+        sys.stdout.write(f"\033[4;{inner_l}H{' ' * box_w}")
+        sys.stdout.write(f"\033[4;{pad_title}H{frame_title}")
+        
+    sys.stdout.write(f"\033[{vp_start_row};{inner_l}H┌{'─' * (box_w - 2)}┐")
+    
+    for i in range(vp_height):
+        row = vp_start_row + 1 + i
+        log_idx = offset + i
+        
+        # ----- "Scrollbar" ----- #
+        thumb_size = max(1, int((vp_height / total_logs) * vp_height)) if len(log_lines) > vp_height else vp_height
+        max_scroll = max(1, total_logs - vp_height)
+        scroll_pct = offset / max_scroll if max_scroll > 0 else 0
+        thumb_pos = int(scroll_pct * (vp_height - thumb_size)) if len(log_lines) > vp_height else 0
+        s_char = "█" if thumb_pos <= i < thumb_pos + thumb_size else "│"
+        
+        sys.stdout.write(f"\033[{row};{inner_l}H│ ")
+        
+        if log_idx < len(log_lines):
+            line = log_lines[log_idx]
+            display_line = line[:(box_w - 4)]
+            sys.stdout.write(f"\033[{row};{inner_l + 2}H{display_line}")
+            space_to_fill = (box_w - 4) - len(display_line)
+            if space_to_fill > 0: sys.stdout.write(" " * space_to_fill)
+        else:
+            sys.stdout.write(" " * (box_w - 4))
+            
+        sys.stdout.write(f"\033[{row};{inner_r - 1}H{s_char}")
+        sys.stdout.write(f"\033[{row};{inner_r}H│")
+        
+    sys.stdout.write(f"\033[{vp_end_row};{inner_l}H└{'─' * (box_w - 2)}┘")
+    
+    # ----- Progress Bar ----- #
+    text_tl = f" Progress: {current_idx} of {total_files} " if total_files > 0 else " Progress "
+    top_r_str = f"({active_file[:40] + '...' if len(active_file) > 40 else active_file})" if active_file else ""
+    
+    pb_inner_w = box_w - 4
+    filled = int(pb_inner_w * (progress_pct / 100.0))
+    bar_str = ("#" * filled) + (" " * (pb_inner_w - filled))
+    text_br = f" {progress_pct:5.1f}% "
+    
+    r1_len = max(0, box_w - 6 - len(text_tl) - 2 - len(top_r_str))
+    sys.stdout.write(f"\033[{pb_r1};{inner_l}H┌──({text_tl}){'─' * r1_len}{top_r_str}──┐")
+    sys.stdout.write(f"\033[{pb_r2};{inner_l}H│ {bar_str} │")
+    
+    r3_len = max(0, box_w - 6 - len(text_br) - 2 - len(action_text))
+    sys.stdout.write(f"\033[{pb_r3};{inner_l}H└──{action_text}{'─' * r3_len}({text_br})──┘")
+    
+    sys.stdout.write(f"\033[{term_h};1H")
+    sys.stdout.flush()
+
+def draw_z_modal(title, prompt, mask=False, bg_render_func=None, single_key=False):
     last_term_w, last_term_h = 0, 0
     val, force_redraw = "", True
+    
     while True:
         if not check_term_size():
             warn_term_size()
             force_redraw = True
+            
         term_w, term_h = get_term_size()
         if term_w != last_term_w or term_h != last_term_h:
             force_redraw, last_term_w, last_term_h = True, term_w, term_h
+            
         if force_redraw:
             sys.stdout.write("\033[2J\033[H")
             if bg_render_func: bg_render_func(term_w, term_h) 
-            box_w = max(50, len(prompt) + 10)
-            start_y, start_x = (term_h // 2) - 2, (term_w - box_w) // 2
             
-            for i in range(5):
+            box_w = max(50, len(prompt) + 10)
+            box_h = 4 if single_key else 5
+            start_y, start_x = (term_h // 2) - (box_h // 2), (term_w - box_w) // 2
+            
+            for i in range(box_h):
                 row = start_y + i
                 if i == 0: text = f"╔{'═'*(box_w-2)}╗"
                 elif i == 1: text = f"║{title:^{box_w-2}}║"
                 elif i == 2: text = f"║ {prompt:<{box_w-3}}║"
-                elif i == 3: text = f"║ > {' ' * (box_w-5)}║"
-                elif i == 4: text = f"╚{'═'*(box_w-2)}╝"
+                elif i == 3 and not single_key: text = f"║ > {' ' * (box_w-5)}║"
+                elif i == 3 and single_key: text = f"╚{'═'*(box_w-2)}╝"
+                elif i == 4 and not single_key: text = f"╚{'═'*(box_w-2)}╝"
                 sys.stdout.write(f"\033[{row};{start_x}H{text}")
+                
             sys.stdout.flush()
             force_redraw = False
             
-        box_w = max(50, len(prompt) + 10)
-        cursor_x = ((term_w - box_w) // 2) + 4 + len(val)
-        sys.stdout.write(f"\033[{(term_h // 2) + 1};{cursor_x}H\033[?25h")
+        if not single_key:
+            box_w = max(50, len(prompt) + 10)
+            start_y = (term_h // 2) - 2
+            cursor_x = ((term_w - box_w) // 2) + 4 + len(val)
+            sys.stdout.write(f"\033[{start_y + 3};{cursor_x}H\033[?25h")
+        else:
+            sys.stdout.write("\033[?25l")
+            
         sys.stdout.flush()
         
-        ch = getch_timeout(0.1)
+        ch = getch_timeout(POLL_RATE)
         if ch is None: continue
         force_redraw = True
         
-        if ch in ['\r', '\n']:
-            sys.stdout.write("\033[?25l")
-            return val
-        elif ch == 'ESC':
-            sys.stdout.write("\033[?25l")
-            return None
-        elif ch in ['BACKSPACE', '\x08', '\x7f', 'DEL']: val = val[:-1]
-        elif len(ch) == 1 and ch.isprintable() and len(val) < box_w - 7: val += ch
+        # ----- Key Mode vs Text Mode ----- #
+        if single_key:
+            if ch == 'ESC': return None
+            elif len(ch) == 1 and ch.isprintable(): return ch
+        else:
+            if ch in ['\r', '\n']:
+                sys.stdout.write("\033[?25l")
+                return val
+            elif ch == 'ESC':
+                sys.stdout.write("\033[?25l")
+                return None
+            elif ch in ['BACKSPACE', '\x08', '\x7f', 'DEL']: val = val[:-1]
+            elif len(ch) == 1 and ch.isprintable() and len(val) < box_w - 7: val += ch
 
 def bootloader(term_w, term_h):
-    draw_skeleton("VCA ENGINE BOOTLOADER", "Awaiting Authorization")
-    ascii_art = [
-        r"██╗   ██╗ ██████╗ █████╗   ██████╗ ██╗  ██╗████████╗███╗   ███╗██╗        ████████╗██╗   ██╗██╗",
-        r"██║   ██║██╔════╝██╔══██╗ ╚════██╗ ██║  ██║╚══██╔══╝████╗ ████║██║        ╚══██╔══╝██║   ██║██║",
-        r"██║   ██║██║     ███████║  █████╔╝ ███████║   ██║   ██╔████╔██║██║           ██║   ██║   ██║██║",
-        r"╚██╗ ██╔╝██║     ██╔══██║ ██╔═══╝  ██╔══██║   ██║   ██║╚██╔╝██║██║           ██║   ██║   ██║██║",
-        r" ╚████╔╝ ╚██████╗██║  ██║ ███████╗ ██║  ██║   ██║   ██║ ╚═╝ ██║███████╗      ██║   ╚██████╔╝██║",
-        r"  ╚═══╝   ╚═════╝╚═╝  ╚═╝ ╚══════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝     ╚═╝╚══════╝      ╚═╝    ╚═════╝ ╚═╝"
-    ]
+    draw_skeleton("OPTICAL LENS SPECIFICATIONS ENGINE", "License & Disclaimer")
+    
     start_row = 4
+    
+    # ----- Center the ASCII Art ----- #
     for i, line in enumerate(ascii_art):
-        sys.stdout.write(f"\033[{start_row + i};{(term_w - len(line)) // 2}H{line}")
+        pad = max(1, (term_w - len(line)) // 2)
+        sys.stdout.write(f"\033[{start_row + i};{pad}H{line}")
     
+    # ----- Pad 85% for text ----- #
     text_w = int(term_w * 0.85)
-    pad_left = (term_w - text_w) // 2
-    row = start_row + len(ascii_art) + 2
-    disclaimer = "This application was created to help optical lab technicians get lens technical specifications into legacy LMS systems. There is absolutely no support for this tool and I am not responsible for any invalid information, errors, or any data loss. This application comes as is and you must use at your own risk."
+    pad_left = max(1, (term_w - text_w) // 2)
     
-    for line in textwrap.wrap(disclaimer, width=text_w):
+    # ----- Rows to start text under ASCII ----- #
+    row = start_row + len(ascii_art) + 2
+    
+    for line in textwrap.wrap(GLOBAL_LICENSE, width=text_w):
         sys.stdout.write(f"\033[{row};{pad_left}H{line}")
         row += 1
-    sys.stdout.write(f"\033[{row + 2};{pad_left}HPress (Y) to Accept Terms and Continue.")
+        
+    row += 2 
+    
+    for line in textwrap.wrap(GLOBAL_DISCLAIMER, width=text_w):
+        sys.stdout.write(f"\033[{row};{pad_left}H{line}") 
+        row += 1
+        
+    row += 3
+    prompt = "Press (Y) to Accept Terms and Continue, or any other key to quit."
+    pad_prompt = max(1, (term_w - len(prompt)) // 2)
+    sys.stdout.write(f"\033[{row};{pad_prompt}H{prompt}")
 
 def main_menu(term_w, term_h):
     draw_skeleton("OPERATIONS CENTER", "Main Menu Active")
@@ -324,10 +495,137 @@ def file_mgr(term_w, term_h, ctx):
     sys.stdout.write(f"\033[{term_h - 2};{cursor_col}H\033[?25h")
 
 def vca_convert(term_w, term_h, ctx):
-    draw_skeleton("VCA CONVERSION MODULE", "Processing Files")
-    staged_count = len(ctx.get('clip', []))
-    msg = f"Ready to parse {staged_count} files. Press (ESC) to return to Main Menu."
-    sys.stdout.write(f"\033[4;5H{msg}")
+    total_files = len(ctx.get('clip', []))
+    draw_viewport(term_w, term_h, ctx, 100.0, "Batch Complete (Press ESC to return)", total_files, total_files, is_interactive=True, title="Convert VCA", action_text="( REVIEW MODE )", frame_title="VCA REFINERY: DATA SANITIZATION")
+    
+def vca_convert_input(ch, ctx, term_h):
+    # ----- Scrolling ----- #
+    log_lines = ctx.get('log_lines', [])
+    
+    vp_height = (term_h - 5) - 4 - 1
+    max_offset = max(0, len(log_lines) - vp_height)
+    offset = ctx.get('scroll_offset', 0)
+    
+    if ch == 'UP': offset -= 1
+    elif ch == 'DOWN': offset += 1
+    elif ch == 'PGUP': offset -= vp_height
+    elif ch == 'PGDN': offset += vp_height
+    elif ch == 'ESC' or ch.lower() == 'q':
+        sys.stdout.write("\033[?25l")
+        return "EXIT"
+        
+    ctx['scroll_offset'] = max(0, min(offset, max_offset))
+    return "STAY"
+    
+def vca_parse_data(ctx, term_w, term_h):
+    """Pandas ingestion funnel with fuzzy matching, frame throttling, and dynamic headers."""
+    ctx['log_lines'] = []
+    files_to_process = ctx.get('clip', [])
+    total_files = len(files_to_process)
+    
+    import time
+    last_draw_time = 0
+    frame_rate = 0.05 # Redraw capped at 20 FPS
+    
+    draw_viewport(term_w, term_h, ctx, 0.0, "Starting batch...", 0, total_files, is_interactive=False, title="Convert VCA", action_text="( COMPILING )", frame_title="VCA REFINERY: DATA SANITIZATION")
+    
+    for idx, (name, pth) in enumerate(files_to_process):
+        current_idx = idx + 1
+        pct = (current_idx / max(1, total_files)) * 100.0
+        
+        # Throttle check for Start of file
+        current_time = time.time()
+        if current_time - last_draw_time > frame_rate or current_idx == total_files:
+            draw_viewport(term_w, term_h, ctx, pct, f"Parsing: {name}", current_idx, total_files, is_interactive=False, title="Convert VCA", action_text="( COMPILING )", frame_title="VCA REFINERY: DATA SANITIZATION")
+            last_draw_time = current_time
+        
+        ctx['log_lines'].append(f"╔══ [ TARGET FILE: {name} ]")
+        dest_pth = os.path.join(IMPORT_DIR, name)
+        
+        try:
+            # ----- Does it have a header? ----- #
+            with open(pth, 'r', errors='ignore') as f:
+                first_line = f.readline().upper()
+                
+            if "MFG" not in first_line and "DESCRIPTION" not in first_line:
+                df = pd.read_csv(pth, header=None, dtype=str, on_bad_lines='skip', engine='python')
+                df.columns = CUSTOM_SCHEMA[:df.shape[1]]
+                ctx['log_lines'].append("║ [!] Ghost file detected: Forced master schema overlay.")
+            else:
+                df = pd.read_csv(pth, dtype=str, on_bad_lines='skip', engine='python')
+                
+                # ----- Fuzzy Matcher ----- #
+                mapped_columns = {}
+                target_keys = list(SCHEMA_LOOKUP.keys())
+                
+                for col in df.columns:
+                    scrubbed = re.sub(r'[^a-zA-Z0-9]', '', str(col)).lower()
+
+                    if scrubbed in SCHEMA_ALIAS:
+                        mapped_columns[col] = SCHEMA_ALIAS[scrubbed]
+                    # ----- match ----- #
+                    elif scrubbed in SCHEMA_LOOKUP:
+                        mapped_columns[col] = SCHEMA_LOOKUP[scrubbed]
+                    # ----- typo ----- #
+                    else:
+                        matches = difflib.get_close_matches(scrubbed, target_keys, n=1, cutoff=0.85)
+                        if matches:
+                            mapped_columns[col] = SCHEMA_LOOKUP[matches[0]]
+                        else:
+                            mapped_columns[col] = col # ----- Leave it alone ----- #
+                            
+                df.rename(columns=mapped_columns, inplace=True)
+
+            # ----- Drops proprietary manufacturer math and enforces 53-column layout ----- #
+            df = df.reindex(columns=CUSTOM_SCHEMA)
+            df = df.replace(r'^\s*$', np.nan, regex=True)
+            
+            # ----- Cascade logic for Safe Index: NINDEX -> DINDEX -> EINDEX -> default 1.530 ----- #
+            n_idx = pd.to_numeric(df['NINDEX'], errors='coerce')
+            d_idx = pd.to_numeric(df['DINDEX'], errors='coerce')
+            e_idx = pd.to_numeric(df['EINDEX'], errors='coerce')
+            df['SAFE_INDEX'] = n_idx.combine_first(d_idx).combine_first(e_idx).fillna(1.530)
+            
+            # ----- Convert Radii to Numeric. Zeros become NaN to prevent division-by-zero ----- #
+            rad_f = pd.to_numeric(df['RADIUSF'], errors='coerce').replace(0.0, np.nan)
+            rad_b = pd.to_numeric(df['RADIUSB'], errors='coerce').replace(0.0, np.nan)
+            safe_idx_val = pd.to_numeric(df['SAFE_INDEX'], errors='coerce')
+            
+            # ----- Calculate True Front and True Back Curves using 1.530 standard tooling index ----- #
+            df['TRUE_FRONT'] = (((safe_idx_val - 1.0) * 1000.0) / rad_f).round(2)
+            df['TRUE_BACK'] = (-((safe_idx_val - 1.0) * 1000.0) / rad_b).round(2)
+            
+            # ----- Calculate SAG at 50mm (half-chord y = 25.0) ----- #
+            y = 25.0
+            df['SAG'] = np.where(rad_f > y, rad_f - np.sqrt(rad_f**2 - y**2), np.nan)
+            df['SAG'] = df['SAG'].round(3)
+            
+            # ---- Failsafe convert invalid math results back to 0.00 ----- #
+            df[['TRUE_FRONT', 'TRUE_BACK', 'SAG']] = df[['TRUE_FRONT', 'TRUE_BACK', 'SAG']].fillna(0.00)
+            
+            # ----- Clean dataframe back to strings so Pandas doesn't strip trailing zeros when saving ----- #
+            df = df.fillna("")
+            
+            # ---- Temporary Output ----- #
+            df.to_csv(dest_pth, index=False)
+            
+            ctx['log_lines'].append(f"║ {len(df):,} Rows Ingested & Schema Locked")
+            ctx['log_lines'].append(f"║ Math Engine: Safe Index, True Curves, and SAG Applied")
+            ctx['log_lines'].append(f"║ [ STAGED TO: {dest_pth} ]")
+            
+        except Exception as e:
+            ctx['log_lines'].append(f"║ [ ERROR PROCESSING FILE: {e} ]")
+            
+        ctx['log_lines'].append(f"╚{'═'*40}")
+        ctx['log_lines'].append("") 
+        
+        # ----- check for EOF ----- #
+        current_time = time.time()
+        if current_time - last_draw_time > frame_rate or current_idx == total_files:
+            draw_viewport(term_w, term_h, ctx, pct, f"Finished: {name}", current_idx, total_files, is_interactive=False, title="Convert VCA", action_text="( COMPILING )", frame_title="VCA REFINERY: DATA SANITIZATION")
+            last_draw_time = current_time
+        
+    return ctx['log_lines']
 
 # ----- INPUT HANDLERS ----- #
 
@@ -383,6 +681,10 @@ def file_mgr_input(ch, ctx):
 
 # ----- Master Loop. Master Sword. ----- #
 
+def init_env():
+    os.makedirs('./data/import', exist_ok=True)
+    os.makedirs('./data/db/.vault', exist_ok=True)
+
 def master_loop():
     current_state = "BOOTLOADER"
     last_state = ""
@@ -419,7 +721,7 @@ def master_loop():
                 elif current_state == "MAIN_MENU":
                     main_menu(term_w, term_h)
                 elif current_state == "FILE_MGR":
-                    update_file_mgr_data(term_h, ctx) # Resolves race condition!
+                    update_file_mgr_data(term_h, ctx) # ----- Resolves race condition ----- #
                     file_mgr(term_w, term_h, ctx)
                 elif current_state == "VCA_CONVERT":
                     vca_convert(term_w, term_h, ctx)
@@ -427,7 +729,7 @@ def master_loop():
                 sys.stdout.flush()
                 force_redraw = False
                 
-            ch = getch_timeout(0.1)
+            ch = getch_timeout(POLL_RATE)
             
             if ch is None:
                 continue 
@@ -436,10 +738,12 @@ def master_loop():
             
             if current_state == "BOOTLOADER":
                 if ch.lower() == 'y':
+                    init_env() # ----- Initialize on accept ----- #
                     current_state = "MAIN_MENU"
                 else:
-                    response = draw_z_modal("TERMS & CONDITIONS", "Press (Y) to agree or any key to quit.", False, bootloader)
+                    response = draw_z_modal("TERMS & CONDITIONS", "Press (Y) to agree or any key to quit.", False, bootloader, single_key=True)
                     if response and response.lower() == 'y':
+                        init_env() # ----- Initialize on accept ----- #
                         current_state = "MAIN_MENU"
                     else:
                         sys.exit(0)
@@ -465,11 +769,13 @@ def master_loop():
                 if action == "EXIT":
                     current_state = "MAIN_MENU"
                 elif action == "EXEC":
-                    # ----- Transition into whatever you want. ----- #
+                    # -----Pass terminal dimensions ----- #
+                    vca_parse_data(ctx, term_w, term_h)
                     current_state = ctx.get('next_state', 'MAIN_MENU')
             
             elif current_state == "VCA_CONVERT":
-                if ch == 'ESC':
+                action = vca_convert_input(ch, ctx, term_h)
+                if action == "EXIT":
                     current_state = "MAIN_MENU"
                     
     finally:
