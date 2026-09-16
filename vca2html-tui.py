@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 import difflib
 import re
+import shutil
 
 GLOBAL_LICENSE = "Copyright © 2026 Daniel Casada. This program is free software; You can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation. This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
 GLOBAL_DISCLAIMER = "This application was created to help optical lab technicians get lens technical specifications into legacy LMS systems. This tool tries to take industry \"standard VCA files\", parse them properly, then format them into a human readable format. It is not affiliated with National Optronics™ (DAC Vision™) or any proprietary LMS manufacturer. There is absolutely no support for this tool and I am not responsible for any invalid information, errors, or any data loss. This application comes as is and you must use at your own risk."
@@ -71,6 +72,20 @@ ascii_art = [
 ]
 
 # ----- UTILITY FUNCTIONS ----- #
+
+def load_config():
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                return json.load(f)
+        except: pass
+    return {"mfg_map": {}}
+
+def save_config(cfg):
+    try:
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(cfg, f, indent=4)
+    except: pass
 
 def get_term_size():
     if os.name == 'nt':
@@ -181,13 +196,6 @@ def getch_timeout(timeout=POLL_RATE):
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
-def draw_skeleton(title, subtitle=""):
-    term_w, term_h = get_term_size()
-    sys.stdout.write(f"\033[1;1H╔══[{title}]{'═'*(term_w - len(title) - 6)}╗")
-    for r in range(2, term_h):
-        sys.stdout.write(f"\033[{r};1H║\033[{r};{term_w}H║")
-    sys.stdout.write(f"\033[{term_h};1H╚══[{subtitle}]{'═'*(term_w - len(subtitle) - 6)}╝")
-
 # ----- UI UPDATERS ----- #
 
 def update_file_mgr_data(term_h, ctx):
@@ -221,6 +229,13 @@ def update_file_mgr_data(term_h, ctx):
 
 # ----- DRAWING UTILITES ----- #
 
+def draw_skeleton(title, subtitle=""):
+    term_w, term_h = get_term_size()
+    sys.stdout.write(f"\033[1;1H╔══[{title}]{'═'*(term_w - len(title) - 6)}╗")
+    for r in range(2, term_h):
+        sys.stdout.write(f"\033[{r};1H║\033[{r};{term_w}H║")
+    sys.stdout.write(f"\033[{term_h};1H╚══[{subtitle}]{'═'*(term_w - len(subtitle) - 6)}╝")
+    
 def draw_viewport(term_w, term_h, ctx, progress_pct, active_file, current_idx, total_files, is_interactive=False, title="Convert VCA", action_text="", frame_title=""):
     draw_skeleton(title, "Data Sanitization & Math Engine")
     
@@ -250,8 +265,8 @@ def draw_viewport(term_w, term_h, ctx, progress_pct, active_file, current_idx, t
     # ----- Frame Title ----- #
     if frame_title:
         pad_title = max(1, (term_w - len(frame_title)) // 2)
-        sys.stdout.write(f"\033[4;{inner_l}H{' ' * box_w}")
-        sys.stdout.write(f"\033[4;{pad_title}H{frame_title}")
+        sys.stdout.write(f"\033[3;{inner_l}H{' ' * box_w}")
+        sys.stdout.write(f"\033[3;{pad_title}H{frame_title}")
         
     sys.stdout.write(f"\033[{vp_start_row};{inner_l}H┌{'─' * (box_w - 2)}┐")
     
@@ -301,7 +316,7 @@ def draw_viewport(term_w, term_h, ctx, progress_pct, active_file, current_idx, t
     sys.stdout.write(f"\033[{term_h};1H")
     sys.stdout.flush()
 
-def draw_z_modal(title, prompt, mask=False, bg_render_func=None, single_key=False):
+def draw_z_modal(title, prompt, mask=False, draw_bg=None, single_key=False):
     last_term_w, last_term_h = 0, 0
     val, force_redraw = "", True
     
@@ -316,7 +331,8 @@ def draw_z_modal(title, prompt, mask=False, bg_render_func=None, single_key=Fals
             
         if force_redraw:
             sys.stdout.write("\033[2J\033[H")
-            if bg_render_func: bg_render_func(term_w, term_h) 
+            # ----- Background Canvas ----- #
+            if draw_bg: draw_bg(term_w, term_h) 
             
             box_w = max(50, len(prompt) + 10)
             box_h = 4 if single_key else 5
@@ -327,7 +343,8 @@ def draw_z_modal(title, prompt, mask=False, bg_render_func=None, single_key=Fals
                 if i == 0: text = f"╔{'═'*(box_w-2)}╗"
                 elif i == 1: text = f"║{title:^{box_w-2}}║"
                 elif i == 2: text = f"║ {prompt:<{box_w-3}}║"
-                elif i == 3 and not single_key: text = f"║ > {' ' * (box_w-5)}║"
+                # ----- dynamic text ----- #
+                elif i == 3 and not single_key: text = f"║ > {val:<{box_w-5}}║"
                 elif i == 3 and single_key: text = f"╚{'═'*(box_w-2)}╝"
                 elif i == 4 and not single_key: text = f"╚{'═'*(box_w-2)}╝"
                 sys.stdout.write(f"\033[{row};{start_x}H{text}")
@@ -362,43 +379,14 @@ def draw_z_modal(title, prompt, mask=False, bg_render_func=None, single_key=Fals
                 return None
             elif ch in ['BACKSPACE', '\x08', '\x7f', 'DEL']: val = val[:-1]
             elif len(ch) == 1 and ch.isprintable() and len(val) < box_w - 7: val += ch
-
-def bootloader(term_w, term_h):
-    draw_skeleton("OPTICAL LENS SPECIFICATIONS ENGINE", "License & Disclaimer")
+ 
+def draw_playback(term_w, term_h, ctx):
+    total_files = len(ctx.get('clip', []))
+    title = ctx.get('pb_title', 'Operations Log')
+    action = ctx.get('pb_action', '( REVIEW MODE )')
+    frame = ctx.get('pb_frame', 'SYSTEM FEED')
     
-    start_row = 4
-    
-    # ----- Center the ASCII Art ----- #
-    for i, line in enumerate(ascii_art):
-        pad = max(1, (term_w - len(line)) // 2)
-        sys.stdout.write(f"\033[{start_row + i};{pad}H{line}")
-    
-    # ----- Pad 85% for text ----- #
-    text_w = int(term_w * 0.85)
-    pad_left = max(1, (term_w - text_w) // 2)
-    
-    # ----- Rows to start text under ASCII ----- #
-    row = start_row + len(ascii_art) + 2
-    
-    for line in textwrap.wrap(GLOBAL_LICENSE, width=text_w):
-        sys.stdout.write(f"\033[{row};{pad_left}H{line}")
-        row += 1
-        
-    row += 2 
-    
-    for line in textwrap.wrap(GLOBAL_DISCLAIMER, width=text_w):
-        sys.stdout.write(f"\033[{row};{pad_left}H{line}") 
-        row += 1
-        
-    row += 3
-    prompt = "Press (Y) to Accept Terms and Continue, or any other key to quit."
-    pad_prompt = max(1, (term_w - len(prompt)) // 2)
-    sys.stdout.write(f"\033[{row};{pad_prompt}H{prompt}")
-
-def main_menu(term_w, term_h):
-    draw_skeleton("OPERATIONS CENTER", "Main Menu Active")
-    sys.stdout.write("\033[4;5H(C)onvert Files")
-    sys.stdout.write("\033[5;5H(Q)uit Application")
+    draw_viewport(term_w, term_h, ctx, 100.0, "Process Complete (Press ESC to return)", total_files, total_files, is_interactive=True, title=title, action_text=action, frame_title=frame)
 
 def file_mgr(term_w, term_h, ctx):
     draw_skeleton("FILE MANAGER", f"Staging {len(ctx['clip'])} Files")
@@ -493,6 +481,8 @@ def file_mgr(term_w, term_h, ctx):
     
     cursor_col = 7 + len(ctx['user_input']) 
     sys.stdout.write(f"\033[{term_h - 2};{cursor_col}H\033[?25h")
+    
+# ----- TOOLS ----- #
 
 def vca_convert(term_w, term_h, ctx):
     total_files = len(ctx.get('clip', []))
@@ -518,14 +508,58 @@ def vca_convert_input(ch, ctx, term_h):
     return "STAY"
     
 def vca_parse_data(ctx, term_w, term_h):
-    """Pandas ingestion funnel with fuzzy matching, frame throttling, and dynamic headers."""
     ctx['log_lines'] = []
     files_to_process = ctx.get('clip', [])
     total_files = len(files_to_process)
     
-    import time
+    cfg = load_config()
+    mfg_map = cfg.get("mfg_map", {})
+    
+    # ----- PRE-FLIGHT ----- #
+    for name, pth in files_to_process:
+        ext = os.path.splitext(name)[1].lower()
+        try:
+            if ext in ['.xlsx', '.xls', '.xlsm', '.xlsb', '.ods']:
+                df_peek = pd.read_excel(pth, dtype=str, engine='openpyxl', nrows=100)
+            else:
+                with open(pth, 'r', encoding='latin1', errors='ignore') as f:
+                    first_line = f.readline().upper()
+                if "MFG" not in first_line and "DESCRIPTION" not in first_line:
+                    df_peek = pd.read_csv(pth, header=None, dtype=str, encoding='latin1', on_bad_lines='skip', engine='python', nrows=100)
+                    df_peek.columns = CUSTOM_SCHEMA[:df_peek.shape[1]]
+                else:
+                    df_peek = pd.read_csv(pth, dtype=str, encoding='latin1', on_bad_lines='skip', engine='python', nrows=100)
+            
+            # Map columns before MFG column
+            target_keys = list(SCHEMA_LOOKUP.keys())
+            for col in df_peek.columns:
+                scrubbed = re.sub(r'[^a-zA-Z0-9]', '', str(col)).lower()
+                mapped_col = SCHEMA_ALIAS.get(scrubbed) or SCHEMA_LOOKUP.get(scrubbed)
+                if not mapped_col:
+                    matches = difflib.get_close_matches(scrubbed, target_keys, n=1, cutoff=0.85)
+                    if matches: mapped_col = SCHEMA_LOOKUP[matches[0]]
+                if mapped_col == "MFG":
+                    unique_mfgs = df_peek[col].dropna().unique()
+                    for m in unique_mfgs:
+                        m_clean = str(m).strip()
+                        if m_clean and m_clean not in mfg_map:
+                            sys.stdout.write("\033[2J\033[H") # Wipe UI for modal
+                            def draw_bg(tw, th): draw_skeleton("VCA CONVERT", f"Unknown Manufacturer Code: {m_clean}")
+                            # ----- Fixed the callback variable name here ----- #
+                            ans = draw_z_modal("UNKNOWN MFG CODE", f"What does '{m_clean}' stand for?", False, draw_bg)
+                            if ans:
+                                mfg_map[m_clean] = ans
+                                cfg["mfg_map"] = mfg_map
+                                save_config(cfg)
+                    break
+        except: pass
+    
+    # ----- HARD SCREEN WIPE ----- #
+    sys.stdout.write("\033[2J\033[H")
+    sys.stdout.flush()
+    
     last_draw_time = 0
-    frame_rate = 0.05 # Redraw capped at 20 FPS
+    frame_rate = 0.05
     
     draw_viewport(term_w, term_h, ctx, 0.0, "Starting batch...", 0, total_files, is_interactive=False, title="Convert VCA", action_text="( COMPILING )", frame_title="VCA REFINERY: DATA SANITIZATION")
     
@@ -533,93 +567,108 @@ def vca_parse_data(ctx, term_w, term_h):
         current_idx = idx + 1
         pct = (current_idx / max(1, total_files)) * 100.0
         
-        # Throttle check for Start of file
         current_time = time.time()
         if current_time - last_draw_time > frame_rate or current_idx == total_files:
             draw_viewport(term_w, term_h, ctx, pct, f"Parsing: {name}", current_idx, total_files, is_interactive=False, title="Convert VCA", action_text="( COMPILING )", frame_title="VCA REFINERY: DATA SANITIZATION")
             last_draw_time = current_time
         
-        ctx['log_lines'].append(f"╔══ [ TARGET FILE: {name} ]")
-        dest_pth = os.path.join(IMPORT_DIR, name)
+        # ----- VERBOSE: INCOMING ----- #
+        try: file_size_kb = os.path.getsize(pth) / 1024.0
+        except: file_size_kb = 0.0
+        ctx['log_lines'].append(f"[TARGET] {name} ({file_size_kb:.1f} KB)")
+        
+        # ----- Force .vca extension for Staging Output ----- #
+        safe_out_name = f"{os.path.splitext(name)[0]}.vca"
+        dest_pth = os.path.join(IMPORT_DIR, safe_out_name)
+        orig_dest_pth = os.path.join(ORIGINALS_DIR, name)
         
         try:
-            # ----- Does it have a header? ----- #
-            with open(pth, 'r', errors='ignore') as f:
-                first_line = f.readline().upper()
-                
-            if "MFG" not in first_line and "DESCRIPTION" not in first_line:
-                df = pd.read_csv(pth, header=None, dtype=str, on_bad_lines='skip', engine='python')
-                df.columns = CUSTOM_SCHEMA[:df.shape[1]]
-                ctx['log_lines'].append("║ [!] Ghost file detected: Forced master schema overlay.")
+            ext = os.path.splitext(name)[1].lower()
+            
+            # ----- Excel----- #
+            if ext in ['.xlsx', '.xls', '.xlsm', '.xlsb', '.ods']:
+                df = pd.read_excel(pth, dtype=str, engine='openpyxl')
+                ctx['log_lines'].append("  -> [INGEST] Excel binary format detected and decoded.")
+            
+            # ----- Text ----- #
             else:
-                df = pd.read_csv(pth, dtype=str, on_bad_lines='skip', engine='python')
+                with open(pth, 'r', encoding='latin1', errors='ignore') as f:
+                    first_line = f.readline().upper()
+                    
+                if "MFG" not in first_line and "DESCRIPTION" not in first_line:
+                    df = pd.read_csv(pth, header=None, dtype=str, encoding='latin1', on_bad_lines='skip', engine='python')
+                    df.columns = CUSTOM_SCHEMA[:df.shape[1]]
+                    ctx['log_lines'].append("  -> [!] Ghost file detected: Forced master schema overlay.")
+                else:
+                    df = pd.read_csv(pth, dtype=str, encoding='latin1', on_bad_lines='skip', engine='python')
                 
-                # ----- Fuzzy Matcher ----- #
-                mapped_columns = {}
-                target_keys = list(SCHEMA_LOOKUP.keys())
-                
-                for col in df.columns:
-                    scrubbed = re.sub(r'[^a-zA-Z0-9]', '', str(col)).lower()
-
-                    if scrubbed in SCHEMA_ALIAS:
-                        mapped_columns[col] = SCHEMA_ALIAS[scrubbed]
-                    # ----- match ----- #
-                    elif scrubbed in SCHEMA_LOOKUP:
-                        mapped_columns[col] = SCHEMA_LOOKUP[scrubbed]
-                    # ----- typo ----- #
+            # ----- Fuzzy Matcher ----- #
+            mapped_columns = {}
+            target_keys = list(SCHEMA_LOOKUP.keys())
+            
+            for col in df.columns:
+                scrubbed = re.sub(r'[^a-zA-Z0-9]', '', str(col)).lower()
+                if scrubbed in SCHEMA_ALIAS:
+                    mapped_columns[col] = SCHEMA_ALIAS[scrubbed]
+                elif scrubbed in SCHEMA_LOOKUP:
+                    mapped_columns[col] = SCHEMA_LOOKUP[scrubbed]
+                else:
+                    matches = difflib.get_close_matches(scrubbed, target_keys, n=1, cutoff=0.85)
+                    if matches:
+                        mapped_columns[col] = SCHEMA_LOOKUP[matches[0]]
                     else:
-                        matches = difflib.get_close_matches(scrubbed, target_keys, n=1, cutoff=0.85)
-                        if matches:
-                            mapped_columns[col] = SCHEMA_LOOKUP[matches[0]]
-                        else:
-                            mapped_columns[col] = col # ----- Leave it alone ----- #
-                            
-                df.rename(columns=mapped_columns, inplace=True)
+                        mapped_columns[col] = col 
+                        
+            df.rename(columns=mapped_columns, inplace=True)
+            
+            # ----- MFG MAP ----- #
+            if 'MFG' in df.columns:
+                df['MFG'] = df['MFG'].apply(lambda x: mfg_map.get(str(x).strip(), x))
 
             # ----- Drops proprietary manufacturer math and enforces 53-column layout ----- #
             df = df.reindex(columns=CUSTOM_SCHEMA)
             df = df.replace(r'^\s*$', np.nan, regex=True)
             
-            # ----- Cascade logic for Safe Index: NINDEX -> DINDEX -> EINDEX -> default 1.530 ----- #
+            unique_products = df['DESCRIPTION'].nunique() if 'DESCRIPTION' in df.columns else 0
+            
+            # ----- Cascade logic for Safe Index ----- #
             n_idx = pd.to_numeric(df['NINDEX'], errors='coerce')
             d_idx = pd.to_numeric(df['DINDEX'], errors='coerce')
             e_idx = pd.to_numeric(df['EINDEX'], errors='coerce')
-            df['SAFE_INDEX'] = n_idx.combine_first(d_idx).combine_first(e_idx).fillna(1.530)
+            df['SAFE_INDEX'] = n_idx.combine_first(d_idx).combine_first(e_idx).fillna(0.00)
             
-            # ----- Convert Radii to Numeric. Zeros become NaN to prevent division-by-zero ----- #
+            # ----- Calculate True Front, True Back, and SAG ----- #
             rad_f = pd.to_numeric(df['RADIUSF'], errors='coerce').replace(0.0, np.nan)
             rad_b = pd.to_numeric(df['RADIUSB'], errors='coerce').replace(0.0, np.nan)
-            safe_idx_val = pd.to_numeric(df['SAFE_INDEX'], errors='coerce')
+            df['TRUE_FRONT'] = (530.0 / rad_f).round(2)
+            df['TRUE_BACK'] = (-530.0 / rad_b).round(2)
             
-            # ----- Calculate True Front and True Back Curves using 1.530 standard tooling index ----- #
-            df['TRUE_FRONT'] = (((safe_idx_val - 1.0) * 1000.0) / rad_f).round(2)
-            df['TRUE_BACK'] = (-((safe_idx_val - 1.0) * 1000.0) / rad_b).round(2)
-            
-            # ----- Calculate SAG at 50mm (half-chord y = 25.0) ----- #
             y = 25.0
             df['SAG'] = np.where(rad_f > y, rad_f - np.sqrt(rad_f**2 - y**2), np.nan)
             df['SAG'] = df['SAG'].round(3)
-            
-            # ---- Failsafe convert invalid math results back to 0.00 ----- #
             df[['TRUE_FRONT', 'TRUE_BACK', 'SAG']] = df[['TRUE_FRONT', 'TRUE_BACK', 'SAG']].fillna(0.00)
             
-            # ----- Clean dataframe back to strings so Pandas doesn't strip trailing zeros when saving ----- #
             df = df.fillna("")
-            
-            # ---- Temporary Output ----- #
             df.to_csv(dest_pth, index=False)
             
-            ctx['log_lines'].append(f"║ {len(df):,} Rows Ingested & Schema Locked")
-            ctx['log_lines'].append(f"║ Math Engine: Safe Index, True Curves, and SAG Applied")
-            ctx['log_lines'].append(f"║ [ STAGED TO: {dest_pth} ]")
+            # ----- Archive Original File ----- #
+            if os.path.exists(orig_dest_pth): os.remove(orig_dest_pth) 
+            shutil.move(pth, orig_dest_pth)
+            
+            # ----- VERBOSE: OUTGOING ----- #
+            try: out_size_kb = os.path.getsize(dest_pth) / 1024.0
+            except: out_size_kb = 0.0
+            
+            ctx['log_lines'].append(f"  -> [INGEST] {len(df):,} raw lines read and normalized.")
+            ctx['log_lines'].append(f"  -> [SCHEMA] 53-Column Master VCA standard enforced.")
+            ctx['log_lines'].append(f"  -> [AUDIT] Identified {unique_products:,} unique products spanning {len(df):,} lenses.")
+            ctx['log_lines'].append(f"  -> [STAGED] {dest_pth} ({out_size_kb:.1f} KB)")
             
         except Exception as e:
-            ctx['log_lines'].append(f"║ [ ERROR PROCESSING FILE: {e} ]")
+            ctx['log_lines'].append(f"  -> [ERROR] Failed to process file: {e}")
             
-        ctx['log_lines'].append(f"╚{'═'*40}")
         ctx['log_lines'].append("") 
         
-        # ----- check for EOF ----- #
         current_time = time.time()
         if current_time - last_draw_time > frame_rate or current_idx == total_files:
             draw_viewport(term_w, term_h, ctx, pct, f"Finished: {name}", current_idx, total_files, is_interactive=False, title="Convert VCA", action_text="( COMPILING )", frame_title="VCA REFINERY: DATA SANITIZATION")
@@ -645,9 +694,12 @@ def file_mgr_input(ch, ctx):
         ctx['user_input'] = ctx['user_input'][:-1]
     elif ch in ['\r', '\n']:
         cmd = ctx['user_input'].strip()
-        if cmd.upper() == "EXEC":
+        
+        # ----- Dynamic Command Routing ----- #
+        if cmd.upper() in ["CONVERT", "ADD", "GENERATE", "MOVE"]:
             sys.stdout.write("\033[?25l")
-            return "EXEC"
+            return cmd.upper()
+            
         elif cmd.isdigit():
             idx = int(cmd)
             if 0 <= idx < len(ctx['l_items']):
@@ -679,11 +731,73 @@ def file_mgr_input(ch, ctx):
     sys.stdout.write("\033[?25l")
     return "STAY"
 
+def playback_input(ch, ctx, term_h):
+    """Universal Scrolling input handler for Review Mode."""
+    log_lines = ctx.get('log_lines', [])
+    
+    vp_height = (term_h - 5) - 4 - 1
+    max_offset = max(0, len(log_lines) - vp_height)
+    offset = ctx.get('scroll_offset', 0)
+    
+    if ch == 'UP': offset -= 1
+    elif ch == 'DOWN': offset += 1
+    elif ch == 'PGUP': offset -= vp_height
+    elif ch == 'PGDN': offset += vp_height
+    elif ch == 'ESC' or ch.lower() == 'q':
+        sys.stdout.write("\033[?25l")
+        return "EXIT"
+        
+    ctx['scroll_offset'] = max(0, min(offset, max_offset))
+    return "STAY"
+
 # ----- Master Loop. Master Sword. ----- #
 
+def bootloader(term_w, term_h):
+    draw_skeleton("OPTICAL LENS SPECIFICATIONS ENGINE", "License & Disclaimer")
+    
+    start_row = 4
+    
+    # ----- Center the ASCII Art ----- #
+    for i, line in enumerate(ascii_art):
+        pad = max(1, (term_w - len(line)) // 2)
+        sys.stdout.write(f"\033[{start_row + i};{pad}H{line}")
+    
+    # ----- Pad 85% for text ----- #
+    text_w = int(term_w * 0.85)
+    pad_left = max(1, (term_w - text_w) // 2)
+    
+    # ----- Rows to start text under ASCII ----- #
+    row = start_row + len(ascii_art) + 2
+    
+    for line in textwrap.wrap(GLOBAL_LICENSE, width=text_w):
+        sys.stdout.write(f"\033[{row};{pad_left}H{line}")
+        row += 1
+        
+    row += 2 
+    
+    for line in textwrap.wrap(GLOBAL_DISCLAIMER, width=text_w):
+        sys.stdout.write(f"\033[{row};{pad_left}H{line}") 
+        row += 1
+        
+    row += 3
+    prompt = "Press (Y) to Accept Terms and Continue, or any other key to quit."
+    pad_prompt = max(1, (term_w - len(prompt)) // 2)
+    sys.stdout.write(f"\033[{row};{pad_prompt}H{prompt}")
+
+def main_menu(term_w, term_h):
+    draw_skeleton("OPERATIONS CENTER", "Main Menu Active")
+    sys.stdout.write("\033[4;5H(C)onvert Files")
+    sys.stdout.write("\033[5;5H(Q)uit Application")
+
 def init_env():
-    os.makedirs('./data/import', exist_ok=True)
-    os.makedirs('./data/db/.vault', exist_ok=True)
+    os.makedirs(IMPORT_DIR, exist_ok=True)
+    os.makedirs(ORIGINALS_DIR, exist_ok=True)
+    os.makedirs(VAULT_DIR, exist_ok=True)
+    os.makedirs(PURGED_DIR, exist_ok=True)
+    os.makedirs(CORRUPT_DIR, exist_ok=True)
+    os.makedirs(TEMP_DIR, exist_ok=True)
+    os.makedirs(HTML_DB_DIR, exist_ok=True)
+    os.makedirs(HTML_FONT_DIR, exist_ok=True)
 
 def master_loop():
     current_state = "BOOTLOADER"
@@ -693,7 +807,8 @@ def master_loop():
     last_term_w, last_term_h = 0, 0
     force_redraw = True
     
-    sys.stdout.write("\033[?25l\033[2J")
+    # ----- Alternate Screen / Hide Cursor ----- #
+    sys.stdout.write("\033[?1049h\033[?25l\033[2J")
     
     try:
         while True:
@@ -723,8 +838,8 @@ def master_loop():
                 elif current_state == "FILE_MGR":
                     update_file_mgr_data(term_h, ctx) # ----- Resolves race condition ----- #
                     file_mgr(term_w, term_h, ctx)
-                elif current_state == "VCA_CONVERT":
-                    vca_convert(term_w, term_h, ctx)
+                elif current_state == "PLAYBACK":
+                    draw_playback(term_w, term_h, ctx)
                     
                 sys.stdout.flush()
                 force_redraw = False
@@ -746,7 +861,7 @@ def master_loop():
                         init_env() # ----- Initialize on accept ----- #
                         current_state = "MAIN_MENU"
                     else:
-                        sys.exit(0)
+                        return # Escapes to finally block
                         
             elif current_state == "MAIN_MENU":
                 if ch.lower() == 'c':
@@ -756,11 +871,11 @@ def master_loop():
                         'clip': [],
                         'lpage': 0, 'rpage': 0,
                         'user_input': "", 'warning_msg': "",
-                        'next_state': "VCA_CONVERT" 
+                        'next_state': "PLAYBACK" 
                     }
                     current_state = "FILE_MGR"
                 elif ch.lower() == 'q' or ch == 'ESC':
-                    sys.exit(0)
+                    return # Escapes to finally block
                     
             elif current_state == "FILE_MGR":
                 # ----- Ensure data is updated before checking keystrokes ----- #
@@ -768,18 +883,22 @@ def master_loop():
                 action = file_mgr_input(ch, ctx)
                 if action == "EXIT":
                     current_state = "MAIN_MENU"
-                elif action == "EXEC":
-                    # -----Pass terminal dimensions ----- #
+                elif action == "CONVERT":
+                    # ----- Load dynamic UI strings into ctx before executing ----- #
+                    ctx['pb_title'] = "Convert VCA"
+                    ctx['pb_action'] = "File Review"
+                    ctx['pb_frame'] = "Convert MFG VCA File for Sanitation"
                     vca_parse_data(ctx, term_w, term_h)
-                    current_state = ctx.get('next_state', 'MAIN_MENU')
+                    current_state = "PLAYBACK"
             
-            elif current_state == "VCA_CONVERT":
-                action = vca_convert_input(ch, ctx, term_h)
+            elif current_state == "PLAYBACK":
+                action = playback_input(ch, ctx, term_h)
                 if action == "EXIT":
                     current_state = "MAIN_MENU"
                     
     finally:
-        sys.stdout.write("\033[?25h\033[2J\033[H")
+        # ----- Close Alternate Screen / Restore Cursor ----- #
+        sys.stdout.write("\033[?1049l\033[?25h\033[2J\033[H")
         sys.stdout.flush()
 
 if __name__ == "__main__":
