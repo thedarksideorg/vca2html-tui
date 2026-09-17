@@ -8,6 +8,8 @@ import numpy as np
 import difflib
 import re
 import shutil
+import random
+import json
 
 GLOBAL_LICENSE = "Copyright © 2026 Daniel Casada. This program is free software; You can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation. This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
 GLOBAL_DISCLAIMER = "This application was created to help optical lab technicians get lens technical specifications into legacy LMS systems. This tool tries to take industry \"standard VCA files\", parse them properly, then format them into a human readable format. It is not affiliated with National Optronics™ (DAC Vision™) or any proprietary LMS manufacturer. There is absolutely no support for this tool and I am not responsible for any invalid information, errors, or any data loss. This application comes as is and you must use at your own risk."
@@ -31,6 +33,13 @@ HTML_DB_DIR = os.path.join(HTML_DATA_DIR, 'db')
 CONFIG_FILE = os.path.join(DATA_DIR, '.config')
 DB_FILE = os.path.join(DB_DIR, 'master_lens_db.json')
 SIG_FILE = os.path.join(DB_DIR, '.sig')
+
+DEFAULT_CONFIG = {
+    "nerd_fonts": False,
+    "admin_enabled": True,
+    "sys_auth": "c94bec1f5512d6508e50fcd325635357b3c25e90f07ac5635801dd536486bb84",
+    "mfg_map": {}
+}
 
 CUSTOM_SCHEMA = [
     "MFG", "CLASS", "DESCRIPTION", "MATCODE", "MATBRAND", "PRODUCT", "STYLE", 
@@ -74,12 +83,23 @@ ascii_art = [
 # ----- UTILITY FUNCTIONS ----- #
 
 def load_config():
+    cfg = DEFAULT_CONFIG.copy()
+    
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, 'r') as f:
-                return json.load(f)
+                user_cfg = json.load(f)
+                
+                # ----- Non-Destructive Merge ----- #
+                for k, v in user_cfg.items():
+                    if k == "mfg_map" and isinstance(v, dict):
+                        cfg["mfg_map"].update(v)
+                    else:
+                        cfg[k] = v
         except: pass
-    return {"mfg_map": {}}
+        
+    save_config(cfg)
+    return cfg
 
 def save_config(cfg):
     try:
@@ -213,8 +233,13 @@ def update_file_mgr_data(term_h, ctx):
     dirs_list.sort(key=lambda x: x[0].lower())
     files_list.sort(key=lambda x: x[0].lower())
     
-    parent_dir = os.path.dirname(ctx['ldir']) if ctx['ldir'] != os.path.dirname(ctx['ldir']) else ctx['ldir']
-    ctx['l_items'] = [("../", parent_dir)] + [(f"{d[0]}/", d[1]) for d in dirs_list] + files_list
+    locked = ctx.get('locked_dir')
+    if locked and os.path.normcase(os.path.abspath(ctx['ldir'])) == os.path.normcase(os.path.abspath(locked)):
+        # Strip the parent directory out so the user cannot navigate higher
+        ctx['l_items'] = [(f"{d[0]}/", d[1]) for d in dirs_list] + files_list
+    else:
+        parent_dir = os.path.dirname(ctx['ldir']) if ctx['ldir'] != os.path.dirname(ctx['ldir']) else ctx['ldir']
+        ctx['l_items'] = [("../", parent_dir)] + [(f"{d[0]}/", d[1]) for d in dirs_list] + files_list
     
     list_h = (term_h - 11) - 8 + 1 
     ctx['l_capacity'] = list_h
@@ -223,7 +248,6 @@ def update_file_mgr_data(term_h, ctx):
     ctx['max_lpage'] = max(1, (len(ctx['l_items']) + ctx['l_capacity'] - 1) // ctx['l_capacity'])
     ctx['max_rpage'] = max(1, (len(ctx['clip']) + ctx['r_capacity'] - 1) // ctx['r_capacity'])
     
-    # Safety bounds check after changing directories or resizing window
     if ctx['lpage'] >= ctx['max_lpage']: ctx['lpage'] = max(0, ctx['max_lpage'] - 1)
     if ctx['rpage'] >= ctx['max_rpage']: ctx['rpage'] = max(0, ctx['max_rpage'] - 1)
 
@@ -380,13 +404,34 @@ def draw_z_modal(title, prompt, mask=False, draw_bg=None, single_key=False):
             elif ch in ['BACKSPACE', '\x08', '\x7f', 'DEL']: val = val[:-1]
             elif len(ch) == 1 and ch.isprintable() and len(val) < box_w - 7: val += ch
  
+def draw_throttle(term_w, term_h, ctx, pct, active_text, current_idx, total_files, is_done=False):
+    p_min = ctx.get('pace_min', 0.0)
+    p_max = ctx.get('pace_max', 0.0)
+    frame_rate = 0.05
+    
+    if p_max > 0:
+        time.sleep(random.uniform(p_min, p_max))
+        
+    curr = time.time()
+    last_draw = ctx.get('last_draw_time', 0)
+    
+    if curr - last_draw > frame_rate or is_done:
+        draw_viewport(
+            term_w, term_h, ctx, pct, active_text, current_idx, total_files, 
+            is_interactive=False, 
+            title=ctx.get('pb_title', "System Process"), 
+            action_text=ctx.get('pb_action', "( COMPILING )"), 
+            frame_title=ctx.get('pb_frame', "SYSTEM FEED")
+        )
+        ctx['last_draw_time'] = curr
+ 
 def draw_playback(term_w, term_h, ctx):
     total_files = len(ctx.get('clip', []))
     title = ctx.get('pb_title', 'Operations Log')
-    action = ctx.get('pb_action', '( REVIEW MODE )')
+    action = ctx.get('pb_action', 'REVIEW MODE')
     frame = ctx.get('pb_frame', 'SYSTEM FEED')
     
-    draw_viewport(term_w, term_h, ctx, 100.0, "Process Complete (Press ESC to return)", total_files, total_files, is_interactive=True, title=title, action_text=action, frame_title=frame)
+    draw_viewport(term_w, term_h, ctx, 100.0, "Process Complete..", total_files, total_files, is_interactive=True, title=title, action_text=action, frame_title=frame)
 
 def file_mgr(term_w, term_h, ctx):
     draw_skeleton("FILE MANAGER", f"Staging {len(ctx['clip'])} Files")
@@ -472,7 +517,11 @@ def file_mgr(term_w, term_h, ctx):
     sys.stdout.write(f"\033[{term_h - 6};5H{' ' * (term_w - 6)}")
     sys.stdout.write(f"\033[{term_h - 6};5HSelect Files by Index Number.")
     sys.stdout.write(f"\033[{term_h - 5};5H{' ' * (term_w - 6)}")
-    sys.stdout.write(f"\033[{term_h - 5};5HInput \033[4mEXEC\033[24m to Finish Selection.")
+    
+    # ----- Dynamic Command ----- #
+    action_str = ctx.get('action_cmd', 'EXEC')
+    sys.stdout.write(f"\033[{term_h - 5};5HInput \033[4m{action_str}\033[24m to Finish Selection.")
+    
     sys.stdout.write(f"\033[{term_h - 3};5H{' ' * (term_w - 6)}")
     if ctx['warning_msg']: sys.stdout.write(f"\033[{term_h - 3};5H{ctx['warning_msg']}")
         
@@ -509,6 +558,8 @@ def vca_convert_input(ch, ctx, term_h):
     
 def vca_parse_data(ctx, term_w, term_h):
     ctx['log_lines'] = []
+    ctx['last_draw_time'] = 0  # universal throttle
+    
     files_to_process = ctx.get('clip', [])
     total_files = len(files_to_process)
     
@@ -530,7 +581,6 @@ def vca_parse_data(ctx, term_w, term_h):
                 else:
                     df_peek = pd.read_csv(pth, dtype=str, encoding='latin1', on_bad_lines='skip', engine='python', nrows=100)
             
-            # Map columns before MFG column
             target_keys = list(SCHEMA_LOOKUP.keys())
             for col in df_peek.columns:
                 scrubbed = re.sub(r'[^a-zA-Z0-9]', '', str(col)).lower()
@@ -543,9 +593,8 @@ def vca_parse_data(ctx, term_w, term_h):
                     for m in unique_mfgs:
                         m_clean = str(m).strip()
                         if m_clean and m_clean not in mfg_map:
-                            sys.stdout.write("\033[2J\033[H") # Wipe UI for modal
+                            sys.stdout.write("\033[2J\033[H") 
                             def draw_bg(tw, th): draw_skeleton("VCA CONVERT", f"Unknown Manufacturer Code: {m_clean}")
-                            # ----- Fixed the callback variable name here ----- #
                             ans = draw_z_modal("UNKNOWN MFG CODE", f"What does '{m_clean}' stand for?", False, draw_bg)
                             if ans:
                                 mfg_map[m_clean] = ans
@@ -558,26 +607,19 @@ def vca_parse_data(ctx, term_w, term_h):
     sys.stdout.write("\033[2J\033[H")
     sys.stdout.flush()
     
-    last_draw_time = 0
-    frame_rate = 0.05
-    
-    draw_viewport(term_w, term_h, ctx, 0.0, "Starting batch...", 0, total_files, is_interactive=False, title="Convert VCA", action_text="( COMPILING )", frame_title="VCA REFINERY: DATA SANITIZATION")
+    draw_throttle(term_w, term_h, ctx, 0.0, "Starting batch...", 0, total_files)
     
     for idx, (name, pth) in enumerate(files_to_process):
         current_idx = idx + 1
         pct = (current_idx / max(1, total_files)) * 100.0
         
-        current_time = time.time()
-        if current_time - last_draw_time > frame_rate or current_idx == total_files:
-            draw_viewport(term_w, term_h, ctx, pct, f"Parsing: {name}", current_idx, total_files, is_interactive=False, title="Convert VCA", action_text="( COMPILING )", frame_title="VCA REFINERY: DATA SANITIZATION")
-            last_draw_time = current_time
+        draw_throttle(term_w, term_h, ctx, pct, f"Parsing: {name}", current_idx, total_files)
         
         # ----- VERBOSE: INCOMING ----- #
         try: file_size_kb = os.path.getsize(pth) / 1024.0
         except: file_size_kb = 0.0
         ctx['log_lines'].append(f"[TARGET] {name} ({file_size_kb:.1f} KB)")
         
-        # ----- Force .vca extension for Staging Output ----- #
         safe_out_name = f"{os.path.splitext(name)[0]}.vca"
         dest_pth = os.path.join(IMPORT_DIR, safe_out_name)
         orig_dest_pth = os.path.join(ORIGINALS_DIR, name)
@@ -669,11 +711,148 @@ def vca_parse_data(ctx, term_w, term_h):
             
         ctx['log_lines'].append("") 
         
-        current_time = time.time()
-        if current_time - last_draw_time > frame_rate or current_idx == total_files:
-            draw_viewport(term_w, term_h, ctx, pct, f"Finished: {name}", current_idx, total_files, is_interactive=False, title="Convert VCA", action_text="( COMPILING )", frame_title="VCA REFINERY: DATA SANITIZATION")
-            last_draw_time = current_time
+        # ----- Theatrical UI Pacing ----- #
+        draw_throttle(term_w, term_h, ctx, pct, f"Finished: {name}", current_idx, total_files)
+
+    # ----- Final Force Draw ----- #
+    draw_throttle(term_w, term_h, ctx, 100.0, "Batch Completed", total_files, total_files, is_done=True)
+    
+    return ctx['log_lines']
+    
+def vca_add_data(ctx, term_w, term_h):
+    ctx['log_lines'] = []
+    ctx['last_draw_time'] = 0  
+    
+    files_to_process = ctx.get('clip', [])
+    total_files = len(files_to_process)
+    
+    audit_passed = True
+    failed_files = []
+    staged_data = [] 
+    
+    # ----- HARD SCREEN WIPE ----- #
+    sys.stdout.write("\033[2J\033[H")
+    sys.stdout.flush()
+    
+    draw_throttle(term_w, term_h, ctx, 0.0, "Initiating Phase 1: Batch Audit", 0, total_files)
+
+    # ----- FORENSIC AUDIT ----- #
+    for idx, (name, pth) in enumerate(files_to_process):
+        current_idx = idx + 1
+        pct = (current_idx / max(1, total_files)) * 50.0 
         
+        try: file_size_kb = os.path.getsize(pth) / 1024.0
+        except: file_size_kb = 0.0
+        
+        ctx['log_lines'].append(f"[INGEST] {name} ({file_size_kb:.1f} KB) loaded for memory audit.")
+        draw_throttle(term_w, term_h, ctx, pct, name, current_idx, total_files)
+        
+        try:
+            df = pd.read_csv(pth, dtype=str, encoding='latin1', on_bad_lines='error')
+            
+            # 1. Strict Schema Check
+            if list(df.columns) != CUSTOM_SCHEMA:
+                audit_passed = False
+                failed_files.append((name, pth))
+                ctx['log_lines'].append(f"  -> [REJECTED] {name}: Schema mismatch. Found {len(df.columns)} cols, expected {len(CUSTOM_SCHEMA)}.")
+                continue
+            else:
+                ctx['log_lines'].append(f"  -> [SCHEMA] {name}: Verified exactly 53 columns across {len(df)} rows.")
+                draw_throttle(term_w, term_h, ctx, pct, name, current_idx, total_files)
+                
+            # 2. Identical Duplicate Purge
+            orig_len = len(df)
+            df.drop_duplicates(subset=CUSTOM_SCHEMA, keep='first', inplace=True)
+            if len(df) < orig_len:
+                purged = orig_len - len(df)
+                ctx['log_lines'].append(f"  -> [CLEANUP] Silently purged {purged:,} identical duplicate rows.")
+                # Save the sanitized dataframe back to staging so the Vault gets the clean version
+                df.to_csv(pth, index=False)
+                draw_throttle(term_w, term_h, ctx, pct, name, current_idx, total_files)
+            
+            # 3. Forensic Math Re-Calculation
+            rad_f = pd.to_numeric(df['RADIUSF'], errors='coerce').replace(0.0, np.nan)
+            rad_b = pd.to_numeric(df['RADIUSB'], errors='coerce').replace(0.0, np.nan)
+            
+            calc_front = (530.0 / rad_f).round(2).fillna(0.00)
+            calc_back = (-530.0 / rad_b).round(2).fillna(0.00)
+            
+            y = 25.0
+            calc_sag = np.where(rad_f > y, rad_f - np.sqrt(rad_f**2 - y**2), np.nan)
+            calc_sag = pd.Series(calc_sag).round(3).fillna(0.00)
+            
+            file_front = pd.to_numeric(df['TRUE_FRONT'], errors='coerce').fillna(0.00)
+            file_back = pd.to_numeric(df['TRUE_BACK'], errors='coerce').fillna(0.00)
+            file_sag = pd.to_numeric(df['SAG'], errors='coerce').fillna(0.00)
+            
+            # Create a mask that is True only for rows that are NOT Finished lenses
+            sf_mask = df['CLASS'].astype(str).str.upper().fillna('') != 'FIN'
+            
+            # Apply the mask so mismatches are only flagged on SF lenses
+            front_mismatch = (calc_front != file_front) & sf_mask
+            back_mismatch = (calc_back != file_back) & sf_mask
+            sag_mismatch = (calc_sag != file_sag) & sf_mask
+            
+            if front_mismatch.any() or back_mismatch.any() or sag_mismatch.any():
+                audit_passed = False
+                failed_files.append((name, pth))
+                
+                if front_mismatch.any():
+                    bad_idx = front_mismatch.idxmax()
+                    ctx['log_lines'].append(f"  -> [REJECTED] {name}: TRUE_FRONT mismatch on Row {bad_idx + 2} (Exp: {calc_front.iloc[bad_idx]:.2f}, Found: {file_front.iloc[bad_idx]:.2f})")
+                elif back_mismatch.any():
+                    bad_idx = back_mismatch.idxmax()
+                    ctx['log_lines'].append(f"  -> [REJECTED] {name}: TRUE_BACK mismatch on Row {bad_idx + 2} (Exp: {calc_back.iloc[bad_idx]:.2f}, Found: {file_back.iloc[bad_idx]:.2f})")
+                elif sag_mismatch.any():
+                    bad_idx = sag_mismatch.idxmax()
+                    ctx['log_lines'].append(f"  -> [REJECTED] {name}: SAG mismatch on Row {bad_idx + 2} (Exp: {calc_sag.iloc[bad_idx]:.3f}, Found: {file_sag.iloc[bad_idx]:.3f})")
+                continue
+            else:
+                ctx['log_lines'].append(f"  -> [MATH] {name}: Tooling Index (1.530) and SAG physics verified (FIN bypassed).")
+                draw_throttle(term_w, term_h, ctx, pct, name, current_idx, total_files)
+
+            staged_data.append((name, pth, len(df)))
+            
+        except Exception as e:
+            audit_passed = False
+            failed_files.append((name, pth))
+            ctx['log_lines'].append(f"  -> [REJECTED] {name}: Critical read failure ({e})")
+
+    # ----- ATOMIC COMMIT OR ROLLBACK ----- #
+    if audit_passed:
+        total_moved_kb = 0.0
+        for idx, (name, pth, row_count) in enumerate(staged_data):
+            current_idx = idx + 1
+            pct = 50.0 + ((current_idx / max(1, len(staged_data))) * 50.0)
+            
+            dest_pth = os.path.join(VAULT_DIR, name)
+            try: kb = os.path.getsize(pth) / 1024.0
+            except: kb = 0.0
+            total_moved_kb += kb
+            
+            if os.path.exists(dest_pth): os.remove(dest_pth)
+            shutil.move(pth, dest_pth)
+            os.chmod(dest_pth, stat.S_IREAD) 
+            
+            ctx['log_lines'].append(f"[VAULT] Locked {name} ({kb:.1f} KB, {row_count:,} rows) -> S_IREAD.")
+            draw_throttle(term_w, term_h, ctx, pct, name, current_idx, total_files)
+            
+        ctx['log_lines'].append(f"[COMMIT] Batch clearance successful. {len(staged_data)} files ({total_moved_kb:.1f} KB) secured.")
+    
+    else:
+        ctx['log_lines'].append("")
+        ctx['log_lines'].append(f"[BATCH FAILED] Atomic lock triggered. Moving corrupted files to isolation.")
+        for name, pth in failed_files:
+            dest_pth = os.path.join(CORRUPT_DIR, name)
+            if os.path.exists(dest_pth): os.remove(dest_pth)
+            try:
+                shutil.move(pth, dest_pth)
+                ctx['log_lines'].append(f"  -> [ISOLATED] {name} moved to ./data/db/corrupt/")
+            except Exception as e:
+                ctx['log_lines'].append(f"  -> [ERROR] Failed to isolate {name}: {e}")
+
+    # ----- Final Force Draw ----- #
+    draw_throttle(term_w, term_h, ctx, 100.0, "Batch Completed", total_files, total_files, is_done=True)
     return ctx['log_lines']
 
 # ----- INPUT HANDLERS ----- #
@@ -787,7 +966,8 @@ def bootloader(term_w, term_h):
 def main_menu(term_w, term_h):
     draw_skeleton("OPERATIONS CENTER", "Main Menu Active")
     sys.stdout.write("\033[4;5H(C)onvert Files")
-    sys.stdout.write("\033[5;5H(Q)uit Application")
+    sys.stdout.write("\033[5;5H(A)dd to Vault")
+    sys.stdout.write("\033[6;5H(Q)uit Application")
 
 def init_env():
     os.makedirs(IMPORT_DIR, exist_ok=True)
@@ -865,30 +1045,47 @@ def master_loop():
                         
             elif current_state == "MAIN_MENU":
                 if ch.lower() == 'c':
-                    # ----- File Manager -> VCA_CONVERT ----- #
                     ctx = {
                         'ldir': os.path.abspath(os.getcwd()),
-                        'clip': [],
-                        'lpage': 0, 'rpage': 0,
+                        'clip': [], 'lpage': 0, 'rpage': 0,
                         'user_input': "", 'warning_msg': "",
+                        'action_cmd': "CONVERT",
                         'next_state': "PLAYBACK" 
                     }
                     current_state = "FILE_MGR"
+                elif ch.lower() == 'a':
+                    ctx = {
+                        'ldir': IMPORT_DIR,
+                        'locked_dir': IMPORT_DIR,
+                        'clip': [], 'lpage': 0, 'rpage': 0,
+                        'user_input': "", 'warning_msg': "",
+                        'action_cmd': "ADD",
+                        'next_state': "PLAYBACK"
+                    }
+                    current_state = "FILE_MGR"
                 elif ch.lower() == 'q' or ch == 'ESC':
-                    return # Escapes to finally block
+                    return 
                     
             elif current_state == "FILE_MGR":
-                # ----- Ensure data is updated before checking keystrokes ----- #
                 update_file_mgr_data(term_h, ctx)
                 action = file_mgr_input(ch, ctx)
                 if action == "EXIT":
                     current_state = "MAIN_MENU"
                 elif action == "CONVERT":
-                    # ----- Load dynamic UI strings into ctx before executing ----- #
                     ctx['pb_title'] = "Convert VCA"
                     ctx['pb_action'] = "File Review"
                     ctx['pb_frame'] = "Convert MFG VCA File for Sanitation"
+                    ctx['pace_min'] = 0.8  
+                    ctx['pace_max'] = 1.2  
                     vca_parse_data(ctx, term_w, term_h)
+                    current_state = "PLAYBACK"
+                elif action == "ADD":
+                    ctx['pb_title'] = "Vault Gatekeeper"
+                    ctx['pb_action'] = "( AUDITING )"
+                    ctx['pb_frame'] = "ATOMIC BATCH CLEARANCE"
+                    ctx['pace_min'] = 0.4  
+                    ctx['pace_max'] = 0.8  
+                    vca_add_data(ctx, term_w, term_h)
                     current_state = "PLAYBACK"
             
             elif current_state == "PLAYBACK":
