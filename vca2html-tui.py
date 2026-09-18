@@ -215,8 +215,91 @@ def getch_timeout(timeout=POLL_RATE):
             return None
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
+            
+def strip_codes(text):
+    return re.sub(r'\033\[[0-9;]*m', '', str(text))
 
-# ----- UI UPDATERS ----- #
+# ----- INPUT HANDLERS ----- #
+
+def file_mgr_input(ch, ctx):
+    ctx['warning_msg'] = ""
+    
+    if ch == 'UP': ctx['lpage'] = (ctx['lpage'] - 1 + ctx['max_lpage']) % ctx['max_lpage']
+    elif ch == 'DOWN': ctx['lpage'] = (ctx['lpage'] + 1) % ctx['max_lpage']
+    elif ch == 'PGUP': ctx['lpage'] = max(0, ctx['lpage'] - 5)
+    elif ch == 'PGDN': ctx['lpage'] = min(ctx['max_lpage'] - 1, ctx['lpage'] + 5)
+    elif ch == 'LEFT': ctx['rpage'] = (ctx['rpage'] - 1 + ctx['max_rpage']) % ctx['max_rpage']
+    elif ch == 'RIGHT': ctx['rpage'] = (ctx['rpage'] + 1) % ctx['max_rpage']
+    elif ch == 'ESC': 
+        sys.stdout.write("\033[?25l")
+        return "EXIT"
+    elif ch in ['BACKSPACE', '\x08', '\x7f', 'DEL']:
+        ctx['user_input'] = ctx['user_input'][:-1]
+    elif ch in ['\r', '\n']:
+        cmd = ctx['user_input'].strip()
+        
+        # ----- Dynamic Command Routing ----- #
+        if cmd.upper() in ["CONVERT", "ADD", "GENERATE", "MOVE"]:
+            sys.stdout.write("\033[?25l")
+            return cmd.upper()
+            
+        elif cmd.isdigit():
+            idx = int(cmd)
+            if 0 <= idx < len(ctx['l_items']):
+                n, pth = ctx['l_items'][idx]
+                
+                locked = ctx.get('locked_dir')
+                if n == "../" and locked and os.path.normcase(os.path.abspath(ctx['ldir'])) == os.path.normcase(os.path.abspath(locked)):
+                    ctx['warning_msg'] = "\033[31m[ Directory Locked: Operation Restricted ]\033[39m"
+                    ctx['user_input'] = "" 
+                    return "STAY"
+                
+                if os.path.isdir(pth):
+                    ctx['ldir'] = pth
+                    ctx['lpage'] = 0
+                else:
+                    if not any(c[1] == pth for c in ctx['clip']):
+                        ctx['clip'].append((n, pth))
+            else:
+                ctx['warning_msg'] = "[ Invalid Selection ]"
+        elif cmd.isalpha():
+            val = 0
+            for char in cmd.upper(): val = val * 26 + (ord(char) - 64)
+            idx = val - 1
+            if 0 <= idx < len(ctx['clip']):
+                ctx['clip'].pop(idx)
+            else:
+                ctx['warning_msg'] = "[ Invalid Selection ]"
+        else:
+            if cmd != "": ctx['warning_msg'] = "[ Invalid Command ]"
+        ctx['user_input'] = "" 
+        
+    elif len(ch) == 1 and ch.isprintable():
+        if len(ctx['user_input']) < 15: 
+            ctx['user_input'] += ch
+            
+    sys.stdout.write("\033[?25l")
+    return "STAY"
+
+def playback_input(ch, ctx, term_h):
+    log_lines = ctx.get('log_lines', [])
+    
+    vp_height = (term_h - 5) - 4 - 1
+    max_offset = max(0, len(log_lines) - vp_height)
+    offset = ctx.get('scroll_offset', 0)
+    
+    if ch == 'UP': offset -= 1
+    elif ch == 'DOWN': offset += 1
+    elif ch == 'PGUP': offset -= vp_height
+    elif ch == 'PGDN': offset += vp_height
+    elif ch == 'ESC' or ch.lower() == 'q':
+        sys.stdout.write("\033[?25l")
+        return "EXIT"
+        
+    ctx['scroll_offset'] = max(0, min(offset, max_offset))
+    return "STAY"
+
+# ----- UI UPDATERS ---- #
 
 def update_file_mgr_data(term_h, ctx):
     ext_filter = ['.vca', '.lds', '.csv', '.xlsx', '.xls', '.xlsm', '.xlsb', '.ods', '.fods', '.txt']
@@ -233,13 +316,8 @@ def update_file_mgr_data(term_h, ctx):
     dirs_list.sort(key=lambda x: x[0].lower())
     files_list.sort(key=lambda x: x[0].lower())
     
-    locked = ctx.get('locked_dir')
-    if locked and os.path.normcase(os.path.abspath(ctx['ldir'])) == os.path.normcase(os.path.abspath(locked)):
-        # Strip the parent directory out so the user cannot navigate higher
-        ctx['l_items'] = [(f"{d[0]}/", d[1]) for d in dirs_list] + files_list
-    else:
-        parent_dir = os.path.dirname(ctx['ldir']) if ctx['ldir'] != os.path.dirname(ctx['ldir']) else ctx['ldir']
-        ctx['l_items'] = [("../", parent_dir)] + [(f"{d[0]}/", d[1]) for d in dirs_list] + files_list
+    parent_dir = os.path.dirname(ctx['ldir']) if ctx['ldir'] != os.path.dirname(ctx['ldir']) else ctx['ldir']
+    ctx['l_items'] = [("../", parent_dir)] + [(f"{d[0]}/", d[1]) for d in dirs_list] + files_list
     
     list_h = (term_h - 11) - 8 + 1 
     ctx['l_capacity'] = list_h
@@ -269,14 +347,14 @@ def draw_viewport(term_w, term_h, ctx, progress_pct, active_file, current_idx, t
     box_w = inner_r - inner_l + 1
     
     # ----- Progress Bar Rows ----- #
-    pb_r1 = term_h - 5
-    pb_r2 = term_h - 4
-    pb_r3 = term_h - 3
+    pb_r1 = term_h - 4
+    pb_r2 = term_h - 3
+    pb_r3 = term_h - 2
     
     # ----- Viewport Rows ------ #
     vp_start_row = 5
-    vp_end_row = pb_r1 - 1
-    vp_height = vp_end_row - vp_start_row - 1
+    vp_end_row = pb_r1 - 2
+    vp_height = max(1, vp_end_row - vp_start_row - 1)
     total_logs = max(1, len(log_lines))
     
     # ----- Scrolling ----- #
@@ -311,7 +389,7 @@ def draw_viewport(term_w, term_h, ctx, progress_pct, active_file, current_idx, t
             line = log_lines[log_idx]
             display_line = line[:(box_w - 4)]
             sys.stdout.write(f"\033[{row};{inner_l + 2}H{display_line}")
-            space_to_fill = (box_w - 4) - len(display_line)
+            space_to_fill = (box_w - 4) - len(strip_codes(display_line))
             if space_to_fill > 0: sys.stdout.write(" " * space_to_fill)
         else:
             sys.stdout.write(" " * (box_w - 4))
@@ -409,21 +487,70 @@ def draw_throttle(term_w, term_h, ctx, pct, active_text, current_idx, total_file
     p_max = ctx.get('pace_max', 0.0)
     frame_rate = 0.05
     
-    if p_max > 0:
-        time.sleep(random.uniform(p_min, p_max))
+    # ----- SENSOR & WIPE ----- #
+    if not check_term_size():
+        warn_term_size()
+        ctx['force_redraw'] = True
         
+    curr_w, curr_h = get_term_size()
+    last_w = ctx.get('last_term_w', term_w)
+    last_h = ctx.get('last_term_h', term_h)
+    
+    if curr_w != last_w or curr_h != last_h:
+        ctx['force_redraw'] = True
+        ctx['last_term_w'] = curr_w
+        ctx['last_term_h'] = curr_h
+        sys.stdout.write("\033[2J\033[H")
+        sys.stdout.flush()
+
+    # ----- THEATRICAL PAUSE  ----- #
+    pause_time = random.uniform(p_min, p_max) if p_max > 0 else 0
+    wake_up = time.time() + pause_time
+    
+    # ----- MICRO POLLING LOOP ----- #
+    while time.time() < wake_up:
+        if not check_term_size():
+            warn_term_size()
+            ctx['force_redraw'] = True
+            
+        curr_w, curr_h = get_term_size()
+        if curr_w != ctx.get('last_term_w') or curr_h != ctx.get('last_term_h'):
+            ctx['force_redraw'] = True
+            ctx['last_term_w'] = curr_w
+            ctx['last_term_h'] = curr_h
+            sys.stdout.write("\033[2J\033[H")
+            sys.stdout.flush()
+            
+        # Instantly redraw mid-sleep if the user resizes the window
+        if ctx.get('force_redraw', False):
+            draw_viewport(
+                curr_w, curr_h, ctx, pct, active_text, current_idx, total_files, 
+                is_interactive=False, 
+                title=ctx.get('pb_title', "System Process"), 
+                action_text=ctx.get('pb_action', "( COMPILING )"), 
+                frame_title=ctx.get('pb_frame', "SYSTEM FEED")
+            )
+            ctx['last_draw_time'] = time.time()
+            ctx['force_redraw'] = False
+            
+        time.sleep(POLL_RATE)
+        
+    # ----- VERIFICATION & DRAW ----- #
     curr = time.time()
     last_draw = ctx.get('last_draw_time', 0)
+    force = ctx.get('force_redraw', False)
     
-    if curr - last_draw > frame_rate or is_done:
+    if curr - last_draw > frame_rate or is_done or force:
+        curr_w, curr_h = get_term_size()
         draw_viewport(
-            term_w, term_h, ctx, pct, active_text, current_idx, total_files, 
+            curr_w, curr_h, ctx, pct, active_text, current_idx, total_files, 
             is_interactive=False, 
             title=ctx.get('pb_title', "System Process"), 
             action_text=ctx.get('pb_action', "( COMPILING )"), 
             frame_title=ctx.get('pb_frame', "SYSTEM FEED")
         )
         ctx['last_draw_time'] = curr
+        ctx['force_redraw'] = False
  
 def draw_playback(term_w, term_h, ctx):
     total_files = len(ctx.get('clip', []))
@@ -471,6 +598,12 @@ def file_mgr(term_w, term_h, ctx):
         try: return stat.filemode(os.stat(path).st_mode)
         except: return "----------"
 
+    # ----- Dynamic Lock Check ----- #
+    is_locked = False
+    locked = ctx.get('locked_dir')
+    if locked and os.path.normcase(os.path.abspath(ctx['ldir'])) == os.path.normcase(os.path.abspath(locked)):
+        is_locked = True
+
     # ----- Draw Left Pane ----- #
     for i in range(ctx['l_capacity']):
         row_idx = 8 + i 
@@ -486,8 +619,12 @@ def file_mgr(term_w, term_h, ctx):
             fmt_start = "\033[9m" if is_sel else ""
             fmt_end = "\033[29m" if is_sel else ""
             
+            if n == "../" and is_locked:
+                fmt_start = "\033[31;9m"
+                fmt_end = "\033[39;29m"
+            
             content = f"{prefix} {fmt_start}{n[:name_max]}{fmt_end}"
-            pad = pane_l_w - 4 - len(prefix) - len(n[:name_max]) - len(perms)
+            pad = pane_l_w - 4 - len(prefix) - len(strip_codes(n[:name_max])) - len(perms)
             sys.stdout.write(f"\033[{row_idx};3H{content}{' ' * max(0, pad)} {perms}")
 
     # ----- Draw Right Pane ----- #
@@ -508,7 +645,7 @@ def file_mgr(term_w, term_h, ctx):
             perms = get_perms(pth)
             name_max = pane_r_w - 6 - len(perms) - len(prefix)
             
-            pad1 = pane_r_w - 4 - len(prefix) - len(n[:name_max]) - len(perms)
+            pad1 = pane_r_w - 4 - len(prefix) - len(strip_codes(n[:name_max])) - len(perms)
             sys.stdout.write(f"\033[{row_idx};{center_col + 2}H{prefix} {n[:name_max]}{' ' * max(0, pad1)} {perms}")
             tree_prefix = "    └─ "
             sys.stdout.write(f"\033[{row_idx + 1};{center_col + 2}H{tree_prefix}{os.path.dirname(pth)[:pane_r_w - 4 - len(tree_prefix)]}")
@@ -750,7 +887,7 @@ def vca_add_data(ctx, term_w, term_h):
         try:
             df = pd.read_csv(pth, dtype=str, encoding='latin1', on_bad_lines='error')
             
-            # 1. Strict Schema Check
+            # ----- Schema Check ----- #
             if list(df.columns) != CUSTOM_SCHEMA:
                 audit_passed = False
                 failed_files.append((name, pth))
@@ -760,17 +897,18 @@ def vca_add_data(ctx, term_w, term_h):
                 ctx['log_lines'].append(f"  -> [SCHEMA] {name}: Verified exactly 53 columns across {len(df)} rows.")
                 draw_throttle(term_w, term_h, ctx, pct, name, current_idx, total_files)
                 
-            # 2. Identical Duplicate Purge
+            # ----- Duplicate Purge ----- #
             orig_len = len(df)
             df.drop_duplicates(subset=CUSTOM_SCHEMA, keep='first', inplace=True)
+            
+            df.reset_index(drop=True, inplace=True)
+            
             if len(df) < orig_len:
                 purged = orig_len - len(df)
                 ctx['log_lines'].append(f"  -> [CLEANUP] Silently purged {purged:,} identical duplicate rows.")
-                # Save the sanitized dataframe back to staging so the Vault gets the clean version
                 df.to_csv(pth, index=False)
                 draw_throttle(term_w, term_h, ctx, pct, name, current_idx, total_files)
             
-            # 3. Forensic Math Re-Calculation
             rad_f = pd.to_numeric(df['RADIUSF'], errors='coerce').replace(0.0, np.nan)
             rad_b = pd.to_numeric(df['RADIUSB'], errors='coerce').replace(0.0, np.nan)
             
@@ -779,16 +917,14 @@ def vca_add_data(ctx, term_w, term_h):
             
             y = 25.0
             calc_sag = np.where(rad_f > y, rad_f - np.sqrt(rad_f**2 - y**2), np.nan)
-            calc_sag = pd.Series(calc_sag).round(3).fillna(0.00)
+            calc_sag = pd.Series(calc_sag, index=df.index).round(3).fillna(0.00)
             
             file_front = pd.to_numeric(df['TRUE_FRONT'], errors='coerce').fillna(0.00)
             file_back = pd.to_numeric(df['TRUE_BACK'], errors='coerce').fillna(0.00)
             file_sag = pd.to_numeric(df['SAG'], errors='coerce').fillna(0.00)
             
-            # Create a mask that is True only for rows that are NOT Finished lenses
             sf_mask = df['CLASS'].astype(str).str.upper().fillna('') != 'FIN'
             
-            # Apply the mask so mismatches are only flagged on SF lenses
             front_mismatch = (calc_front != file_front) & sf_mask
             back_mismatch = (calc_back != file_back) & sf_mask
             sag_mismatch = (calc_sag != file_sag) & sf_mask
@@ -854,80 +990,6 @@ def vca_add_data(ctx, term_w, term_h):
     # ----- Final Force Draw ----- #
     draw_throttle(term_w, term_h, ctx, 100.0, "Batch Completed", total_files, total_files, is_done=True)
     return ctx['log_lines']
-
-# ----- INPUT HANDLERS ----- #
-
-def file_mgr_input(ch, ctx):
-    ctx['warning_msg'] = ""
-    
-    if ch == 'UP': ctx['lpage'] = (ctx['lpage'] - 1 + ctx['max_lpage']) % ctx['max_lpage']
-    elif ch == 'DOWN': ctx['lpage'] = (ctx['lpage'] + 1) % ctx['max_lpage']
-    elif ch == 'PGUP': ctx['lpage'] = max(0, ctx['lpage'] - 5)
-    elif ch == 'PGDN': ctx['lpage'] = min(ctx['max_lpage'] - 1, ctx['lpage'] + 5)
-    elif ch == 'LEFT': ctx['rpage'] = (ctx['rpage'] - 1 + ctx['max_rpage']) % ctx['max_rpage']
-    elif ch == 'RIGHT': ctx['rpage'] = (ctx['rpage'] + 1) % ctx['max_rpage']
-    elif ch == 'ESC': 
-        sys.stdout.write("\033[?25l")
-        return "EXIT"
-    elif ch in ['BACKSPACE', '\x08', '\x7f', 'DEL']:
-        ctx['user_input'] = ctx['user_input'][:-1]
-    elif ch in ['\r', '\n']:
-        cmd = ctx['user_input'].strip()
-        
-        # ----- Dynamic Command Routing ----- #
-        if cmd.upper() in ["CONVERT", "ADD", "GENERATE", "MOVE"]:
-            sys.stdout.write("\033[?25l")
-            return cmd.upper()
-            
-        elif cmd.isdigit():
-            idx = int(cmd)
-            if 0 <= idx < len(ctx['l_items']):
-                n, pth = ctx['l_items'][idx]
-                if os.path.isdir(pth):
-                    ctx['ldir'] = pth
-                    ctx['lpage'] = 0
-                else:
-                    if not any(c[1] == pth for c in ctx['clip']):
-                        ctx['clip'].append((n, pth))
-            else:
-                ctx['warning_msg'] = "[ Invalid Selection ]"
-        elif cmd.isalpha():
-            val = 0
-            for char in cmd.upper(): val = val * 26 + (ord(char) - 64)
-            idx = val - 1
-            if 0 <= idx < len(ctx['clip']):
-                ctx['clip'].pop(idx)
-            else:
-                ctx['warning_msg'] = "[ Invalid Selection ]"
-        else:
-            if cmd != "": ctx['warning_msg'] = "[ Invalid Command ]"
-        ctx['user_input'] = "" 
-        
-    elif len(ch) == 1 and ch.isprintable():
-        if len(ctx['user_input']) < 15: 
-            ctx['user_input'] += ch
-            
-    sys.stdout.write("\033[?25l")
-    return "STAY"
-
-def playback_input(ch, ctx, term_h):
-    """Universal Scrolling input handler for Review Mode."""
-    log_lines = ctx.get('log_lines', [])
-    
-    vp_height = (term_h - 5) - 4 - 1
-    max_offset = max(0, len(log_lines) - vp_height)
-    offset = ctx.get('scroll_offset', 0)
-    
-    if ch == 'UP': offset -= 1
-    elif ch == 'DOWN': offset += 1
-    elif ch == 'PGUP': offset -= vp_height
-    elif ch == 'PGDN': offset += vp_height
-    elif ch == 'ESC' or ch.lower() == 'q':
-        sys.stdout.write("\033[?25l")
-        return "EXIT"
-        
-    ctx['scroll_offset'] = max(0, min(offset, max_offset))
-    return "STAY"
 
 # ----- Master Loop. Master Sword. ----- #
 
