@@ -10,6 +10,7 @@ import re
 import shutil
 import random
 import json
+import hashlib
 
 GLOBAL_LICENSE = "Copyright © 2026 Daniel Casada. This program is free software; You can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation. This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
 GLOBAL_DISCLAIMER = "This application was created to help optical lab technicians get lens technical specifications into legacy LMS systems. This tool tries to take industry \"standard VCA files\", parse them properly, then format them into a human readable format. It is not affiliated with National Optronics™ (DAC Vision™) or any proprietary LMS manufacturer. There is absolutely no support for this tool and I am not responsible for any invalid information, errors, or any data loss. This application comes as is and you must use at your own risk."
@@ -148,11 +149,15 @@ def warn_term_size():
             
         sys.stdout.write("\033[2J\033[H")
         
+        pause_title = "*** PAUSED ACTION ***"
         title = "[ TERMINAL TOO SMALL ]"
         dim = f"Current: {term_w}x{term_h}  |  Required: 100x30"
         msg = "Please maximize or resize your window to continue."
+        
         start_y = term_h // 2 - 1
         
+        # ----- Centered Pause Banner ----- #
+        sys.stdout.write(f"\033[{start_y - 2};{(term_w - len(pause_title)) // 2}H{pause_title}")
         sys.stdout.write(f"\033[{start_y};{(term_w - len(title)) // 2}H{title}")
         sys.stdout.write(f"\033[{start_y + 1};{(term_w - len(dim)) // 2}H{dim}")
         sys.stdout.write(f"\033[{start_y + 3};{(term_w - len(msg)) // 2}H{msg}")
@@ -218,7 +223,29 @@ def getch_timeout(timeout=POLL_RATE):
             
 def strip_codes(text):
     return re.sub(r'\033\[[0-9;]*m', '', str(text))
+    
+def get_file_hash(pth):
+    sha = hashlib.sha256()
+    try:
+        with open(pth, 'rb') as f:
+            while chunk := f.read(8192):
+                sha.update(chunk)
+        return sha.hexdigest()
+    except: return ""
 
+def safe_float(val, default=0.0):
+    try:
+        # Handle empty strings or 'ND' placeholders
+        if val is None or str(val).strip() == "" or str(val).strip().upper() == "ND":
+            return default
+        f_val = float(val)
+        # Catch NaNs that sneak through
+        if f_val != f_val: 
+            return default
+        return f_val
+    except Exception:
+        return default
+        
 # ----- INPUT HANDLERS ----- #
 
 def file_mgr_input(ch, ctx):
@@ -284,7 +311,7 @@ def file_mgr_input(ch, ctx):
 def playback_input(ch, ctx, term_h):
     log_lines = ctx.get('log_lines', [])
     
-    vp_height = (term_h - 5) - 4 - 1
+    vp_height = term_h - 12
     max_offset = max(0, len(log_lines) - vp_height)
     offset = ctx.get('scroll_offset', 0)
     
@@ -292,7 +319,7 @@ def playback_input(ch, ctx, term_h):
     elif ch == 'DOWN': offset += 1
     elif ch == 'PGUP': offset -= vp_height
     elif ch == 'PGDN': offset += vp_height
-    elif ch == 'ESC' or ch.lower() == 'q':
+    elif ch == 'ESC' or ch.lower() == 'q' or ch in ['\r', '\n']:
         sys.stdout.write("\033[?25l")
         return "EXIT"
         
@@ -487,23 +514,7 @@ def draw_throttle(term_w, term_h, ctx, pct, active_text, current_idx, total_file
     p_max = ctx.get('pace_max', 0.0)
     frame_rate = 0.05
     
-    # ----- SENSOR & WIPE ----- #
-    if not check_term_size():
-        warn_term_size()
-        ctx['force_redraw'] = True
-        
-    curr_w, curr_h = get_term_size()
-    last_w = ctx.get('last_term_w', term_w)
-    last_h = ctx.get('last_term_h', term_h)
-    
-    if curr_w != last_w or curr_h != last_h:
-        ctx['force_redraw'] = True
-        ctx['last_term_w'] = curr_w
-        ctx['last_term_h'] = curr_h
-        sys.stdout.write("\033[2J\033[H")
-        sys.stdout.flush()
-
-    # ----- THEATRICAL PAUSE  ----- #
+    # ----- THEATRICAL PAUSE ----- #
     pause_time = random.uniform(p_min, p_max) if p_max > 0 else 0
     wake_up = time.time() + pause_time
     
@@ -535,13 +546,24 @@ def draw_throttle(term_w, term_h, ctx, pct, active_text, current_idx, total_file
             
         time.sleep(POLL_RATE)
         
-    # ----- VERIFICATION & DRAW ----- #
+    # ----- AGGRESSIVE POST-PARSE ----- #
+    if not check_term_size():
+        warn_term_size()
+        ctx['force_redraw'] = True
+        
+    curr_w, curr_h = get_term_size()
+    if curr_w != ctx.get('last_term_w') or curr_h != ctx.get('last_term_h'):
+        ctx['force_redraw'] = True
+        ctx['last_term_w'] = curr_w
+        ctx['last_term_h'] = curr_h
+        sys.stdout.write("\033[2J\033[H")
+        sys.stdout.flush()
+        
     curr = time.time()
     last_draw = ctx.get('last_draw_time', 0)
     force = ctx.get('force_redraw', False)
     
     if curr - last_draw > frame_rate or is_done or force:
-        curr_w, curr_h = get_term_size()
         draw_viewport(
             curr_w, curr_h, ctx, pct, active_text, current_idx, total_files, 
             is_interactive=False, 
@@ -740,7 +762,7 @@ def vca_parse_data(ctx, term_w, term_h):
                     break
         except: pass
     
-    # ----- HARD SCREEN WIPE ----- #
+    # ----- HARD WIPE ----- #
     sys.stdout.write("\033[2J\033[H")
     sys.stdout.flush()
     
@@ -851,6 +873,12 @@ def vca_parse_data(ctx, term_w, term_h):
         # ----- Theatrical UI Pacing ----- #
         draw_throttle(term_w, term_h, ctx, pct, f"Finished: {name}", current_idx, total_files)
 
+    # ----- Final Theatrical Prompt ----- #
+    ctx['log_lines'].append("")
+    ctx['log_lines'].append("=" * 50)
+    ctx['log_lines'].append("[ PROCESS COMPLETE ] Press [RETURN] to Continue...")
+    ctx['log_lines'].append("=" * 50)
+
     # ----- Final Force Draw ----- #
     draw_throttle(term_w, term_h, ctx, 100.0, "Batch Completed", total_files, total_files, is_done=True)
     
@@ -867,13 +895,13 @@ def vca_add_data(ctx, term_w, term_h):
     failed_files = []
     staged_data = [] 
     
-    # ----- HARD SCREEN WIPE ----- #
+    # ----- HARD WIPE ----- #
     sys.stdout.write("\033[2J\033[H")
     sys.stdout.flush()
     
     draw_throttle(term_w, term_h, ctx, 0.0, "Initiating Phase 1: Batch Audit", 0, total_files)
 
-    # ----- FORENSIC AUDIT ----- #
+    # ----- AUDIT ----- #
     for idx, (name, pth) in enumerate(files_to_process):
         current_idx = idx + 1
         pct = (current_idx / max(1, total_files)) * 50.0 
@@ -954,7 +982,7 @@ def vca_add_data(ctx, term_w, term_h):
             failed_files.append((name, pth))
             ctx['log_lines'].append(f"  -> [REJECTED] {name}: Critical read failure ({e})")
 
-    # ----- ATOMIC COMMIT OR ROLLBACK ----- #
+    # -----COMMIT OR ROLLBACK ----- #
     if audit_passed:
         total_moved_kb = 0.0
         for idx, (name, pth, row_count) in enumerate(staged_data):
@@ -987,8 +1015,160 @@ def vca_add_data(ctx, term_w, term_h):
             except Exception as e:
                 ctx['log_lines'].append(f"  -> [ERROR] Failed to isolate {name}: {e}")
 
+    # ----- Final Theatrical Prompt ----- #
+    ctx['log_lines'].append("")
+    ctx['log_lines'].append("=" * 50)
+    ctx['log_lines'].append("[ PROCESS COMPLETE ] Press [RETURN] to Continue...")
+    ctx['log_lines'].append("=" * 50)
+
     # ----- Final Force Draw ----- #
     draw_throttle(term_w, term_h, ctx, 100.0, "Batch Completed", total_files, total_files, is_done=True)
+    return ctx['log_lines']
+    
+def vca_generate_db(ctx, term_w, term_h):
+    ctx['log_lines'] = []
+    ctx['last_draw_time'] = 0  
+    
+    # ----- VAULT SCANNING ----- #
+    draw_throttle(term_w, term_h, ctx, 0.0, "Scanning Vault Directory...", 0, 1)
+    
+    vault_files = [f for f in os.listdir(VAULT_DIR) if f.lower().endswith('.vca')]
+    vault_files.sort()
+    total_files = len(vault_files)
+    
+    if total_files == 0:
+        ctx['log_lines'].append("[!] Vault is empty. Aborting compilation.")
+        draw_throttle(term_w, term_h, ctx, 100.0, "Aborted", 1, 1, is_done=True)
+        return ctx['log_lines']
+        
+    current_hashes = {}
+    for f in vault_files:
+        current_hashes[f] = get_file_hash(os.path.join(VAULT_DIR, f))
+        
+    # ----- MEMORY SANDBOX ----- #
+    sandbox_lenses = {}
+    ctx['log_lines'].append(f"[!] Initiating atomic master rebuild across {total_files} files.")
+    ctx['log_lines'].append("")
+    
+    # ----- PANDAS GROUPING ----- #
+    for idx, file_name in enumerate(vault_files):
+        current_idx = idx + 1
+        pct = (current_idx / total_files) * 100.0
+        pth = os.path.join(VAULT_DIR, file_name)
+        
+        try:
+            df = pd.read_csv(pth, dtype=str, encoding='latin1').fillna("")
+            
+            # Failsafe: Re-calculate SAFE_INDEX in case it's missing from older files
+            if 'SAFE_INDEX' not in df.columns:
+                n_idx = pd.to_numeric(df['NINDEX'], errors='coerce')
+                d_idx = pd.to_numeric(df['DINDEX'], errors='coerce')
+                e_idx = pd.to_numeric(df['EINDEX'], errors='coerce')
+                df['SAFE_INDEX'] = n_idx.combine_first(d_idx).combine_first(e_idx).fillna(0.00)
+            
+            # Group by SAFE_INDEX instead of raw NINDEX
+            grouped = df.groupby(['MFG', 'CLASS', 'DESCRIPTION', 'MATCODE', 'SAFE_INDEX', 'ABBE'])
+            
+            for name_tuple, group in grouped:
+                mfg, cls, desc, mat, safe_idx, abbe = name_tuple
+                
+                # Generate Stable Hex ID
+                lens_hash_str = f"{mfg}_{cls}_{desc}_{mat}_{safe_idx}_{abbe}"
+                l_id = hashlib.md5(lens_hash_str.encode()).hexdigest()[:12]
+                
+                is_new = l_id not in sandbox_lenses
+                
+                if is_new:
+                    # Placeholders for "The Four Descriptions" logic
+                    sandbox_lenses[l_id] = {
+                        "Id": l_id,
+                        "MFG": mfg,
+                        "Style": 1,
+                        "Material": mat,
+                        "Index": safe_float(safe_idx),
+                        "Abbe": int(safe_float(abbe)),
+                        "Raw Description": desc,
+                        "Description": desc,
+                        "Brief Description": desc[:15],
+                        "Long Description": desc,
+                        "Colors": [],
+                        "Diameters": [],
+                        "Coatings": [],
+                        "FilterTags": [],
+                        "Specifications": {}
+                    }
+                
+                lens = sandbox_lenses[l_id]
+                
+                # Extract and Merge Unique Arrays (wrapped in safe_float)
+                colors = sorted(list(set([c for c in group['FILTER'].unique() if c])))
+                dias = sorted(list(set([int(safe_float(d)) for d in group['DIAMETER'].unique() if d])))
+                
+                lens["Colors"] = sorted(list(set(lens["Colors"] + colors)))
+                lens["Diameters"] = sorted(list(set(lens["Diameters"] + dias)))
+                
+                if cls not in lens["Specifications"]:
+                    lens["Specifications"][cls] = []
+                    
+                for _, row in group.iterrows():
+                    spec = {}
+                    if cls.upper() == 'FIN':
+                        spec['SPH'] = row.get('SPH/BASE', '')
+                        spec['CYL'] = row.get('CYL/ADD', '')
+                        spec['Center Thick'] = safe_float(row.get('CT'))
+                        spec['Edge Thick'] = safe_float(row.get('ET'))
+                    else:
+                        spec['BASE'] = row.get('SPH/BASE', '')
+                        spec['ADD'] = row.get('CYL/ADD', '')
+                        spec['Front RAD'] = safe_float(row.get('RADIUSF'))
+                        spec['Back RAD'] = safe_float(row.get('RADIUSB'))
+                        spec['SAG'] = safe_float(row.get('SAG'))
+                        spec['Center Thick'] = safe_float(row.get('CT'))
+                        
+                    lens["Specifications"][cls].append(spec)
+                
+                # Cinematic Logging Stream
+                if is_new:
+                    ctx['log_lines'].append(f"[+] INDEXED [{l_id}] {cls} {desc[:25]} | Dias: {dias} | Colors: {colors}")
+                else:
+                    ctx['log_lines'].append(f"[~] AMENDED [{l_id}] {cls} {desc[:25]} | Merged Specs")
+                    
+                # Visual Throttle
+                draw_throttle(term_w, term_h, ctx, pct, f"Compiling: {file_name}", current_idx, total_files)
+                
+        except Exception as e:
+            ctx['log_lines'].append(f"[!] CRITICAL FAILURE parsing {file_name}: {e}")
+            ctx['log_lines'].append("[!] Atomic abort triggered. No changes written to database.")
+            ctx['log_lines'].append("=" * 50)
+            ctx['log_lines'].append("[ PROCESS ABORTED ] Press [RETURN] to Continue...")
+            ctx['log_lines'].append("=" * 50)
+            draw_throttle(term_w, term_h, ctx, pct, "Aborted", current_idx, total_files, is_done=True)
+            return ctx['log_lines']
+
+    # ----- ATOMIC COMMIT ----- #
+    ctx['log_lines'].append("")
+    ctx['log_lines'].append(f"[✓] Matrix Compilation Complete. Writing {len(sandbox_lenses)} parent lenses to disk...")
+    draw_throttle(term_w, term_h, ctx, 100.0, "Atomic Commit", total_files, total_files)
+    
+    final_db = {
+        "files": current_hashes,
+        "lenses": sandbox_lenses
+    }
+    
+    try:
+        with open(DB_FILE, 'w') as f:
+            json.dump(final_db, f, indent=4)
+        ctx['log_lines'].append(f"[✓] Atomic commit successful. master_lens_db.json is secured.")
+    except Exception as e:
+        ctx['log_lines'].append(f"[!] FATAL WRITE ERROR: {e}")
+
+    # ----- Final Prompt ----- #
+    ctx['log_lines'].append("")
+    ctx['log_lines'].append("=" * 50)
+    ctx['log_lines'].append("[ PROCESS COMPLETE ] Press [RETURN] to Continue...")
+    ctx['log_lines'].append("=" * 50)
+
+    draw_throttle(term_w, term_h, ctx, 100.0, "Database Mastered", total_files, total_files, is_done=True)
     return ctx['log_lines']
 
 # ----- Master Loop. Master Sword. ----- #
@@ -1029,7 +1209,8 @@ def main_menu(term_w, term_h):
     draw_skeleton("OPERATIONS CENTER", "Main Menu Active")
     sys.stdout.write("\033[4;5H(C)onvert Files")
     sys.stdout.write("\033[5;5H(A)dd to Vault")
-    sys.stdout.write("\033[6;5H(Q)uit Application")
+    sys.stdout.write("\033[6;5H(G)enerate Database")
+    sys.stdout.write("\033[7;5H(Q)uit Application")
 
 def init_env():
     os.makedirs(IMPORT_DIR, exist_ok=True)
@@ -1125,8 +1306,20 @@ def master_loop():
                         'next_state': "PLAYBACK"
                     }
                     current_state = "FILE_MGR"
+                elif ch.lower() == 'g':
+                    ctx = {
+                        'pb_title': "Database Engine",
+                        'pb_action': "( COMPILING JSON )",
+                        'pb_frame': "ATOMIC MATRIX COMPILATION",
+                        'pace_min': 0.01,  
+                        'pace_max': 0.03,  
+                        'log_lines': []
+                    }
+                    sys.stdout.write("\033[?25l")
+                    vca_generate_db(ctx, term_w, term_h)
+                    current_state = "PLAYBACK"
                 elif ch.lower() == 'q' or ch == 'ESC':
-                    return 
+                    return
                     
             elif current_state == "FILE_MGR":
                 update_file_mgr_data(term_h, ctx)
