@@ -11,6 +11,7 @@ import shutil
 import random
 import json
 import hashlib
+import math
 
 GLOBAL_LICENSE = "Copyright © 2026 Daniel Casada. This program is free software; You can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation. This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
 GLOBAL_DISCLAIMER = "This application was created to help optical lab technicians get lens technical specifications into legacy LMS systems. This tool tries to take industry \"standard VCA files\", parse them properly, then format them into a human readable format. It is not affiliated with National Optronics™ (DAC Vision™) or any proprietary LMS manufacturer. There is absolutely no support for this tool and I am not responsible for any invalid information, errors, or any data loss. This application comes as is and you must use at your own risk."
@@ -235,16 +236,22 @@ def get_file_hash(pth):
 
 def safe_float(val, default=0.0):
     try:
-        # Handle empty strings or 'ND' placeholders
         if val is None or str(val).strip() == "" or str(val).strip().upper() == "ND":
             return default
         f_val = float(val)
-        # Catch NaNs that sneak through
         if f_val != f_val: 
             return default
         return f_val
     except Exception:
         return default
+
+def color_code(val):
+    return str(val).replace('-', '').replace(' ', '').upper().strip()
+
+def strip_colors(desc):
+    pattern = re.compile(r'\b(GRAY|GREY|BROWN|YELLOW|GREEN|BURGUNDY|CLEAR|BLUE|PINK|PURPLE)(?:[\-\s]*\d+)?\b', re.IGNORECASE)
+    scrubbed = pattern.sub('', str(desc))
+    return re.sub(r'\s+', ' ', scrubbed).strip()
         
 # ----- INPUT HANDLERS ----- #
 
@@ -895,7 +902,7 @@ def vca_add_data(ctx, term_w, term_h):
     failed_files = []
     staged_data = [] 
     
-    # ----- HARD WIPE ----- #
+    # ----- Wipe Screen ----- #
     sys.stdout.write("\033[2J\033[H")
     sys.stdout.flush()
     
@@ -982,7 +989,7 @@ def vca_add_data(ctx, term_w, term_h):
             failed_files.append((name, pth))
             ctx['log_lines'].append(f"  -> [REJECTED] {name}: Critical read failure ({e})")
 
-    # -----COMMIT OR ROLLBACK ----- #
+    # ----- COMMIT OR ROLLBACK ----- #
     if audit_passed:
         total_moved_kb = 0.0
         for idx, (name, pth, row_count) in enumerate(staged_data):
@@ -994,7 +1001,10 @@ def vca_add_data(ctx, term_w, term_h):
             except: kb = 0.0
             total_moved_kb += kb
             
-            if os.path.exists(dest_pth): os.remove(dest_pth)
+            if os.path.exists(dest_pth): 
+                os.chmod(dest_pth, stat.S_IWRITE)
+                os.remove(dest_pth)
+                
             shutil.move(pth, dest_pth)
             os.chmod(dest_pth, stat.S_IREAD) 
             
@@ -1008,7 +1018,9 @@ def vca_add_data(ctx, term_w, term_h):
         ctx['log_lines'].append(f"[BATCH FAILED] Atomic lock triggered. Moving corrupted files to isolation.")
         for name, pth in failed_files:
             dest_pth = os.path.join(CORRUPT_DIR, name)
-            if os.path.exists(dest_pth): os.remove(dest_pth)
+            if os.path.exists(dest_pth): 
+                os.chmod(dest_pth, stat.S_IWRITE) # Also unlock isolation folder files if overwriting
+                os.remove(dest_pth)
             try:
                 shutil.move(pth, dest_pth)
                 ctx['log_lines'].append(f"  -> [ISOLATED] {name} moved to ./data/db/corrupt/")
@@ -1029,7 +1041,6 @@ def vca_generate_db(ctx, term_w, term_h):
     ctx['log_lines'] = []
     ctx['last_draw_time'] = 0  
     
-    # ----- VAULT SCANNING ----- #
     draw_throttle(term_w, term_h, ctx, 0.0, "Scanning Vault Directory...", 0, 1)
     
     vault_files = [f for f in os.listdir(VAULT_DIR) if f.lower().endswith('.vca')]
@@ -1041,11 +1052,9 @@ def vca_generate_db(ctx, term_w, term_h):
         draw_throttle(term_w, term_h, ctx, 100.0, "Aborted", 1, 1, is_done=True)
         return ctx['log_lines']
         
-    current_hashes = {}
-    for f in vault_files:
-        current_hashes[f] = get_file_hash(os.path.join(VAULT_DIR, f))
+    # No hash checking. We force a total rebuild every time to keep the database perfectly clean.
+    current_hashes = {f: get_file_hash(os.path.join(VAULT_DIR, f)) for f in vault_files}
         
-    # ----- MEMORY SANDBOX ----- #
     sandbox_lenses = {}
     ctx['log_lines'].append(f"[!] Initiating atomic master rebuild across {total_files} files.")
     ctx['log_lines'].append("")
@@ -1059,27 +1068,26 @@ def vca_generate_db(ctx, term_w, term_h):
         try:
             df = pd.read_csv(pth, dtype=str, encoding='latin1').fillna("")
             
-            # Failsafe: Re-calculate SAFE_INDEX in case it's missing from older files
+            # Failsafe: Ensures SAFE_INDEX exists
             if 'SAFE_INDEX' not in df.columns:
                 n_idx = pd.to_numeric(df['NINDEX'], errors='coerce')
                 d_idx = pd.to_numeric(df['DINDEX'], errors='coerce')
                 e_idx = pd.to_numeric(df['EINDEX'], errors='coerce')
                 df['SAFE_INDEX'] = n_idx.combine_first(d_idx).combine_first(e_idx).fillna(0.00)
             
-            # Group by SAFE_INDEX instead of raw NINDEX
             grouped = df.groupby(['MFG', 'CLASS', 'DESCRIPTION', 'MATCODE', 'SAFE_INDEX', 'ABBE'])
             
             for name_tuple, group in grouped:
-                mfg, cls, desc, mat, safe_idx, abbe = name_tuple
+                mfg, cls, raw_desc, mat, safe_idx, abbe = name_tuple
                 
-                # Generate Stable Hex ID
-                lens_hash_str = f"{mfg}_{cls}_{desc}_{mat}_{safe_idx}_{abbe}"
+                lens_hash_str = f"{mfg}_{cls}_{raw_desc}_{mat}_{safe_idx}_{abbe}"
                 l_id = hashlib.md5(lens_hash_str.encode()).hexdigest()[:12]
                 
+                clean_desc = strip_colors(raw_desc)
                 is_new = l_id not in sandbox_lenses
                 
                 if is_new:
-                    # Placeholders for "The Four Descriptions" logic
+                    # Placeholders for the final Four Descriptions logic
                     sandbox_lenses[l_id] = {
                         "Id": l_id,
                         "MFG": mfg,
@@ -1087,10 +1095,10 @@ def vca_generate_db(ctx, term_w, term_h):
                         "Material": mat,
                         "Index": safe_float(safe_idx),
                         "Abbe": int(safe_float(abbe)),
-                        "Raw Description": desc,
-                        "Description": desc,
-                        "Brief Description": desc[:15],
-                        "Long Description": desc,
+                        "Raw Description": str(raw_desc).strip(),
+                        "Description": f"{'SFSV' if cls.upper() == 'SF' else 'FSV'} {safe_float(safe_idx):.2f} {clean_desc}".replace("  ", " "),
+                        "Brief Description": clean_desc[:15].strip(),
+                        "Long Description": clean_desc.upper(),
                         "Colors": [],
                         "Diameters": [],
                         "Coatings": [],
@@ -1099,41 +1107,132 @@ def vca_generate_db(ctx, term_w, term_h):
                     }
                 
                 lens = sandbox_lenses[l_id]
+                cls_upper = cls.upper()
                 
-                # Extract and Merge Unique Arrays (wrapped in safe_float)
-                colors = sorted(list(set([c for c in group['FILTER'].unique() if c])))
-                dias = sorted(list(set([int(safe_float(d)) for d in group['DIAMETER'].unique() if d])))
-                
-                lens["Colors"] = sorted(list(set(lens["Colors"] + colors)))
-                lens["Diameters"] = sorted(list(set(lens["Diameters"] + dias)))
-                
-                if cls not in lens["Specifications"]:
-                    lens["Specifications"][cls] = []
+                if cls_upper not in lens["Specifications"]:
+                    lens["Specifications"][cls_upper] = []
                     
+                # Dynamic Group Rollups
+                sph_list, cyl_list, base_list = [], [], []
+                
                 for _, row in group.iterrows():
-                    spec = {}
-                    if cls.upper() == 'FIN':
-                        spec['SPH'] = row.get('SPH/BASE', '')
-                        spec['CYL'] = row.get('CYL/ADD', '')
-                        spec['Center Thick'] = safe_float(row.get('CT'))
-                        spec['Edge Thick'] = safe_float(row.get('ET'))
+                    # 1. Color Sanitization
+                    raw_color = str(row.get('FILTER', '')).strip()
+                    if raw_color:
+                        sanitized_color = color_code(raw_color)
+                        if sanitized_color not in lens["Colors"]: lens["Colors"].append(sanitized_color)
                     else:
-                        spec['BASE'] = row.get('SPH/BASE', '')
-                        spec['ADD'] = row.get('CYL/ADD', '')
-                        spec['Front RAD'] = safe_float(row.get('RADIUSF'))
-                        spec['Back RAD'] = safe_float(row.get('RADIUSB'))
-                        spec['SAG'] = safe_float(row.get('SAG'))
-                        spec['Center Thick'] = safe_float(row.get('CT'))
-                        
-                    lens["Specifications"][cls].append(spec)
-                
-                # Cinematic Logging Stream
-                if is_new:
-                    ctx['log_lines'].append(f"[+] INDEXED [{l_id}] {cls} {desc[:25]} | Dias: {dias} | Colors: {colors}")
-                else:
-                    ctx['log_lines'].append(f"[~] AMENDED [{l_id}] {cls} {desc[:25]} | Merged Specs")
+                        sanitized_color = "CLEAR"
                     
-                # Visual Throttle
+                    # 2. Diameter Aggregation
+                    raw_dia = safe_float(row.get('DIAMETER', 0))
+                    if raw_dia > 0 and int(raw_dia) not in lens["Diameters"]:
+                        lens["Diameters"].append(int(raw_dia))
+                        
+                    # 3. Coating Aggregation
+                    raw_coat = str(row.get('COAT', '')).strip()
+                    if raw_coat and raw_coat not in lens["Coatings"]:
+                        lens["Coatings"].append(raw_coat)
+                        
+                    # 4. Specifications Pivot & True Math Verification
+                    spec = {}
+                    dia_str = str(int(raw_dia))
+                    cls_char = "S" if cls_upper == "SF" else "F"
+                    
+                    # Builds strings like '75_S_BRN3_HC'
+                    opc_key = f"{dia_str}_{cls_char}_{sanitized_color}_{raw_coat.upper()}".replace("__", "_")
+                    
+                    raw_opc = str(row.get('OPC', row.get('UPC', ''))).strip()
+                    if raw_opc.endswith('.0'): raw_opc = raw_opc[:-2] # Cleans float artifacts
+                    
+                    if cls_upper == 'FIN':
+                        s_val = safe_float(row.get('SPH/BASE', 0))
+                        c_val = safe_float(row.get('CYL/ADD', 0))
+                        sph_list.append(s_val)
+                        cyl_list.append(c_val)
+                        
+                        existing_spec = next((s for s in lens["Specifications"][cls_upper] if s.get('SPH') == f"{s_val:+.2f}" and s.get('CYL') == f"{c_val:+.2f}"), None)
+                        
+                        if existing_spec:
+                            if raw_opc: existing_spec["OPC"][opc_key] = str(raw_opc)
+                            if int(raw_dia) not in existing_spec["Diameters"]: existing_spec["Diameters"].append(int(raw_dia))
+                        else:
+                            spec['SPH'] = f"{s_val:+.2f}"
+                            spec['CYL'] = f"{c_val:+.2f}"
+                            spec['Center Thick'] = safe_float(row.get('CT'))
+                            spec['Edge Thick'] = safe_float(row.get('ET'))
+                            spec['Diameters'] = [int(raw_dia)]
+                            spec['OPC'] = {opc_key: str(raw_opc)} if raw_opc else {}
+                            lens["Specifications"][cls_upper].append(spec)
+                            
+                    else:
+                        b_val = safe_float(row.get('SPH/BASE', 0))
+                        base_list.append(b_val)
+                        
+                        r_front = safe_float(row.get('RADIUSF', 0))
+                        r_back = safe_float(row.get('RADIUSB', 0))
+                        true_front = round(530.0 / r_front, 2) if r_front > 0 else 0.0
+                        true_back = round(-530.0 / r_back, 2) if r_back > 0 else 0.0
+                        sag_val = round(r_front - math.sqrt(r_front**2 - 25.0**2), 3) if r_front > 25.0 else 0.0
+                        
+                        existing_spec = next((s for s in lens["Specifications"][cls_upper] if s.get('BASE') == f"{b_val:+.2f}"), None)
+                        
+                        if existing_spec:
+                            if raw_opc: existing_spec["OPC"][opc_key] = str(raw_opc)
+                            if int(raw_dia) not in existing_spec["Diameters"]: existing_spec["Diameters"].append(int(raw_dia))
+                        else:
+                            spec['BASE'] = f"{b_val:+.2f}"
+                            spec['ADD'] = f"{safe_float(row.get('CYL/ADD', 0)):+.2f}"
+                            spec['Front RAD'] = r_front
+                            spec['Back RAD'] = r_back
+                            spec['Front TC'] = true_front
+                            spec['Back TC'] = true_back
+                            spec['SAG'] = sag_val
+                            spec['Center Thick'] = safe_float(row.get('CT'))
+                            spec['Edge Thick'] = safe_float(row.get('ET'))
+                            spec['Inset'] = row.get('INSET', '')
+                            spec['Drop'] = row.get('DROP', '')
+                            spec['PRP Out'] = row.get('PRPOUT', '')
+                            spec['PRP Up'] = row.get('PRPUP', '')
+                            spec['Seg Width'] = row.get('SEGWIDTH', '')
+                            spec['Seg Thick'] = row.get('SEGTHICK', '')
+                            spec['Diameters'] = [int(raw_dia)]
+                            spec['OPC'] = {opc_key: str(raw_opc)} if raw_opc else {}
+                            lens["Specifications"][cls_upper].append(spec)
+
+                # 5. FilterTags and Nominal Rollups
+                lens["Colors"].sort()
+                lens["Diameters"].sort()
+                
+                tags = set(lens["Colors"] + lens["Coatings"])
+                tags.update([cls_upper, "Single Vision"])
+                desc_upper = str(raw_desc).upper()
+                
+                if "PUCK" in desc_upper: tags.add("PUCK")
+                if any(x in desc_upper for x in ["UV420", "BLUEGUARD", "BLUE GUARD", "BLUE FILTER"]): 
+                    tags.add("Blue Filter")
+                if any(x in desc_upper for x in ["TRANSITIONS", "PHOTO", "Q-CHANGE", "QC", "SUNSYNC"]):
+                    tags.add("Photochromic")
+                    
+                lens["FilterTags"] = sorted(list(tags))
+                
+                if base_list:
+                    bases = sorted(list(set(base_list)))
+                    lens["NominalBaseCurves"] = ", ".join([f"{b:+.2f}" for b in bases])
+                
+                if sph_list:
+                    min_sph, max_sph = min(sph_list), max(sph_list)
+                    min_cyl, max_cyl = min(cyl_list), max(cyl_list)
+                    if min_sph <= 0: lens["PowerRange_MinusSph"] = f"+0.00 to {min_sph:+.2f}"
+                    if max_sph > 0: lens["PowerRange_PlusSph"] = f"+0.25 to {max_sph:+.2f}"
+                    if min_cyl <= 0 and min_sph <= 0: lens["PowerRange_MinusCyl"] = f"+0.00 to {min_sph:+.2f} SPH | -0.25 to {min_cyl:+.2f} CYL"
+                    if min_cyl <= 0 and max_sph > 0: lens["PowerRange_PlusCyl"] = f"+0.25 to {max_sph:+.2f} SPH | -0.25 to {min_cyl:+.2f} CYL"
+
+                if is_new:
+                    ctx['log_lines'].append(f"[+] INDEXED [{l_id}] {cls_upper} {clean_desc[:25]} | Dias: {lens['Diameters']}")
+                else:
+                    ctx['log_lines'].append(f"[~] AMENDED [{l_id}] {cls_upper} {clean_desc[:25]} | Merged Specs")
+                    
                 draw_throttle(term_w, term_h, ctx, pct, f"Compiling: {file_name}", current_idx, total_files)
                 
         except Exception as e:
@@ -1145,24 +1244,18 @@ def vca_generate_db(ctx, term_w, term_h):
             draw_throttle(term_w, term_h, ctx, pct, "Aborted", current_idx, total_files, is_done=True)
             return ctx['log_lines']
 
-    # ----- ATOMIC COMMIT ----- #
+    # ----- 4. ATOMIC COMMIT ----- #
     ctx['log_lines'].append("")
     ctx['log_lines'].append(f"[✓] Matrix Compilation Complete. Writing {len(sandbox_lenses)} parent lenses to disk...")
     draw_throttle(term_w, term_h, ctx, 100.0, "Atomic Commit", total_files, total_files)
     
-    final_db = {
-        "files": current_hashes,
-        "lenses": sandbox_lenses
-    }
-    
     try:
         with open(DB_FILE, 'w') as f:
-            json.dump(final_db, f, indent=4)
+            json.dump({"files": current_hashes, "lenses": sandbox_lenses}, f, indent=4)
         ctx['log_lines'].append(f"[✓] Atomic commit successful. master_lens_db.json is secured.")
     except Exception as e:
         ctx['log_lines'].append(f"[!] FATAL WRITE ERROR: {e}")
 
-    # ----- Final Prompt ----- #
     ctx['log_lines'].append("")
     ctx['log_lines'].append("=" * 50)
     ctx['log_lines'].append("[ PROCESS COMPLETE ] Press [RETURN] to Continue...")
