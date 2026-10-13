@@ -70,7 +70,13 @@ SCHEMA_ALIAS = {
     "nomdiam": "DIAN", "nominaldia": "DIAN",
     "lrpin": "INSET", "lrpdown": "DROP",
     "nref": "NINDEX", "carrad": "CARRAD", "carrierradius": "CARRAD",
-    "diam": "DIAMETER", "material": "MATCODE"
+    "diam": "DIAMETER", "material": "MATCODE",
+    "materialbrand": "MATBRAND", "matbrand": "MATBRAND",
+    "productname": "PRODUCT", "prod": "PRODUCT",
+    "color": "FILTER", "tint": "FILTER",
+    "coating": "COAT", "coatings": "COAT", "coatcode": "COAT",
+    "rightopc": "OPCR", "ropc": "OPCR", "opcr": "OPCR", "opc": "OPCR", "upc": "OPCR",
+    "leftopc": "OPCL", "lopc": "OPCL", "opcl": "OPCL"
 }
 
 ascii_art = [
@@ -246,13 +252,80 @@ def safe_float(val, default=0.0):
         return default
 
 def color_code(val):
-    return str(val).replace('-', '').replace(' ', '').upper().strip()
+    raw = str(val).replace('-', '').replace(' ', '').upper().strip()
+    if not raw or raw in ["NONE", "N/A", "NA"]:
+        return "CLEAR"
+    return raw
 
 def strip_colors(desc):
     pattern = re.compile(r'\b(GRAY|GREY|BROWN|YELLOW|GREEN|BURGUNDY|CLEAR|BLUE|PINK|PURPLE)(?:[\-\s]*\d+)?\b', re.IGNORECASE)
     scrubbed = pattern.sub('', str(desc))
     return re.sub(r'\s+', ' ', scrubbed).strip()
+    
+def resolve_material(mat_str, mat_brand_str, index_val, desc_str, name_str, abbe_val, global_context=None):
+    if global_context is None:
+        global_context = {}
         
+    c = f" {str(mat_str)} {str(mat_brand_str)} {str(desc_str)} {str(name_str)} ".upper()
+    
+    i_val = safe_float(index_val, 0.0)
+    a_val = safe_float(abbe_val, 0.0)
+    
+    if re.search(r'\b(ULTRA[\s\-]?FLEX|ULTFLX)\b', c):
+        return "1.60 (MR-8+)"
+        
+    if "POLYCARBONATE" in c or i_val == 1.586 or ("POLY" in c and "POLYURETHANE" not in c and "POLYMER" not in c):
+        return "Polycarbonate"
+    if "TRIVEX" in c or re.search(r'\bTR\b', c) or "PNX" in c or i_val == 1.53:
+        return "Trivex"
+    if "CR39" in c or "CR-39" in c or re.search(r'\bPL\b', c) or i_val == 1.50:
+        return "CR-39"
+        
+    if 1.54 <= i_val <= 1.565:
+        return "1.56"
+        
+    if 1.59 <= i_val <= 1.61 or "1.60" in c:
+        return "1.60 (MR-8)"
+        
+    if 1.73 <= i_val <= 1.745 or "1.74" in c:
+        return "1.74 (MR-74)"
+        
+    if 1.65 <= i_val <= 1.675 or "1.67" in c:
+        # Start with the pre-flight inverse deduction bias (+1 if applicable)
+        m10_score = global_context.get("m10_bias", 0)
+        m7_score = global_context.get("m7_bias", 0)
+        
+        if a_val == 31: m10_score += 2
+        if a_val == 32: m7_score += 2
+        
+        if "MR10" in c or "MR-10" in c: m10_score += 5
+        if "MR7" in c or "MR-7" in c: m7_score += 5
+        
+        if m10_score > m7_score:
+            return "1.67 (MR-10)"
+        elif m7_score > m10_score:
+            return "1.67 (MR-7)"
+        else:
+            m_key = f"1.67_{mat_str}_{desc_str}"
+            if m_key in global_context:
+                return global_context[m_key]
+                
+            sys.stdout.write("\033[2J\033[H")
+            def draw_bg(tw, th):
+                draw_skeleton("MATERIAL HEURISTIC TIE", f"Lens: {mat_str} {desc_str} | Index: {i_val:.2f} | Abbe: {int(a_val)}")
+                
+            ans = draw_z_modal("MATERIAL HEURISTIC TIE", "Is this MR-7 or MR-10? Type 7 or 10:", False, draw_bg)
+            if ans and ans.strip() == "10":
+                global_context[m_key] = "1.67 (MR-10)"
+                return "1.67 (MR-10)"
+            else:
+                global_context[m_key] = "1.67 (MR-7)"
+                return "1.67 (MR-7)"
+                
+    if mat_str and str(mat_str).strip():
+        return str(mat_str).title()
+    return "Unknown Material"
+
 # ----- INPUT HANDLERS ----- #
 
 def file_mgr_input(ch, ctx):
@@ -856,6 +929,26 @@ def vca_parse_data(ctx, term_w, term_h):
             df['SAG'] = df['SAG'].round(3)
             df[['TRUE_FRONT', 'TRUE_BACK', 'SAG']] = df[['TRUE_FRONT', 'TRUE_BACK', 'SAG']].fillna(0.00)
             
+            # ----- Formatting Override: Math & Zeros ----- #
+            def fmt_pow(x):
+                try: return f"{float(x):+.2f}" if pd.notnull(x) and str(x).strip() != "" else x
+                except: return x
+                
+            def fmt_idx(x):
+                try: return f"{float(x):.3f}" if pd.notnull(x) and str(x).strip() != "" else x
+                except: return x
+                
+            def fmt_dec(x):
+                try: return f"{float(x):.2f}" if pd.notnull(x) and str(x).strip() != "" else x
+                except: return x
+
+            for col in ['SPH/BASE', 'CYL/ADD']:
+                if col in df.columns: df[col] = df[col].apply(fmt_pow)
+            for col in ['NINDEX', 'DINDEX', 'EINDEX', 'SAFE_INDEX']:
+                if col in df.columns: df[col] = df[col].apply(fmt_idx)
+            for col in ['RADIUSF', 'RADIUSB', 'CT', 'ET', 'TRUE_FRONT', 'TRUE_BACK', 'SAG']:
+                if col in df.columns: df[col] = df[col].apply(fmt_dec)
+
             df = df.fillna("")
             df.to_csv(dest_pth, index=False)
             
@@ -902,6 +995,36 @@ def vca_add_data(ctx, term_w, term_h):
     failed_files = []
     staged_data = [] 
     
+    # --- SAG tolerance ---
+    tolerance = 0.006
+    
+    # ----- 1.67 HEURISTIC WEIGHT ----- #
+    global_context = {"m10_bias": 0, "m7_bias": 0}
+    listed_m10 = 0
+    listed_m7 = 0
+    
+    for name, pth in files_to_process:
+        try:
+            df_peek = pd.read_csv(pth, dtype=str, encoding='latin1', on_bad_lines='skip').fillna("")
+            if 'DESCRIPTION' in df_peek.columns:
+                # Deduplicate by description so row count doesn't skew product line habits
+                for _, row in df_peek.drop_duplicates(subset=['DESCRIPTION']).iterrows():
+                    c = f" {row.get('MATCODE', '')} {row.get('MATBRAND', '')} {row.get('DESCRIPTION', '')} {row.get('PRODUCT', '')} ".upper()
+                    i_val = safe_float(row.get('SAFE_INDEX', 0.0))
+                    if 1.65 <= i_val <= 1.675 or "1.67" in c:
+                        if "MR10" in c or "MR-10" in c:
+                            listed_m10 += 1
+                        if "MR7" in c or "MR-7" in c:
+                            listed_m7 += 1
+        except:
+            pass
+            
+    # Inverse Deduction: If they label MR-10 more often, unlabeled 1.67s are MR-7 (and vice versa)
+    if listed_m10 > listed_m7:
+        global_context["m7_bias"] = 1
+    elif listed_m7 > listed_m10:
+        global_context["m10_bias"] = 1
+
     # ----- Wipe Screen ----- #
     sys.stdout.write("\033[2J\033[H")
     sys.stdout.flush()
@@ -935,13 +1058,11 @@ def vca_add_data(ctx, term_w, term_h):
             # ----- Duplicate Purge ----- #
             orig_len = len(df)
             df.drop_duplicates(subset=CUSTOM_SCHEMA, keep='first', inplace=True)
-            
             df.reset_index(drop=True, inplace=True)
             
             if len(df) < orig_len:
                 purged = orig_len - len(df)
                 ctx['log_lines'].append(f"  -> [CLEANUP] Silently purged {purged:,} identical duplicate rows.")
-                df.to_csv(pth, index=False)
                 draw_throttle(term_w, term_h, ctx, pct, name, current_idx, total_files)
             
             rad_f = pd.to_numeric(df['RADIUSF'], errors='coerce').replace(0.0, np.nan)
@@ -960,9 +1081,10 @@ def vca_add_data(ctx, term_w, term_h):
             
             sf_mask = df['CLASS'].astype(str).str.upper().fillna('') != 'FIN'
             
-            front_mismatch = (calc_front != file_front) & sf_mask
-            back_mismatch = (calc_back != file_back) & sf_mask
-            sag_mismatch = (calc_sag != file_sag) & sf_mask
+            # --- Controlled Math Tolerance Threshold ---
+            front_mismatch = ((calc_front - file_front).abs() > tolerance) & sf_mask
+            back_mismatch = ((calc_back - file_back).abs() > tolerance) & sf_mask
+            sag_mismatch = ((calc_sag - file_sag).abs() > tolerance) & sf_mask
             
             if front_mismatch.any() or back_mismatch.any() or sag_mismatch.any():
                 audit_passed = False
@@ -981,6 +1103,29 @@ def vca_add_data(ctx, term_w, term_h):
             else:
                 ctx['log_lines'].append(f"  -> [MATH] {name}: Tooling Index (1.530) and SAG physics verified (FIN bypassed).")
                 draw_throttle(term_w, term_h, ctx, pct, name, current_idx, total_files)
+
+            # ----- Resolve Materials & Stamp into VCA File ----- #
+            df_filled = df.fillna("")
+            mat_cols = ['MATCODE', 'MATBRAND', 'SAFE_INDEX', 'DESCRIPTION', 'PRODUCT', 'ABBE']
+            unique_combos = df_filled[mat_cols].drop_duplicates()
+            
+            combo_map = {}
+            for _, r in unique_combos.iterrows():
+                key = tuple(r[col] for col in mat_cols)
+                combo_map[key] = resolve_material(
+                    r['MATCODE'], r['MATBRAND'], r['SAFE_INDEX'],
+                    r['DESCRIPTION'], r['PRODUCT'], r['ABBE'], global_context
+                )
+                
+            # Restore viewport cleanly in case draw_z_modal was triggered during tie-breaking
+            sys.stdout.write("\033[2J\033[H")
+            ctx['force_redraw'] = True
+            
+            df['MATCODE'] = [combo_map[tuple(x)] for x in df_filled[mat_cols].to_numpy()]
+            df.fillna("").to_csv(pth, index=False)
+            
+            ctx['log_lines'].append(f"  -> [MATERIAL] {name}: Resolved {len(unique_combos)} lens families into standard materials.")
+            draw_throttle(term_w, term_h, ctx, pct, name, current_idx, total_files)
 
             staged_data.append((name, pth, len(df)))
             
@@ -1001,14 +1146,15 @@ def vca_add_data(ctx, term_w, term_h):
             except: kb = 0.0
             total_moved_kb += kb
             
+            # --- Set Permissions ---
             if os.path.exists(dest_pth): 
-                os.chmod(dest_pth, stat.S_IWRITE)
+                os.chmod(dest_pth, 0o666)  # Unlock for overwrite
                 os.remove(dest_pth)
                 
             shutil.move(pth, dest_pth)
-            os.chmod(dest_pth, stat.S_IREAD) 
+            os.chmod(dest_pth, 0o444)  # Lock to Read-Only
             
-            ctx['log_lines'].append(f"[VAULT] Locked {name} ({kb:.1f} KB, {row_count:,} rows) -> S_IREAD.")
+            ctx['log_lines'].append(f"[VAULT] Locked {name} ({kb:.1f} KB, {row_count:,} rows) -> 0o444 (Read-Only).")
             draw_throttle(term_w, term_h, ctx, pct, name, current_idx, total_files)
             
         ctx['log_lines'].append(f"[COMMIT] Batch clearance successful. {len(staged_data)} files ({total_moved_kb:.1f} KB) secured.")
@@ -1018,8 +1164,9 @@ def vca_add_data(ctx, term_w, term_h):
         ctx['log_lines'].append(f"[BATCH FAILED] Atomic lock triggered. Moving corrupted files to isolation.")
         for name, pth in failed_files:
             dest_pth = os.path.join(CORRUPT_DIR, name)
+            # --- Set Permissions ---
             if os.path.exists(dest_pth): 
-                os.chmod(dest_pth, stat.S_IWRITE) # Also unlock isolation folder files if overwriting
+                os.chmod(dest_pth, 0o666) # Unlock isolation folder files if overwriting
                 os.remove(dest_pth)
             try:
                 shutil.move(pth, dest_pth)
@@ -1052,7 +1199,6 @@ def vca_generate_db(ctx, term_w, term_h):
         draw_throttle(term_w, term_h, ctx, 100.0, "Aborted", 1, 1, is_done=True)
         return ctx['log_lines']
         
-    # No hash checking. We force a total rebuild every time to keep the database perfectly clean.
     current_hashes = {f: get_file_hash(os.path.join(VAULT_DIR, f)) for f in vault_files}
         
     sandbox_lenses = {}
@@ -1087,7 +1233,6 @@ def vca_generate_db(ctx, term_w, term_h):
                 is_new = l_id not in sandbox_lenses
                 
                 if is_new:
-                    # Placeholders for the final Four Descriptions logic
                     sandbox_lenses[l_id] = {
                         "Id": l_id,
                         "MFG": mfg,
@@ -1118,11 +1263,9 @@ def vca_generate_db(ctx, term_w, term_h):
                 for _, row in group.iterrows():
                     # 1. Color Sanitization
                     raw_color = str(row.get('FILTER', '')).strip()
-                    if raw_color:
-                        sanitized_color = color_code(raw_color)
-                        if sanitized_color not in lens["Colors"]: lens["Colors"].append(sanitized_color)
-                    else:
-                        sanitized_color = "CLEAR"
+                    sanitized_color = color_code(raw_color)
+                    if sanitized_color not in lens["Colors"]: 
+                        lens["Colors"].append(sanitized_color)
                     
                     # 2. Diameter Aggregation
                     raw_dia = safe_float(row.get('DIAMETER', 0))
@@ -1131,6 +1274,8 @@ def vca_generate_db(ctx, term_w, term_h):
                         
                     # 3. Coating Aggregation
                     raw_coat = str(row.get('COAT', '')).strip()
+                    if raw_coat.upper() in ["NONE", "N/A", "NA"]:
+                        raw_coat = ""
                     if raw_coat and raw_coat not in lens["Coatings"]:
                         lens["Coatings"].append(raw_coat)
                         
@@ -1139,11 +1284,18 @@ def vca_generate_db(ctx, term_w, term_h):
                     dia_str = str(int(raw_dia))
                     cls_char = "S" if cls_upper == "SF" else "F"
                     
-                    # Builds strings like '75_S_BRN3_HC'
-                    opc_key = f"{dia_str}_{cls_char}_{sanitized_color}_{raw_coat.upper()}".replace("__", "_")
+                    opc_key = f"{dia_str}_{cls_char}_{sanitized_color}_{raw_coat.upper()}".replace("__", "_").rstrip("_")
                     
-                    raw_opc = str(row.get('OPC', row.get('UPC', ''))).strip()
-                    if raw_opc.endswith('.0'): raw_opc = raw_opc[:-2] # Cleans float artifacts
+                    # --- Safely target OPCR with true fallback to OPCL if OPCR is blank ---
+                    opcr_val = str(row.get('OPCR', '')).strip()
+                    opcl_val = str(row.get('OPCL', '')).strip()
+                    if opcr_val.upper() in ["NONE", "N/A", "NA", "NAN"]: opcr_val = ""
+                    if opcl_val.upper() in ["NONE", "N/A", "NA", "NAN"]: opcl_val = ""
+                    
+                    raw_opc = opcr_val or opcl_val
+                    if raw_opc.endswith('.0'): raw_opc = raw_opc[:-2] 
+                    if raw_opc:
+                        raw_opc = re.sub(r'[-_\s]*[RL]$', 'S', raw_opc, flags=re.IGNORECASE)
                     
                     if cls_upper == 'FIN':
                         s_val = safe_float(row.get('SPH/BASE', 0))
@@ -1194,17 +1346,17 @@ def vca_generate_db(ctx, term_w, term_h):
                             spec['Drop'] = row.get('DROP', '')
                             spec['PRP Out'] = row.get('PRPOUT', '')
                             spec['PRP Up'] = row.get('PRPUP', '')
-                            spec['Seg Width'] = row.get('SEGWIDTH', '')
-                            spec['Seg Thick'] = row.get('SEGTHICK', '')
+                            spec['Seg Width'] = row.get('SEGW', '')
+                            spec['Seg Thick'] = row.get('SEGT', '')
                             spec['Diameters'] = [int(raw_dia)]
                             spec['OPC'] = {opc_key: str(raw_opc)} if raw_opc else {}
                             lens["Specifications"][cls_upper].append(spec)
 
-                # 5. FilterTags and Nominal Rollups
+                # 5. FilterTags and Rollups
                 lens["Colors"].sort()
                 lens["Diameters"].sort()
                 
-                tags = set(lens["Colors"] + lens["Coatings"])
+                tags = set([c for c in lens["Colors"] if c not in ["CLEAR", "NONE"]] + [ct for ct in lens["Coatings"] if ct not in ["CLEAR", "NONE"]])
                 tags.update([cls_upper, "Single Vision"])
                 desc_upper = str(raw_desc).upper()
                 
@@ -1250,8 +1402,14 @@ def vca_generate_db(ctx, term_w, term_h):
     draw_throttle(term_w, term_h, ctx, 100.0, "Atomic Commit", total_files, total_files)
     
     try:
+        raw_json = json.dumps({"files": current_hashes, "lenses": sandbox_lenses}, indent=4)
+        
+        # Flattens simple arrays
+        flat_json = re.sub(r'\[\n\s+([^\[\]\{\}]+?)\n\s+\]', lambda m: '[' + ' '.join(m.group(1).split()) + ']', raw_json)
+        
         with open(DB_FILE, 'w') as f:
-            json.dump({"files": current_hashes, "lenses": sandbox_lenses}, f, indent=4)
+            f.write(flat_json)
+            
         ctx['log_lines'].append(f"[✓] Atomic commit successful. master_lens_db.json is secured.")
     except Exception as e:
         ctx['log_lines'].append(f"[!] FATAL WRITE ERROR: {e}")
