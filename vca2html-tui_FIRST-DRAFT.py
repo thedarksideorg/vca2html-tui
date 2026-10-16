@@ -3259,7 +3259,7 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
     has_color_word = any(x in c_pad_color for x in [f" {w} " for w in color_keywords] + [f" {w}" for w in color_keywords])
 
     is_photochromic = any(t in techs_found or t.upper() in combined_name_desc for t in [
-        'Transitions', 'PhotoFusion X', 'PhotoFusion', 'Sensitivity', 
+        'Transitions', 'PhotoFusion X', 'PhotoFusion', 'Sensity', 
         'SunSync', 'Quick-Change', 'Xtra-Active', 'Photochromic', 'LifeRx'
     ])
     
@@ -3296,7 +3296,7 @@ def synthesize_descriptions(sample_row, is_fsv, has_add, techs_found, extracted_
             tech_list_full.append('PhotoFusion X')
         has_photo = True
         
-    for t in ['Xtra-Active', 'Quick-Change', 'SunSync', 'Sensitivity', 'Transitions', 'LifeRx']:
+    for t in ['Xtra-Active', 'Quick-Change', 'SunSync', 'Sensity', 'Transitions', 'LifeRx']:
         if t in techs_found or t.upper() in combined_name_desc: 
             tech_list_full.append(t)
             has_photo = True
