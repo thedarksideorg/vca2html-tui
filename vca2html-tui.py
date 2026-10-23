@@ -464,20 +464,18 @@ def map_lens_tech(data, row_mode=False):
         combined = f" {raw_desc} {raw_prod} {raw_filt} {raw_fbrand} {raw_cbrand} {raw_coat} "
         c_pad = combined.replace('-', ' ').replace('/', ' ')
         
-        # ----- Neutralize Blue Filter tech before scanning for blue tint ----- #
         c_pad_color = c_pad
         for bf_word in ['BLUE FILTER', 'BLUE BLOCKER', 'BLUE PROTECT', 'BLUE GUARD', 'BLUEGUARD', 'BLUEP', 'UV420', 'FUL PROTECT', 'GUARD']:
             c_pad_color = c_pad_color.replace(bf_word, '')
         c_pad_coat = c_pad.replace(' ', '')
 
-        # ----- Tech Detection (UV, Blue Filter, Photochromic, Polarized) ----- #
         is_photochromic = False
         is_polarized = False
         
         if any(x in c_pad for x in [' XTRA ACTIVE', ' XA ', ' XTRA ']): row_techs.add('Xtra-Active'); is_photochromic = True
         elif any(x in c_pad for x in [' QUICK CHANGE', ' Q CHANGE', ' QC ']): row_techs.add('Quick-Change'); is_photochromic = True
         elif ' SUNSYNC' in c_pad: row_techs.add('SunSync'); is_photochromic = True
-        elif any(x in c_pad for x in [' SENSITIVITY', ' SENSITY', ' SENS ']): row_techs.add('Sensitivity'); is_photochromic = True
+        elif any(x in c_pad for x in [' SENSITIVITY', ' SENSITY', ' SENS ']): row_techs.add('Sensity'); is_photochromic = True
         elif any(x in c_pad for x in [' PFX', ' PHOTOFUSION']): row_techs.add('PhotoFusion X'); is_photochromic = True
         elif any(x in c_pad for x in [' TRANSITIONS', ' TRANS ', ' TRN ']): row_techs.add('Transitions'); is_photochromic = True
         elif any(x in c_pad for x in [' LIFERX', ' LIFE RX ', ' LRX ']): row_techs.add('LifeRx'); is_photochromic = True
@@ -498,7 +496,6 @@ def map_lens_tech(data, row_mode=False):
         if ' UVRI' in c_pad: row_techs.add('UVRI')
         if ' UV PROTECT' in c_pad: row_techs.add('UV Protect')
 
-        # ----- Extract Color Code from FILTER first, then fallback to Description ----- #
         filt_tokens = [t.strip() for t in re.split(r'[\s,/]+', raw_filt.replace('-', '')) if t.strip()]
         color_tokens = [t for t in filt_tokens if t not in tech_ignore_tokens]
         
@@ -508,8 +505,7 @@ def map_lens_tech(data, row_mode=False):
         if color_tokens:
             cand = color_tokens[-1]
             if cand == "G15":
-                display_color = "Green"
-                opc_color = "G15"
+                display_color = "Green"; opc_color = "G15"
                 row_search_tags.update(["Green", "G15", "G-15", "GRN3"])
             else:
                 m_tok = re.match(r'^([A-Z]+?)([123ABC])?$', cand)
@@ -521,13 +517,8 @@ def map_lens_tech(data, row_mode=False):
                     display_color = base_col
                     short_pfx = color_code_map.get(base_col, pfx[:3])
                     opc_color = f"{pfx if pfx in ['PIO', 'PGY', 'PBN', 'EXG'] else short_pfx}{shd}"
-                    
-                    row_search_tags.update([
-                        base_col, opc_color, f"{base_col} {shd}", f"{base_col}-{shd}",
-                        alias_col, f"{alias_col} {shd}", f"{alias_col}-{shd}"
-                    ])
+                    row_search_tags.update([base_col, opc_color, f"{base_col} {shd}", f"{base_col}-{shd}", alias_col, f"{alias_col} {shd}", f"{alias_col}-{shd}"])
 
-        # ----- Fallback to scanning description if FILTER didn't yield structured shortcode ----- #
         if not display_color:
             if any(x in c_pad_color for x in [' PRO GRAY', ' PRO GREY']):
                 display_color = "Pro Gray"; opc_color = "PGY3"
@@ -553,7 +544,6 @@ def map_lens_tech(data, row_mode=False):
                     raw_b = shade_match.group(1)
                     shd = (shade_match.group(2) or "3").upper()
                     if shd in "ABC": shd = {"A": "1", "B": "2", "C": "3"}[shd]
-                    
                     if raw_b in ['GRAY', 'GREY', 'GRY']: display_color = "Gray"
                     elif raw_b in ['BROWN', 'BRN']: display_color = "Brown"
                     elif raw_b in ['GREEN', 'GRN', 'EMERALD']: display_color = "Green"
@@ -564,35 +554,22 @@ def map_lens_tech(data, row_mode=False):
                     elif raw_b in ['YELLOW', 'YEL', 'YLW']: display_color = "Yellow"
                     elif raw_b in ['ROSE', 'ROS']: display_color = "Rose"
                     elif raw_b == 'ORANGE': display_color = "Orange"
-                    
                     short_pfx = color_code_map.get(display_color, "GRY")
                     opc_color = f"{short_pfx}{shd}"
                     row_search_tags.update([display_color, opc_color, f"{display_color} {shd}", f"{display_color}-{shd}"])
 
         if not display_color:
             if is_photochromic or is_polarized:
-                display_color = "Gray"
-                opc_color = "GRY3"
+                display_color = "Gray"; opc_color = "GRY3"
                 row_search_tags.update(["Gray", "GRY3", "Gray 3", "Gray-3"])
             else:
-                display_color = "Clear"
-                opc_color = "CLEAR"
+                display_color = "Clear"; opc_color = "CLEAR"
 
-        # Ensure NONE is never added to FilterTags or Colors
-        if opc_color == "NONE" or not opc_color:
-            opc_color = "CLEAR"
-        if display_color.upper() == "NONE":
-            display_color = "Clear"
+        if opc_color == "NONE" or not opc_color: opc_color = "CLEAR"
+        if display_color.upper() == "NONE": display_color = "Clear"
 
-        # ----- Coating Classification ----- #
-        if any(x in c_pad for x in [' HC ', ' SR ', ' SHMC ', ' PG ', ' UT ', ' YHC ', ' US ', ' HCT ', ' HARDCOAT ', ' HARD COAT ', ' HARD ']) or any(x in c_pad_coat for x in ['ULTRASHIELD', 'PERMAGUARD', 'ULTRATOUGH', 'YOUNGERHC', 'YOUNGERHARDCOAT']):
-            row_coats_display.add('Hardcoat')
-            
-        if 'PERMAGUARD' in c_pad_coat or ' PG ' in c_pad: row_techs.add('PermaGuard')
-        if 'ULTRATOUGH' in c_pad_coat or ' UT ' in c_pad: row_techs.add('UltraTough')
-        if 'YOUNGERHC' in c_pad_coat or ' YOUNGERHARDCOAT' in c_pad_coat or ' YHC ' in c_pad: row_techs.add('Younger Hardcoat')
-        if 'ULTRASHIELD' in c_pad_coat or ' US ' in c_pad: row_techs.add('Ultra-Shield')
-
+        is_ar_row = any(x in c_pad for x in [' AR ', ' A/R ', ' DURA', ' CRIZAL', ' VELA', ' HOYA', ' ECP', ' ULTRACLEAN', ' HMC', ' SHMC', ' BMC'])
+        
         if any(x in c_pad for x in [' DVC ', ' CHROME ']): row_coats_display.add('DuraVision Chrome')
         elif any(x in c_pad for x in [' DVP ', ' PLATINUM ']): row_coats_display.add('DuraVision Platinum')
         elif any(x in c_pad for x in [' DVG ', ' GOLD ']): row_coats_display.add('DuraVision Gold')
@@ -601,23 +578,35 @@ def map_lens_tech(data, row_mode=False):
         elif ' SAPPHIRE ' in c_pad: row_coats_display.add('Crizal Sapphire')
         elif ' EASY ' in c_pad: row_coats_display.add('Crizal Easy')
         elif ' VELA ' in c_pad: row_coats_display.add('Vela')
-        elif any(x in c_pad for x in [' AR ', ' A/R ', ' CRIZAL ', ' DURAVISION ', ' DURA ']): row_coats_display.add('A/R')
+        elif is_ar_row: row_coats_display.add('A/R')
         elif any(x in c_pad for x in [' UC ', ' UNCOATED ']): row_coats_display.add('Uncoated')
 
-        clean_raw_coat = re.sub(r'[^A-Z0-9]', '', raw_coat)
-        if clean_raw_coat and clean_raw_coat not in ["NONE", "NA", "NAN"] and len(clean_raw_coat) <= 4:
-            opc_coat = clean_raw_coat
-        else:
-            is_ar_row = any(x in c_pad for x in [' AR ', ' A/R ', ' DURA', ' CRIZAL', ' VELA', ' HOYA', ' ECP', ' ULTRACLEAN', ' HMC', ' SHMC', ' BMC'])
-            if is_ar_row: opc_coat = "AR"
-            elif 'PERMAGUARD' in c_pad_coat or ' PG ' in c_pad: opc_coat = "PG"
-            elif 'ULTRATOUGH' in c_pad_coat or ' UT ' in c_pad: opc_coat = "UT"
-            elif 'YOUNGERHC' in c_pad_coat or ' YHC ' in c_pad: opc_coat = "YHC"
-            elif 'ULTRASHIELD' in c_pad_coat or ' US ' in c_pad: opc_coat = "US"
-            elif 'UNCOAT' in c_pad or ' UC ' in c_pad or not raw_coat: opc_coat = "UC"
-            else: opc_coat = "HC"
+        # Drop HC/SR flags entirely from the display if it has AR
+        if not is_ar_row and (any(x in c_pad for x in [' HC ', ' SR ', ' SHMC ', ' PG ', ' UT ', ' YHC ', ' US ', ' HCT ', ' HARDCOAT ', ' HARD COAT ', ' HARD ']) or any(x in c_pad_coat for x in ['ULTRASHIELD', 'PERMAGUARD', 'ULTRATOUGH', 'YOUNGERHC', 'YOUNGERHARDCOAT'])):
+            row_coats_display.add('Hardcoat')
+            
+        if 'PERMAGUARD' in c_pad_coat or ' PG ' in c_pad: row_techs.add('PermaGuard')
+        if 'ULTRATOUGH' in c_pad_coat or ' UT ' in c_pad: row_techs.add('UltraTough')
+        if 'YOUNGERHC' in c_pad_coat or ' YOUNGERHARDCOAT' in c_pad_coat or ' YHC ' in c_pad: row_techs.add('Younger Hardcoat')
+        if 'ULTRASHIELD' in c_pad_coat or ' US ' in c_pad: row_techs.add('Ultra-Shield')
 
-        if any(t in row_techs for t in ['Xtra-Active', 'Quick-Change', 'SunSync', 'Sensitivity', 'Transitions', 'PhotoFusion X', 'LifeRx']):
+        clean_raw_coat = re.sub(r'[^A-Z0-9]', '', raw_coat)
+        
+        # Override OPC to strictly 'AR' if it is Anti-Reflective, bypassing SR/SRAR
+        if is_ar_row:
+            opc_coat = "AR"
+        elif clean_raw_coat and clean_raw_coat not in ["NONE", "NA", "NAN"] and len(clean_raw_coat) <= 4:
+            opc_coat = clean_raw_coat
+        elif 'PERMAGUARD' in c_pad_coat or ' PG ' in c_pad: opc_coat = "PG"
+        elif 'ULTRATOUGH' in c_pad_coat or ' UT ' in c_pad: opc_coat = "UT"
+        elif 'YOUNGERHC' in c_pad_coat or ' YHC ' in c_pad: opc_coat = "YHC"
+        elif 'ULTRASHIELD' in c_pad_coat or ' US ' in c_pad: opc_coat = "US"
+        elif 'UNCOAT' in c_pad or ' UC ' in c_pad or not raw_coat: opc_coat = "UC"
+        else: opc_coat = "HC"
+        
+        if opc_coat == "SRAR": opc_coat = "AR"
+
+        if any(t in row_techs for t in ['Xtra-Active', 'Quick-Change', 'SunSync', 'Sensity', 'Transitions', 'PhotoFusion X', 'LifeRx']):
             row_techs.add('Photochromic')
         if any(t in row_techs for t in ['NuPolar', 'TruPolar', 'SunRx', 'Coppertone']):
             row_techs.add('Polarized')
@@ -825,7 +814,7 @@ def map_lens_desc(sample_row, is_fsv, has_add, techs_found, extracted_coats, is_
     has_color_word = any(x in c_pad_color for x in [f" {w} " for w in color_keywords] + [f" {w}" for w in color_keywords])
 
     is_photochromic = any(t in techs_found or t.upper() in combined_name_desc for t in [
-        'Transitions', 'PhotoFusion X', 'PhotoFusion', 'Sensitivity',
+        'Transitions', 'PhotoFusion X', 'PhotoFusion', 'Sensitivity', 'Sensity',
         'SunSync', 'Quick-Change', 'Xtra-Active', 'Photochromic', 'LifeRx'
     ])
     
@@ -864,7 +853,7 @@ def map_lens_desc(sample_row, is_fsv, has_add, techs_found, extracted_coats, is_
             tech_list_full.append('PhotoFusion X')
         has_photo = True
         
-    for t in ['Xtra-Active', 'Quick-Change', 'SunSync', 'Sensitivity', 'Transitions', 'LifeRx']:
+    for t in ['Xtra-Active', 'Quick-Change', 'SunSync', 'Sensity', 'Transitions', 'LifeRx']:
         if t in techs_found or t.upper() in combined_name_desc:
             tech_list_full.append(t)
             has_photo = True
@@ -921,7 +910,7 @@ def map_lens_desc(sample_row, is_fsv, has_add, techs_found, extracted_coats, is_
             "PhotoFusion X": ["PHOTOFUSION X", "PFX", "PFX", "PFX"],
             "Quick-Change": ["QUICK-CHANGE", "QCHANGE", "QC", "QC"],
             "Xtra-Active": ["XTRA-ACTIVE", "XTRA", "XA", "XA"],
-            "Sensitivity": ["SENSITIVITY", "SENS", "SENS", "SENS"],
+            "Sensity": ["SENSITY", "SENSITY", "SENS", "SENS"],
             "LifeRx": ["LIFERX", "LIFERX", "LRX", "LRX"],
             "NuPolar": ["NUPOLAR", "NUPOLAR", "POLZ", "POLZ"],
             "TruPolar": ["TRUPOLAR", "TRUPOLAR", "POLZ", "POLZ"],
@@ -1109,6 +1098,92 @@ def map_lens_desc(sample_row, is_fsv, has_add, techs_found, extracted_coats, is_
 
     if has_puck:
         clean_desc = f"{clean_desc} PUCK".strip()
+
+    # ----- Synonym Injection for Search Index ----- #
+    if "A/R" in tags or "AR" in tags or active_ar:
+        tags = [t for t in tags if t not in ["SR", "HC", "Hardcoat", "SRAR"]]
+        
+    synonyms = set()
+    if is_fsv:
+        synonyms.update(["FSV", "Finished"])
+        if "Single Vision" in tags: synonyms.add("SV")
+    else:
+        synonyms.update(["SF", "Semi-Finished", "Semi Finished"])
+        if "Single Vision" in tags: synonyms.update(["SV", "SFSV"])
+        
+    if style_int == 6:
+        synonyms.update(["PAL", "Prog"])
+        if brand_str and brand_str != "PROG":
+            synonyms.add(smart_casing(brand_str, techs_found))
+            
+    if style_int in [2, 15] and seg_size:
+        synonyms.update([f"FT{seg_size}", f"FT-{seg_size}", f"ST{seg_size}", f"ST-{seg_size}"])
+        
+    if "UVRI" in tags or "UVRI" in techs_found: synonyms.add("UV")
+    if "BlueGuard" in tags: synonyms.add("BG")
+    if "Blue Filter" in tags: synonyms.add("BF")
+    if "Blue Protect" in tags: synonyms.add("BP")
+    
+    # ----- Photochromic Expansions ----- #
+    if "Photochromic" in tags or is_photochromic:
+        synonyms.add("Photo")
+        
+        pfx_match = any(x in techs_found for x in ['PhotoFusion X', 'PhotoFusion X Extra', 'PhotoFusion']) or 'PHOTOFUSION' in combined_name_desc
+        if pfx_match:
+            synonyms.update(["PhotoFusion X", "Photo Fusion X", "PhotoFusion", "PFX"])
+            
+        trn_match = 'Transitions' in techs_found or 'TRANSITIONS' in combined_name_desc
+        if trn_match:
+            synonyms.update(["Transition", "Trans"])
+            if any(x in combined_name_desc for x in ['GEN S', 'GENS', 'GEN-S']):
+                synonyms.update(["TGNS", "TGEN-S"])
+
+        qc_match = 'Quick-Change' in techs_found or 'QUICK-CHANGE' in combined_name_desc or 'QUICK CHANGE' in combined_name_desc
+        if qc_match:
+            synonyms.update(["Quick-Change", "Quick Change", "QC"])
+            
+        if 'Sensity' in techs_found or 'SENSITY' in combined_name_desc:
+            synonyms.add("Sensity")
+        if 'LifeRx' in techs_found or 'LIFERX' in combined_name_desc:
+            synonyms.add("LifeRx")
+        if 'SunSync' in techs_found or 'SUNSYNC' in combined_name_desc:
+            synonyms.add("SunSync")
+        if 'Xtra-Active' in techs_found or 'XTRA-ACTIVE' in combined_name_desc or 'XTRA ACTIVE' in combined_name_desc:
+            synonyms.update(["Xtra-Active", "Xtra Active"])
+
+    # ----- Material, Index, and UltraFlex Expansion ----- #
+    c_mat_syn = str(resolved_mat).upper()
+    
+    is_uf = "ULTRA" in c_mat_syn or "FLEX" in c_mat_syn or "UF" in c_mat_syn or "ULTFLX" in c_mat_syn or "ULTRAFLEX" in combined_name_desc
+    if is_uf:
+        synonyms.update(["Ultra Flex", "Ultra-Flex", "UF"])
+        
+    if "CR-39" in c_mat_syn or "CR39" in c_mat_syn or "1.50" in c_mat_syn:
+        synonyms.update(["CR-39", "CR39", "Plastic", "1.50", "150"])
+    elif "POLY" in c_mat_syn or "1.59" in c_mat_syn:
+        synonyms.update(["Polycarbonate", "Polycarb", "Poly", "1.59", "159"])
+    elif "TRIVEX" in c_mat_syn or "1.53" in c_mat_syn:
+        synonyms.update(["Trivex", "1.53", "153"])
+    elif "1.56" in c_mat_syn:
+        synonyms.update(["1.56", "156", "Mid-Index", "Mid Index"])
+    elif "1.60" in c_mat_syn:
+        synonyms.update(["1.60", "160", "High Index", "High-Index"])
+        # Strict isolation for UltraFlex vs Standard MR-8
+        if is_uf or "MR-8+" in c_mat_syn or "MR8+" in c_mat_syn:
+            synonyms.update(["MR-8+", "MR8+"])
+        elif "MR-8" in c_mat_syn or "MR8" in c_mat_syn:
+            synonyms.update(["MR-8", "MR8"])
+    elif "1.67" in c_mat_syn:
+        synonyms.update(["1.67", "167", "High Index", "High-Index"])
+        if "MR-7" in c_mat_syn or "MR7" in c_mat_syn:
+            synonyms.update(["MR-7", "MR7"])
+        if "MR-10" in c_mat_syn or "MR10" in c_mat_syn:
+            synonyms.update(["MR-10", "MR10"])
+    elif "1.74" in c_mat_syn:
+        synonyms.update(["1.74", "174", "High Index", "High-Index", "MR-74", "MR74"])
+    
+    for syn in synonyms:
+        if syn not in tags: tags.append(syn)
 
     return clean_desc, brief_desc, long_desc, tags, active_ar, prefix_str, prefix_parts, seg_size
     
@@ -1406,84 +1481,111 @@ def draw_skeleton(title, subtitle=""):
         sys.stdout.write(f"\033[{r};1H║\033[{r};{term_w}H║")
     sys.stdout.write(f"\033[{term_h};1H╚══[{subtitle}]{'═'*(term_w - len(subtitle) - 6)}╝")
     
-def draw_viewport(term_w, term_h, ctx, progress_pct, active_file, current_idx, total_files, is_interactive=False, title="Convert VCA", action_text="", frame_title=""):
-    draw_skeleton(title, "Data Sanitization & Math Engine")
+last_known_w, last_known_h = 0, 0
+
+last_known_w, last_known_h = 0, 0
+
+def draw_viewport(term_w, term_h, ctx, progress_pct=100.0, active_file="", current_val=0, total_val=0, total_types=0, total_lenses=0, is_interactive=False, title="Convert VCA", action_text="", frame_title=""):
+    global scroll_offset, last_known_w, last_known_h
     
-    log_lines = ctx.get('log_lines', [])
-    inner_l = 4
-    inner_r = term_w - 3
+    # Dynamically measure the live terminal size for word-wrapping
+    live_w, live_h = get_term_size()
+    
+    if live_w != last_known_w or live_h != last_known_h:
+        last_known_w, last_known_h = live_w, live_h
+        draw_skeleton(title, frame_title)
+    
+    inner_l = 4; inner_r = live_w - 3
     box_w = inner_r - inner_l + 1
     
-    # ----- Progress Bar Rows ----- #
-    pb_r1 = term_h - 4
-    pb_r2 = term_h - 3
-    pb_r3 = term_h - 2
-    
-    # ----- Viewport Rows ------ #
-    vp_start_row = 5
-    vp_end_row = pb_r1 - 2
+    pb_r1 = live_h - 5; pb_r2 = live_h - 4; pb_r3 = live_h - 3
+    vp_start_row = 4; vp_end_row = pb_r1 - 1
     vp_height = max(1, vp_end_row - vp_start_row - 1)
-    total_logs = max(1, len(log_lines))
     
-    # ----- Scrolling ----- #
-    if not is_interactive:
-        offset = max(0, total_logs - vp_height)
-        ctx['scroll_offset'] = offset
-    else:
-        offset = ctx.get('scroll_offset', 0)
-        
-    # ----- Frame Title ----- #
-    if frame_title:
-        pad_title = max(1, (term_w - len(frame_title)) // 2)
-        sys.stdout.write(f"\033[3;{inner_l}H{' ' * box_w}")
-        sys.stdout.write(f"\033[3;{pad_title}H{frame_title}")
-        
+    # Retrieve logs safely from the context state machine
+    log_lines = ctx.get('log_lines', []) if ctx else []
+    
+    # ----- Dynamic Word Wrapping ----- #
+    rendered_lines = []
+    wrap_width = max(10, box_w - 4)
+    for line in log_lines:
+        wrapped = textwrap.wrap(line, width=wrap_width)
+        if not wrapped:
+            rendered_lines.append("")
+        else:
+            rendered_lines.extend(wrapped)
+            
+    total_logs = max(1, len(rendered_lines))
+    if not is_interactive: scroll_offset = max(0, total_logs - vp_height)
+    else: scroll_offset = min(scroll_offset, max(0, total_logs - vp_height))
+    
     sys.stdout.write(f"\033[{vp_start_row};{inner_l}H┌{'─' * (box_w - 2)}┐")
     
     for i in range(vp_height):
         row = vp_start_row + 1 + i
-        log_idx = offset + i
+        log_idx = scroll_offset + i
+        log_text = rendered_lines[log_idx] if log_idx < len(rendered_lines) else ""
         
-        # ----- "Scrollbar" ----- #
-        thumb_size = max(1, int((vp_height / total_logs) * vp_height)) if len(log_lines) > vp_height else vp_height
-        max_scroll = max(1, total_logs - vp_height)
-        scroll_pct = offset / max_scroll if max_scroll > 0 else 0
-        thumb_pos = int(scroll_pct * (vp_height - thumb_size)) if len(log_lines) > vp_height else 0
+        thumb_size = max(1, int((vp_height / total_logs) * vp_height)) if len(rendered_lines) > vp_height else vp_height
+        max_scroll_possible = max(1, total_logs - vp_height)
+        scroll_pct = scroll_offset / max_scroll_possible if max_scroll_possible > 0 else 0
+        thumb_pos = int(scroll_pct * (vp_height - thumb_size)) if len(rendered_lines) > vp_height else 0
+        
         s_char = "█" if thumb_pos <= i < thumb_pos + thumb_size else "│"
         
         sys.stdout.write(f"\033[{row};{inner_l}H│ ")
         
-        if log_idx < len(log_lines):
-            line = log_lines[log_idx]
-            display_line = line[:(box_w - 4)]
-            sys.stdout.write(f"\033[{row};{inner_l + 2}H{display_line}")
-            space_to_fill = (box_w - 4) - len(strip_codes(display_line))
-            if space_to_fill > 0: sys.stdout.write(" " * space_to_fill)
-        else:
-            sys.stdout.write(" " * (box_w - 4))
+        raw_len = 0
+        if log_text:
+            clean_text = re.sub(r'\x1B\[[0-9;]*[mK]', '', log_text)
+            raw_len = len(clean_text)
+            sys.stdout.write(f"\033[{row};{inner_l + 2}H{log_text}")
+        
+        space_to_fill = (inner_r - 1) - (inner_l + 2) - raw_len
+        if space_to_fill > 0: sys.stdout.write(" " * space_to_fill)
             
         sys.stdout.write(f"\033[{row};{inner_r - 1}H{s_char}")
         sys.stdout.write(f"\033[{row};{inner_r}H│")
         
     sys.stdout.write(f"\033[{vp_end_row};{inner_l}H└{'─' * (box_w - 2)}┘")
     
-    # ----- Progress Bar ----- #
-    text_tl = f" Progress: {current_idx} of {total_files} " if total_files > 0 else " Progress "
-    top_r_str = f"({active_file[:40] + '...' if len(active_file) > 40 else active_file})" if active_file else ""
+    text_tl = f" Progress: {current_val} of {total_val} " if total_val > 0 else " Progress "
+    raw_top_l = f"({text_tl})"
+
+    raw_top_r = f"({active_file[:40] + '...' if len(active_file) > 40 else active_file})" if active_file else ""
+
+    text_bl_1 = f" {total_types} TYPES "
+    text_bl_2 = f" {total_lenses:,} LENSES "
     
+    raw_bot_l = ""
+    
+    if action_text:
+        clean_action = action_text.strip("() ")
+        text_act = f" {clean_action} "
+        raw_bot_l += f"({text_act})"
+        
+    if total_types > 0 or total_lenses > 0:
+        if raw_bot_l: 
+            raw_bot_l += "─"
+        raw_bot_l += f"({text_bl_1}|{text_bl_2})"
+
     pb_inner_w = box_w - 4
+    
+    text_br = f" {progress_pct:5.1f}% "
+    raw_br = f"({text_br})"
+    
     filled = int(pb_inner_w * (progress_pct / 100.0))
     bar_str = ("#" * filled) + (" " * (pb_inner_w - filled))
-    text_br = f" {progress_pct:5.1f}% "
-    
-    r1_len = max(0, box_w - 6 - len(text_tl) - 2 - len(top_r_str))
-    sys.stdout.write(f"\033[{pb_r1};{inner_l}H┌──({text_tl}){'─' * r1_len}{top_r_str}──┐")
+
+    r1_len = max(0, box_w - 6 - len(raw_top_l) - len(raw_top_r))
+    sys.stdout.write(f"\033[{pb_r1};{inner_l}H┌──{raw_top_l}{'─' * r1_len}{raw_top_r}──┐")
+            
     sys.stdout.write(f"\033[{pb_r2};{inner_l}H│ {bar_str} │")
     
-    r3_len = max(0, box_w - 6 - len(text_br) - 2 - len(action_text))
-    sys.stdout.write(f"\033[{pb_r3};{inner_l}H└──{action_text}{'─' * r3_len}({text_br})──┘")
+    r3_len = max(0, box_w - 6 - len(raw_bot_l) - len(raw_br))
+    sys.stdout.write(f"\033[{pb_r3};{inner_l}H└──{raw_bot_l}{'─' * r3_len}{raw_br}──┘")
     
-    sys.stdout.write(f"\033[{term_h};1H")
+    sys.stdout.write(f"\033[{live_h};1H")
     sys.stdout.flush()
 
 def draw_z_modal(title, prompt, mask=False, draw_bg=None, single_key=False):
@@ -2149,6 +2251,10 @@ def vca_generate_db(ctx, term_w, term_h):
     ctx['log_lines'] = []
     ctx['last_draw_time'] = 0  
     
+    # ----- Theatrical Pacing (800ms - 1200ms per lens) ----- #
+    ctx['pace_min'] = 0.8
+    ctx['pace_max'] = 1.2
+    
     draw_throttle(term_w, term_h, ctx, 0.0, "Scanning Vault Directory...", 0, 1)
     
     vault_files = [f for f in os.listdir(VAULT_DIR) if f.lower().endswith('.vca')]
@@ -2162,191 +2268,186 @@ def vca_generate_db(ctx, term_w, term_h):
         
     current_hashes = {f: get_file_hash(os.path.join(VAULT_DIR, f)) for f in vault_files}
         
-    sandbox_lenses = {}
-    ctx['log_lines'].append(f"[!] Initiating atomic master rebuild across {total_files} files.")
-    ctx['log_lines'].append("")
+    # ----- PRE-SCAN (smooth progress bar) ----- #
+    ctx['log_lines'].append("[~] Initiating High-Speed Pre-Scan Matrix...")
+    draw_throttle(term_w, term_h, ctx, 0.0, "Pre-Scanning...", 0, 1)
     
-    # ----- PANDAS GROUPING ----- #
-    for idx, file_name in enumerate(vault_files):
-        current_idx = idx + 1
-        pct = (current_idx / total_files) * 100.0
-        pth = os.path.join(VAULT_DIR, file_name)
-        
+    total_lenses = 0
+    for file_name in vault_files:
         try:
+            pth = os.path.join(VAULT_DIR, file_name)
             df = pd.read_csv(pth, dtype=str, encoding='latin1').fillna("")
-            
-            # Failsafe: Ensures SAFE_INDEX exists
             if 'SAFE_INDEX' not in df.columns:
                 n_idx = pd.to_numeric(df['NINDEX'], errors='coerce')
                 d_idx = pd.to_numeric(df['DINDEX'], errors='coerce')
                 e_idx = pd.to_numeric(df['EINDEX'], errors='coerce')
                 df['SAFE_INDEX'] = n_idx.combine_first(d_idx).combine_first(e_idx).fillna(0.00)
+                
+            df['NORM_CLASS'] = df['CLASS'].apply(lambda c: 'FIN' if 'FIN' in str(c).upper() else 'SF')
+            df['NORM_DESC'] = df['DESCRIPTION'].apply(map_lens_group)
             
-            grouped = df.groupby(['MFG', 'CLASS', 'DESCRIPTION', 'MATCODE', 'SAFE_INDEX', 'ABBE'])
+            grouped = df.groupby(['MFG', 'NORM_CLASS', 'NORM_DESC', 'MATCODE', 'SAFE_INDEX', 'ABBE'])
+            total_lenses += len(grouped)
+        except Exception: pass
+        
+    ctx['log_lines'].append(f"[✓] Pre-Scan Complete. {total_lenses} unique lens families identified.")
+    ctx['log_lines'].append(f"[!] Initiating atomic master rebuild across {total_files} files.")
+    ctx['log_lines'].append("")
+
+    sandbox_lenses = {}
+    used_short_ids = set()
+    current_lens_processed = 0
+    
+    # ----- PANDAS GROUPING ----- #
+    for file_name in vault_files:
+        pth = os.path.join(VAULT_DIR, file_name)
+        
+        try:
+            df = pd.read_csv(pth, dtype=str, encoding='latin1').fillna("")
+            
+            if 'SAFE_INDEX' not in df.columns:
+                n_idx = pd.to_numeric(df['NINDEX'], errors='coerce')
+                d_idx = pd.to_numeric(df['DINDEX'], errors='coerce')
+                e_idx = pd.to_numeric(df['EINDEX'], errors='coerce')
+                df['SAFE_INDEX'] = n_idx.combine_first(d_idx).combine_first(e_idx).fillna(0.00)
+                
+            df['NORM_CLASS'] = df['CLASS'].apply(lambda c: 'FIN' if 'FIN' in str(c).upper() else 'SF')
+            df['NORM_DESC'] = df['DESCRIPTION'].apply(map_lens_group)
+            
+            grouped = df.groupby(['MFG', 'NORM_CLASS', 'NORM_DESC', 'MATCODE', 'SAFE_INDEX', 'ABBE'])
             
             for name_tuple, group in grouped:
-                mfg, cls, raw_desc, mat, safe_idx, abbe = name_tuple
+                current_lens_processed += 1
+                pct = (current_lens_processed / total_lenses) * 100.0 if total_lenses > 0 else 100.0
                 
-                lens_hash_str = f"{mfg}_{cls}_{raw_desc}_{mat}_{safe_idx}_{abbe}"
+                mfg, cls_upper, norm_desc, mat, safe_idx, abbe = name_tuple
+                is_fsv = (cls_upper == 'FIN')
+                has_add = pd.to_numeric(group['CYL/ADD'], errors='coerce').max() > 0 if not is_fsv else False
+                
+                lens_hash_str = f"{mfg}_{cls_upper}_{norm_desc}_{mat}_{safe_idx}_{abbe}"
                 l_id = hashlib.md5(lens_hash_str.encode()).hexdigest()[:12]
                 
-                clean_desc = strip_colors(raw_desc)
+                extracted_colors, extracted_techs, extracted_coats, color_search_tags = map_lens_tech(group)
+                
+                has_non_ar = False
+                for _, r_data in group.iterrows():
+                    coat_str = f"{r_data.get('COAT', '')} {r_data.get('COATBRAND', '')}".upper()
+                    is_ar_line = any(x in coat_str for x in ['AR', 'A/R', 'DURA', 'CRIZAL', 'VELA', 'HOYA', 'ECP', 'ULTRACLEAN', 'ANTI-REFLECTIVE', 'HMC', 'SHMC', 'BMC'])
+                    if 'UNCOAT' in coat_str or 'UC' in coat_str.split():
+                        has_non_ar = True
+                    elif not is_ar_line and ('HC' in coat_str.split() or 'SR' in coat_str.split() or 'HARD' in coat_str or not coat_str.strip()):
+                        has_non_ar = True
+                is_universal_ar = not has_non_ar
+                
+                sample_row = group.iloc[0].to_dict()
+                clean_desc, lms_brief, lms_long, tags, active_ar, prefix_str, prefix_parts, extracted_seg_size = map_lens_desc(
+                    sample_row, is_fsv, has_add, extracted_techs, extracted_coats, is_universal_ar, mat
+                )
+                
+                base_raw_desc = str(sample_row.get('DESCRIPTION', '')).strip()
+                extra_dia_tags = []
+                if len(group) > 1:
+                    for _, r_data in group.iloc[1:].iterrows():
+                        rd = str(r_data.get('DESCRIPTION', '')).strip()
+                        for m in re.findall(r'\bD\d{2,3}\b|\b\d{2,3}MM\b', rd, flags=re.IGNORECASE):
+                            m_up = m.upper()
+                            if m_up not in base_raw_desc.upper() and m_up not in extra_dia_tags:
+                                extra_dia_tags.append(m_up)
+                raw_vca_desc = base_raw_desc + (" " + " ".join(extra_dia_tags) if extra_dia_tags else "")
+                
+                _tmp_raw = re.sub(r'\bBLUE\s*GUARD\b', 'BLUEGUARD', raw_vca_desc, flags=re.IGNORECASE)
+                _tmp_raw = re.sub(r'\bBLUE\s*PROTECT\b', 'BLUEPROTECT', _tmp_raw, flags=re.IGNORECASE)
+                _tmp_raw = re.sub(r'\bBLUE\s*FILTER\b', 'BLUEFILTER', _tmp_raw, flags=re.IGNORECASE)
+                for _cw in ['PRO GRAY', 'PRO GREY', 'PRO BROWN', 'EXTRA-GRAY', 'EXTRA-GREY', 'EXTRA GRAY', 'EXTRA GREY', 'EXTRAGRAY', 'EXTRAGREY', 'GRAY', 'GREY', 'GRY', 'BROWN', 'BRN', 'GREEN', 'GRN', 'G15', 'G-15', 'PIONEER', 'PIONEEER', 'PIO', 'EMERALD', 'BURGUNDY', 'BURG', 'BRG', 'PINK', 'PNK', 'BLUE', 'BLU', 'PURPLE', 'PURP', 'PLUM', 'YELLOW', 'YEL', 'YLW', 'ROSE', 'ROS', 'ORANGE']:
+                    _tmp_raw = re.sub(rf'\b{_cw}(?:\s*[-]?\s*[123ABC])?\b', '', _tmp_raw, flags=re.IGNORECASE)
+                _tmp_raw = _tmp_raw.replace('BLUEGUARD', 'BlueGuard').replace('BLUEPROTECT', 'Blue Protect').replace('BLUEFILTER', 'Blue Filter')
+                raw_vca_desc = re.sub(r'\s+', ' ', _tmp_raw).strip()
+                
+                all_tags = set(tags + extracted_coats + extracted_colors + color_search_tags)
+                all_tags.discard("Clear")
+                all_tags.discard("CLEAR")
+                all_tags.discard("NONE")
+                
+                clean_desc = smart_casing(clean_desc, list(all_tags) + extracted_techs)
+                raw_vca_desc = smart_casing(raw_vca_desc, list(all_tags) + extracted_techs)
+                
+                specs_list, sorted_dias, rollup_meta = aggregate_specs(group, is_fsv, extracted_seg_size)
+                style_code = map_lens_style(sample_row)
+                
                 is_new = l_id not in sandbox_lenses
-                
                 if is_new:
-                    sandbox_lenses[l_id] = {
-                        "Id": l_id,
+                    giant_int = int(l_id, 16)
+                    cand = giant_int % 100000
+                    while cand in used_short_ids:
+                        cand = (cand + 1) % 100000
+                    used_short_ids.add(cand)
+                    short_id_str = f"{cand:05d}"
+                    
+                    idx_float = safe_float(safe_idx)
+                    idx_str = f"{idx_float:.4f}".rstrip('0')
+                    if idx_str.endswith('.'): idx_str += "00"
+                    elif len(idx_str.split('.')[1]) == 1: idx_str += "0"
+                    
+                    lens_entry = {
+                        "Id": short_id_str,
                         "MFG": mfg,
-                        "Style": 1,
+                        "Style": style_code,
                         "Material": mat,
-                        "Index": safe_float(safe_idx),
+                        "Index": idx_str,
                         "Abbe": int(safe_float(abbe)),
-                        "Raw Description": str(raw_desc).strip(),
-                        "Description": f"{'SFSV' if cls.upper() == 'SF' else 'FSV'} {safe_float(safe_idx):.2f} {clean_desc}".replace("  ", " "),
-                        "Brief Description": clean_desc[:15].strip(),
-                        "Long Description": clean_desc.upper(),
-                        "Colors": [],
-                        "Diameters": [],
-                        "Coatings": [],
-                        "FilterTags": [],
-                        "Specifications": {}
+                        "Raw Description": raw_vca_desc,
+                        "Description": clean_desc,
+                        "Brief Description": lms_brief,
+                        "Long Description": lms_long,
+                        "Colors": extracted_colors,
+                        "Diameters": sorted_dias,
+                        "Coatings": extracted_coats,
+                        "FilterTags": sorted(list(all_tags), key=str.casefold),
+                        "Specifications": {cls_upper: specs_list}
                     }
-                
-                lens = sandbox_lenses[l_id]
-                cls_upper = cls.upper()
-                
-                if cls_upper not in lens["Specifications"]:
-                    lens["Specifications"][cls_upper] = []
+                    lens_entry.update(rollup_meta)
+                    sandbox_lenses[l_id] = lens_entry
                     
-                # Dynamic Group Rollups
-                sph_list, cyl_list, base_list = [], [], []
-                
-                for _, row in group.iterrows():
-                    # 1. Color Sanitization
-                    raw_color = str(row.get('FILTER', '')).strip()
-                    sanitized_color = color_code(raw_color)
-                    if sanitized_color not in lens["Colors"]: 
-                        lens["Colors"].append(sanitized_color)
-                    
-                    # 2. Diameter Aggregation
-                    raw_dia = safe_float(row.get('DIAMETER', 0))
-                    if raw_dia > 0 and int(raw_dia) not in lens["Diameters"]:
-                        lens["Diameters"].append(int(raw_dia))
-                        
-                    # 3. Coating Aggregation
-                    raw_coat = str(row.get('COAT', '')).strip()
-                    if raw_coat.upper() in ["NONE", "N/A", "NA"]:
-                        raw_coat = ""
-                    if raw_coat and raw_coat not in lens["Coatings"]:
-                        lens["Coatings"].append(raw_coat)
-                        
-                    # 4. Specifications Pivot & True Math Verification
-                    spec = {}
-                    dia_str = str(int(raw_dia))
-                    cls_char = "S" if cls_upper == "SF" else "F"
-                    
-                    opc_key = f"{dia_str}_{cls_char}_{sanitized_color}_{raw_coat.upper()}".replace("__", "_").rstrip("_")
-                    
-                    # --- Safely target OPCR with true fallback to OPCL if OPCR is blank ---
-                    opcr_val = str(row.get('OPCR', '')).strip()
-                    opcl_val = str(row.get('OPCL', '')).strip()
-                    if opcr_val.upper() in ["NONE", "N/A", "NA", "NAN"]: opcr_val = ""
-                    if opcl_val.upper() in ["NONE", "N/A", "NA", "NAN"]: opcl_val = ""
-                    
-                    raw_opc = opcr_val or opcl_val
-                    if raw_opc.endswith('.0'): raw_opc = raw_opc[:-2] 
-                    if raw_opc:
-                        raw_opc = re.sub(r'[-_\s]*[RL]$', 'S', raw_opc, flags=re.IGNORECASE)
-                    
-                    if cls_upper == 'FIN':
-                        s_val = safe_float(row.get('SPH/BASE', 0))
-                        c_val = safe_float(row.get('CYL/ADD', 0))
-                        sph_list.append(s_val)
-                        cyl_list.append(c_val)
-                        
-                        existing_spec = next((s for s in lens["Specifications"][cls_upper] if s.get('SPH') == f"{s_val:+.2f}" and s.get('CYL') == f"{c_val:+.2f}"), None)
-                        
-                        if existing_spec:
-                            if raw_opc: existing_spec["OPC"][opc_key] = str(raw_opc)
-                            if int(raw_dia) not in existing_spec["Diameters"]: existing_spec["Diameters"].append(int(raw_dia))
-                        else:
-                            spec['SPH'] = f"{s_val:+.2f}"
-                            spec['CYL'] = f"{c_val:+.2f}"
-                            spec['Center Thick'] = safe_float(row.get('CT'))
-                            spec['Edge Thick'] = safe_float(row.get('ET'))
-                            spec['Diameters'] = [int(raw_dia)]
-                            spec['OPC'] = {opc_key: str(raw_opc)} if raw_opc else {}
-                            lens["Specifications"][cls_upper].append(spec)
-                            
-                    else:
-                        b_val = safe_float(row.get('SPH/BASE', 0))
-                        base_list.append(b_val)
-                        
-                        r_front = safe_float(row.get('RADIUSF', 0))
-                        r_back = safe_float(row.get('RADIUSB', 0))
-                        true_front = round(530.0 / r_front, 2) if r_front > 0 else 0.0
-                        true_back = round(-530.0 / r_back, 2) if r_back > 0 else 0.0
-                        sag_val = round(r_front - math.sqrt(r_front**2 - 25.0**2), 3) if r_front > 25.0 else 0.0
-                        
-                        existing_spec = next((s for s in lens["Specifications"][cls_upper] if s.get('BASE') == f"{b_val:+.2f}"), None)
-                        
-                        if existing_spec:
-                            if raw_opc: existing_spec["OPC"][opc_key] = str(raw_opc)
-                            if int(raw_dia) not in existing_spec["Diameters"]: existing_spec["Diameters"].append(int(raw_dia))
-                        else:
-                            spec['BASE'] = f"{b_val:+.2f}"
-                            spec['ADD'] = f"{safe_float(row.get('CYL/ADD', 0)):+.2f}"
-                            spec['Front RAD'] = r_front
-                            spec['Back RAD'] = r_back
-                            spec['Front TC'] = true_front
-                            spec['Back TC'] = true_back
-                            spec['SAG'] = sag_val
-                            spec['Center Thick'] = safe_float(row.get('CT'))
-                            spec['Edge Thick'] = safe_float(row.get('ET'))
-                            spec['Inset'] = row.get('INSET', '')
-                            spec['Drop'] = row.get('DROP', '')
-                            spec['PRP Out'] = row.get('PRPOUT', '')
-                            spec['PRP Up'] = row.get('PRPUP', '')
-                            spec['Seg Width'] = row.get('SEGW', '')
-                            spec['Seg Thick'] = row.get('SEGT', '')
-                            spec['Diameters'] = [int(raw_dia)]
-                            spec['OPC'] = {opc_key: str(raw_opc)} if raw_opc else {}
-                            lens["Specifications"][cls_upper].append(spec)
-
-                # 5. FilterTags and Rollups
-                lens["Colors"].sort()
-                lens["Diameters"].sort()
-                
-                tags = set([c for c in lens["Colors"] if c not in ["CLEAR", "NONE"]] + [ct for ct in lens["Coatings"] if ct not in ["CLEAR", "NONE"]])
-                tags.update([cls_upper, "Single Vision"])
-                desc_upper = str(raw_desc).upper()
-                
-                if "PUCK" in desc_upper: tags.add("PUCK")
-                if any(x in desc_upper for x in ["UV420", "BLUEGUARD", "BLUE GUARD", "BLUE FILTER"]): 
-                    tags.add("Blue Filter")
-                if any(x in desc_upper for x in ["TRANSITIONS", "PHOTO", "Q-CHANGE", "QC", "SUNSYNC"]):
-                    tags.add("Photochromic")
-                    
-                lens["FilterTags"] = sorted(list(tags))
-                
-                if base_list:
-                    bases = sorted(list(set(base_list)))
-                    lens["NominalBaseCurves"] = ", ".join([f"{b:+.2f}" for b in bases])
-                
-                if sph_list:
-                    min_sph, max_sph = min(sph_list), max(sph_list)
-                    min_cyl, max_cyl = min(cyl_list), max(cyl_list)
-                    if min_sph <= 0: lens["PowerRange_MinusSph"] = f"+0.00 to {min_sph:+.2f}"
-                    if max_sph > 0: lens["PowerRange_PlusSph"] = f"+0.25 to {max_sph:+.2f}"
-                    if min_cyl <= 0 and min_sph <= 0: lens["PowerRange_MinusCyl"] = f"+0.00 to {min_sph:+.2f} SPH | -0.25 to {min_cyl:+.2f} CYL"
-                    if min_cyl <= 0 and max_sph > 0: lens["PowerRange_PlusCyl"] = f"+0.25 to {max_sph:+.2f} SPH | -0.25 to {min_cyl:+.2f} CYL"
-
-                if is_new:
-                    ctx['log_lines'].append(f"[+] INDEXED [{l_id}] {cls_upper} {clean_desc[:25]} | Dias: {lens['Diameters']}")
+                    # Stylized New Lens Log
+                    ctx['log_lines'].append(f"[+] INDEXED [{l_id}] {raw_vca_desc} (Indexing base matrix)")
                 else:
-                    ctx['log_lines'].append(f"[~] AMENDED [{l_id}] {cls_upper} {clean_desc[:25]} | Merged Specs")
+                    existing_lens = sandbox_lenses[l_id]
                     
-                draw_throttle(term_w, term_h, ctx, pct, f"Compiling: {file_name}", current_idx, total_files)
+                    old_colors = set(existing_lens["Colors"])
+                    old_dias = set(existing_lens["Diameters"])
+                    
+                    existing_lens["Colors"] = sorted(list(set(existing_lens["Colors"] + extracted_colors)))
+                    existing_lens["Diameters"] = sorted(list(set(existing_lens["Diameters"] + sorted_dias)))
+                    existing_lens["Coatings"] = sorted(list(set(existing_lens["Coatings"] + extracted_coats)))
+                    existing_lens["FilterTags"] = sorted(list(set(existing_lens["FilterTags"] + list(all_tags))), key=str.casefold)
+                    
+                    if cls_upper not in existing_lens["Specifications"]:
+                        existing_lens["Specifications"][cls_upper] = specs_list
+                    else:
+                        existing_lens["Specifications"][cls_upper].extend(specs_list)
+                    existing_lens.update(rollup_meta)
+                    
+                    # Calculate Stylized Deltas
+                    new_colors = sorted(list(set(extracted_colors) - old_colors))
+                    new_dias = sorted(list(set(sorted_dias) - old_dias))
+                    
+                    added_str = []
+                    if new_colors:
+                        c_noun = "colors" if len(new_colors) > 1 else "color"
+                        added_str.append(f"Adding {', '.join(new_colors)} {c_noun}")
+                    if new_dias:
+                        d_str = ", ".join(str(d) for d in new_dias)
+                        added_str.append(f"{d_str}mm blanks")
+                        
+                    if added_str:
+                        delta_msg = f"({'; '.join(added_str)})"
+                    else:
+                        delta_msg = "(Merging new base curves & specs)"
+                        
+                    ctx['log_lines'].append(f"[~] MERGED  [{l_id}] {raw_vca_desc} {delta_msg}")
+                    
+                # Theatrical Throttle updates smoothly based on total_lenses
+                draw_throttle(term_w, term_h, ctx, pct, f"Compiling: {file_name}", current_lens_processed, total_lenses)
                 
         except Exception as e:
             ctx['log_lines'].append(f"[!] CRITICAL FAILURE parsing {file_name}: {e}")
@@ -2354,18 +2455,19 @@ def vca_generate_db(ctx, term_w, term_h):
             ctx['log_lines'].append("=" * 50)
             ctx['log_lines'].append("[ PROCESS ABORTED ] Press [RETURN] to Continue...")
             ctx['log_lines'].append("=" * 50)
-            draw_throttle(term_w, term_h, ctx, pct, "Aborted", current_idx, total_files, is_done=True)
+            draw_throttle(term_w, term_h, ctx, pct, "Aborted", current_lens_processed, total_lenses, is_done=True)
             return ctx['log_lines']
 
-    # ----- 4. ATOMIC COMMIT ----- #
+    # ----- ATOMIC COMMIT ----- #
+    ctx['pace_min'] = 0.0
+    ctx['pace_max'] = 0.0
+    
     ctx['log_lines'].append("")
     ctx['log_lines'].append(f"[✓] Matrix Compilation Complete. Writing {len(sandbox_lenses)} parent lenses to disk...")
-    draw_throttle(term_w, term_h, ctx, 100.0, "Atomic Commit", total_files, total_files)
+    draw_throttle(term_w, term_h, ctx, 100.0, "Atomic Commit", total_lenses, total_lenses)
     
     try:
         raw_json = json.dumps({"files": current_hashes, "lenses": sandbox_lenses}, indent=4)
-        
-        # Flattens simple arrays
         flat_json = re.sub(r'\[\n\s+([^\[\]\{\}]+?)\n\s+\]', lambda m: '[' + ' '.join(m.group(1).split()) + ']', raw_json)
         
         with open(DB_FILE, 'w') as f:
@@ -2380,7 +2482,7 @@ def vca_generate_db(ctx, term_w, term_h):
     ctx['log_lines'].append("[ PROCESS COMPLETE ] Press [RETURN] to Continue...")
     ctx['log_lines'].append("=" * 50)
 
-    draw_throttle(term_w, term_h, ctx, 100.0, "Database Mastered", total_files, total_files, is_done=True)
+    draw_throttle(term_w, term_h, ctx, 100.0, "Database Mastered", total_lenses, total_lenses, is_done=True)
     return ctx['log_lines']
 
 # ----- Master Loop. Master Sword. ----- #
