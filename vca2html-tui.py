@@ -12,6 +12,8 @@ import random
 import json
 import hashlib
 import math
+import base64
+from datetime import datetime, timezone
 
 GLOBAL_LICENSE = "Copyright © 2026 Daniel Casada. This program is free software; You can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation. This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
 GLOBAL_DISCLAIMER = "This application was created to help optical lab technicians get lens technical specifications into legacy LMS systems. This tool tries to take industry \"standard VCA files\", parse them properly, then format them into a human readable format. It is not affiliated with National Optronics™ (DAC Vision™) or any proprietary LMS manufacturer. There is absolutely no support for this tool and I am not responsible for any invalid information, errors, or any data loss. This application comes as is and you must use at your own risk."
@@ -1485,14 +1487,17 @@ last_known_w, last_known_h = 0, 0
 
 last_known_w, last_known_h = 0, 0
 
+last_known_w, last_known_h = 0, 0
+
 def draw_viewport(term_w, term_h, ctx, progress_pct=100.0, active_file="", current_val=0, total_val=0, total_types=0, total_lenses=0, is_interactive=False, title="Convert VCA", action_text="", frame_title=""):
     global scroll_offset, last_known_w, last_known_h
     
-    # Dynamically measure the live terminal size for word-wrapping
+    # Dynamically measure the live terminal size for responsive word-wrapping
     live_w, live_h = get_term_size()
     
     if live_w != last_known_w or live_h != last_known_h:
         last_known_w, last_known_h = live_w, live_h
+        # Calls our new unified skeleton architecture instead of the deprecated ghosts
         draw_skeleton(title, frame_title)
     
     inner_l = 4; inner_r = live_w - 3
@@ -1505,7 +1510,7 @@ def draw_viewport(term_w, term_h, ctx, progress_pct=100.0, active_file="", curre
     # Retrieve logs safely from the context state machine
     log_lines = ctx.get('log_lines', []) if ctx else []
     
-    # ----- Dynamic Word Wrapping ----- #
+    # ----- Dynamic Word Wrapping (Option B) ----- #
     rendered_lines = []
     wrap_width = max(10, box_w - 4)
     for line in log_lines:
@@ -1587,7 +1592,7 @@ def draw_viewport(term_w, term_h, ctx, progress_pct=100.0, active_file="", curre
     
     sys.stdout.write(f"\033[{live_h};1H")
     sys.stdout.flush()
-
+    
 def draw_z_modal(title, prompt, mask=False, draw_bg=None, single_key=False):
     last_term_w, last_term_h = 0, 0
     val, force_redraw = "", True
@@ -1981,7 +1986,7 @@ def vca_parse_data(ctx, term_w, term_h):
             e_idx = pd.to_numeric(df['EINDEX'], errors='coerce')
             df['SAFE_INDEX'] = n_idx.combine_first(d_idx).combine_first(e_idx).fillna(0.00)
             
-            # ----- Calculate True Front, True Back, and SAG ----- #
+            # ----- Calculate True Front, True Back, and SAG (Strict 1.530 Tooling Base) ----- #
             rad_f = pd.to_numeric(df['RADIUSF'], errors='coerce').replace(0.0, np.nan)
             rad_b = pd.to_numeric(df['RADIUSB'], errors='coerce').replace(0.0, np.nan)
             df['TRUE_FRONT'] = (530.0 / rad_f).round(2)
@@ -2005,18 +2010,26 @@ def vca_parse_data(ctx, term_w, term_h):
                 try: return f"{float(x):.2f}" if pd.notnull(x) and str(x).strip() != "" else x
                 except: return x
 
+            # Unique formatter to strictly preserve 3 decimal places for SAG
+            def fmt_sag(x):
+                try: return f"{float(x):.3f}" if pd.notnull(x) and str(x).strip() != "" else x
+                except: return x
+
             for col in ['SPH/BASE', 'CYL/ADD']:
                 if col in df.columns: df[col] = df[col].apply(fmt_pow)
             for col in ['NINDEX', 'DINDEX', 'EINDEX', 'SAFE_INDEX']:
                 if col in df.columns: df[col] = df[col].apply(fmt_idx)
-            for col in ['RADIUSF', 'RADIUSB', 'CT', 'ET', 'TRUE_FRONT', 'TRUE_BACK', 'SAG']:
+            for col in ['RADIUSF', 'RADIUSB', 'CT', 'ET', 'TRUE_FRONT', 'TRUE_BACK']:
                 if col in df.columns: df[col] = df[col].apply(fmt_dec)
+            if 'SAG' in df.columns:
+                df['SAG'] = df['SAG'].apply(fmt_sag)
 
             df = df.fillna("")
             df.to_csv(dest_pth, index=False)
             
             # ----- Archive Original File ----- #
             if os.path.exists(orig_dest_pth): os.remove(orig_dest_pth) 
+            import shutil
             shutil.move(pth, orig_dest_pth)
             
             # ----- VERBOSE: OUTGOING ----- #
@@ -2025,6 +2038,7 @@ def vca_parse_data(ctx, term_w, term_h):
             
             ctx['log_lines'].append(f"  -> [INGEST] {len(df):,} raw lines read and normalized.")
             ctx['log_lines'].append(f"  -> [SCHEMA] 53-Column Master VCA standard enforced.")
+            ctx['log_lines'].append(f"  -> [MATH] 1.530 Lap Tooling Index locked. True Curves & SAG exported.")
             ctx['log_lines'].append(f"  -> [AUDIT] Identified {unique_products:,} unique products spanning {len(df):,} lenses.")
             ctx['log_lines'].append(f"  -> [STAGED] {dest_pth} ({out_size_kb:.1f} KB)")
             
@@ -2484,6 +2498,1125 @@ def vca_generate_db(ctx, term_w, term_h):
 
     draw_throttle(term_w, term_h, ctx, 100.0, "Database Mastered", total_lenses, total_lenses, is_done=True)
     return ctx['log_lines']
+    
+def vca_generate_html(ctx, term_w, term_h):
+    global global_mode
+    global_version = str(globals().get('VERSION', '4.0.0')).replace('v', '')
+    
+    draw_skeleton("STATIC SITE GENERATOR", "HTML DEPLOYMENT")
+    
+    if not os.path.exists(DB_FILE):
+        draw_frame_line(f"{C_ALERT}Error: Master database not found.{RESET}", 6, align="center")
+        draw_universal_footer() 
+        global_mode = "MAIN MENU"; return
+        
+    ctx['log_lines'] = ["[~] Awaiting SSG deployment authorization..."]
+    draw_throttle(term_w, term_h, ctx, 0.0, "Pending Auth...", 0, 1)
+    
+    ans = draw_z_modal("DEPLOYMENT AUTHORIZATION", "Type DEPLOY to generate web sandbox:")
+    
+    # Restores the outer double-line walls after the modal clears
+    draw_skeleton("STATIC SITE GENERATOR", "HTML DEPLOYMENT")
+    
+    if ans != "DEPLOY": return
+
+    try:
+        ctx['log_lines'] = [f"[+] Opening Read-Only Buffer -> {DB_FILE}"]
+        draw_throttle(term_w, term_h, ctx, 0.0, "Bootstrapping...", 0, 1)
+        
+        # Ensure direct output directories exist
+        os.makedirs(HTML_DIR, exist_ok=True)
+        os.makedirs(HTML_DATA_DIR, exist_ok=True)
+        os.makedirs(HTML_DB_DIR, exist_ok=True)
+        
+        ctx['log_lines'].append("[+] Writing Web Assets (Tokyo Night Storm)...")
+        
+        # ----- DIRECT CSS WRITE ----- #
+        css_content = """
+:root {
+    --bg-main: #24283b; --bg-table: #1f2335; --text-main: #c0caf5;
+    --win-bg: #24283b; --win-highlight: #414868; --win-shadow: #1a1b26;
+    --win-dark-shadow: #15161e; --win-title: #24283b; --win-title-fade: #1f2335;
+    --win-text: #c0caf5; --win-title-text: #7aa2f7; --border-light: #414868;
+    --border-dark: #1a1b26; --accent: #3d59a1; --row-even: #24283b; --row-odd: #1f2335;
+    --col-desc: #c0caf5; --col-filt: #9ece6a; --col-coat: #e0af68; --col-mat: #7dcfff;
+    --col-idx: #bb9af7; --col-diam: #c0caf5; --col-base: #e0af68; --col-tfc: #c0caf5;
+    --col-tbc: #7aa2f7; --col-sag: #f7768e;
+    
+    --table-fs: 15px;
+    --table-th-fs: 12px;
+}
+
+body { background-color: var(--bg-main); color: var(--text-main); font-weight: 500; margin: 0; padding: 20px; font-family: sans-serif; font-variant-numeric: tabular-nums; }
+
+.top-bar { position: relative; display: flex; justify-content: space-between; align-items: flex-start; background-color: var(--win-title); border: 1px solid var(--border-light); border-bottom: 2px solid var(--border-dark); padding: 16px 24px; margin-bottom: 15px; border-radius: 6px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+.top-bar-left { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 4px; }
+.brand-title { font-size: 26px; font-weight: 900; color: var(--accent); letter-spacing: 1.5px; }
+.brand-sub { font-size: 14px; font-weight: bold; color: var(--col-idx); letter-spacing: 1px; }
+.top-bar-center { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; color: var(--win-title-text); font-weight: 800 !important; font-size: 28px; text-transform: uppercase; letter-spacing: 3px; white-space: nowrap; }
+
+.top-bar-right { display: flex; flex-direction: column; gap: 10px; align-items: flex-end; }
+.dropdown-row { display: flex; gap: 12px; align-items: center; }
+.header-dropdown { background: var(--bg-table); color: var(--text-main); border: 1px solid var(--border-light); padding: 6px 8px; border-radius: 4px; font-weight: bold; cursor: pointer; outline: none; font-size: 14px; transition: border-color 0.2s; }
+.header-dropdown:hover { border-color: var(--col-desc); }
+
+/* SPA SEARCH & PILL ENGINE */
+.stats-bar { background-color: var(--bg-table); padding: 20px 24px; border: 1px solid var(--border-light); border-radius: 6px; margin-bottom: 30px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.15); }
+.filter-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: flex-start; width: 100%; margin-bottom: 4px; }
+.pill-label { font-size: 14px; color: var(--col-desc); font-weight: bold; text-transform: uppercase; letter-spacing: 1px; width: 100px; text-align: right; margin-right: 10px; }
+
+.mfg-pill, .stat-badge { padding: 5px 16px; border-radius: 50px; background: var(--bg-main); color: var(--text-main); font-weight: bold; border: 1px solid var(--border-light); font-size: 14px; cursor: pointer; user-select: none; text-decoration: none; transition: all 0.1s; }
+.mfg-pill { padding: 8px 24px; border: 2px solid var(--border-light); font-size: 16px; }
+.mfg-pill.active { background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 4px 8px rgba(0,0,0,0.3); }
+.stat-badge:hover, .mfg-pill:hover { border-color: var(--col-desc); }
+.stat-badge.active { background: var(--col-desc); color: var(--bg-main); border-color: var(--col-desc); }
+
+.filter-row.row-type .stat-badge.active { background: var(--col-filt); border-color: var(--col-filt); color: var(--bg-main); }
+.filter-row.row-mat .stat-badge.active { background: var(--col-mat); border-color: var(--col-mat); color: var(--bg-main); }
+.filter-row.row-tech .stat-badge.active { background: var(--col-idx); border-color: var(--col-idx); color: var(--bg-main); }
+.filter-row.row-color .stat-badge.active { background: var(--col-coat); border-color: var(--col-coat); color: var(--bg-main); }
+
+.search-container { margin-top: 15px; border-top: 1px solid var(--border-dark); padding-top: 20px; width: 100%; display: flex; justify-content: center;}
+.search-box { width: 80%; padding: 14px 24px; border-radius: 50px; border: 1px solid var(--border-light); background: var(--bg-main); color: var(--text-main); font-size: 16px; font-weight: bold; outline: none; text-align: center; }
+.search-box:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(61, 89, 161, 0.3); }
+
+.category-section { display: none; margin-bottom: 50px; }
+.cat-title { color: var(--win-title-text); font-size: 22px; font-weight: bold; border-bottom: 2px solid var(--border-dark); padding-bottom: 8px; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; }
+
+/* DATA GRID */
+.table-container { border-radius: 12px; overflow: hidden; box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4); border: 1px solid var(--border-dark); }
+table.data-grid { width: 100%; border-collapse: collapse; background: var(--bg-table); table-layout: fixed; }
+table.data-grid th, table.data-grid td { border: 1px solid var(--border-light); padding: 8px 10px; text-align: center; vertical-align: middle; }
+table.data-grid th { font-weight: 800; text-transform: uppercase; font-size: var(--table-th-fs); color: var(--bg-main) !important; }
+table.data-grid td { font-size: var(--table-fs); }
+tr.row-even { background-color: var(--row-even); } tr.row-odd { background-color: var(--row-odd); }
+tr.group-hover td { background-color: var(--win-highlight) !important; color: var(--bg-main) !important; cursor: pointer; }
+
+.col-desc { color: var(--col-desc); text-align: left !important; padding-left: 14px !important; }
+.col-filt { color: var(--col-filt); } .col-coat { color: var(--col-coat); }
+.col-mat  { color: var(--col-mat); } .col-idx  { color: var(--col-idx); }
+.col-diam { color: var(--col-diam); } .col-base { color: var(--col-base); }
+.col-tfc  { color: var(--col-tfc); } .col-tbc  { color: var(--col-tbc); } .col-sag  { color: var(--col-sag); }
+.empty-bullet { display: block; text-align: center; width: 100%; opacity: 0.5;}
+
+th.bg-desc { background-color: var(--col-desc); width: 20%; }
+th.bg-filt { background-color: var(--col-filt); width: 10%; }
+th.bg-coat { background-color: var(--col-coat); width: 10%; }
+th.bg-mat  { background-color: var(--col-mat); width: 8%; }
+th.bg-idx  { background-color: var(--col-idx); width: 4.5%; }
+th.bg-diam { background-color: var(--col-diam); width: 5.5%; }
+th.bg-p1 { background-color: var(--col-base); width: 10.5%; }
+th.bg-p2 { background-color: var(--col-tfc); width: 10.5%; }
+th.bg-p3 { background-color: var(--col-tbc); width: 10.5%; }
+th.bg-p4 { background-color: var(--col-sag); width: 10.5%; }
+.header-divider { border: 0; height: 1px; background: var(--bg-main); opacity: 0.5; width: 85%; margin: 4px auto; }
+
+/* LAYOUT ENGINE SWITCHES */
+html[data-modal-layout="legacy"] .modern-box { display: none !important; }
+html[data-modal-layout="legacy"] .dialog-box { display: flex; }
+html[data-modal-layout="modern"] .dialog-box { display: none !important; }
+html[data-modal-layout="modern"] .modern-box { display: flex; }
+html[data-modal-layout="legacy"] .modal-overlay { background-color: transparent; }
+html[data-modal-layout="modern"] .modal-overlay { background-color: rgba(0,0,0,0.75); }
+
+.modal-overlay { display: flex; position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999; justify-content: center; align-items: center; }
+.modal-overlay.hidden { display: none !important; }
+
+/* LEGACY LMS MODAL STYLES */
+.dialog-box { background-color: #d4d0c8; width: 830px; display: flex; flex-direction: column; padding: 2px; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(1.2); z-index: 10001; }
+.dialog-box * { font-family: 'Microsoft Sans Serif', 'MS Sans Serif', Tahoma, sans-serif; font-size: 11px; color: #000000; text-rendering: crispEdges; }
+.dialog-box .outset-border { border-top: 1px solid #dfdfdf; border-left: 1px solid #dfdfdf; border-bottom: 1px solid #000000; border-right: 1px solid #000000; box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #ffffff; }
+.dialog-box .inset-border { border-top: 1px solid #808080; border-left: 1px solid #808080; border-bottom: 1px solid #ffffff; border-right: 1px solid #ffffff; box-shadow: inset -1px -1px 0 #dfdfdf, inset 1px 1px 0 #000000; background-color: #ffffff; color: #000000 !important; }
+.dialog-box .title-bar { background: linear-gradient(to right, #0A246A, #A6CAF0); padding: 2px 3px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
+.dialog-box .title-bar * { color: white; } 
+.dialog-box .title-bar-left, .dialog-box .title-bar-right { display: flex; align-items: center; gap: 4px; }
+.dialog-box .version-text { font-weight: normal; font-size: 10px; color: #000000; }
+.dialog-box .faux-icon { height: 14px; background: white; color: black; border: 1px solid #ccc; font-size: 7px; padding: 1px 4px 0 4px; }
+.dialog-box .title-bar-close { background: #d4d0c8; color: black; font-weight: bold; font-size: 10px; width: 16px; height: 14px; display: flex; justify-content: center; align-items: center; border-top: 1px solid #dfdfdf; border-left: 1px solid #dfdfdf; border-bottom: 1px solid #000000; border-right: 1px solid #000000; box-shadow: inset -1px -1px 0 #808080, inset 1px 1px 0 #ffffff; }
+
+.dialog-box .tabs-container { margin-top: 8px; padding: 0 4px; position: relative; z-index: 10; }
+.dialog-box .tab-buttons { display: flex; gap: 2px; margin-left: 2px; }
+.dialog-box .tab { background: #d4d0c8; padding: 4px 12px; border-top: 1px solid #dfdfdf; border-left: 1px solid #dfdfdf; border-right: 1px solid #000000; border-bottom: 1px solid #dfdfdf; box-shadow: inset -1px 0 0 #808080, inset 1px 1px 0 #ffffff; cursor: pointer; position: relative; z-index: 1; }
+.dialog-box .tab.active { padding-top: 6px; margin-top: -2px; border-bottom: 1px solid #d4d0c8; margin-bottom: -1px; padding-bottom: 2px; z-index: 11; }
+
+.dialog-box .dialog-content-wrapper { height: 510px; border-top: 1px solid #ffffff; border-left: 1px solid #ffffff; border-bottom: 1px solid #404040; border-right: 1px solid #404040; box-shadow: inset -1px -1px 0 #808080; padding: 12px; position: relative; z-index: 5; display: flex; flex-direction: column; }
+.dialog-box .tab-pane { display: none; height: 100%; flex-grow: 1;} 
+.dialog-box .tab-pane.active { display: block; }
+.dialog-box .grid-3-col { display: grid; grid-template-columns: 245px 235px 265px; gap: 16px; justify-content: center; }
+.dialog-box .grid-3-col > div { display: flex; flex-direction: column; }
+.dialog-box .grid-2-col { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; padding: 10px 40px; box-sizing: border-box; }
+.dialog-box .center-col { display: flex; flex-direction: column; align-items: center; padding-top: 20px; }
+
+.dialog-box .form-row { display: flex; align-items: center; margin-bottom: 4px; }
+.dialog-box .form-row label { width: 110px; flex-shrink: 0; }
+.dialog-box .form-row input[type="text"], .dialog-box .form-row select { flex-grow: 1; height: 19px; padding: 1px 3px; background: #ffffff; outline: none; box-sizing: border-box; }
+.dialog-box .fixed-width { flex-grow: 0 !important; }
+.dialog-box .form-row input[readonly] { background: #d4d0c8; }
+
+.dialog-box .classic-table { border-collapse: collapse; background: #ffffff; border: 1px solid #808080; }
+.dialog-box .classic-table th { background: #d4d0c8; border-top: 1px solid #dfdfdf; border-left: 1px solid #dfdfdf; border-right: 1px solid #808080; border-bottom: 1px solid #808080; padding: 2px 4px; text-align: left; }
+.dialog-box .classic-table td { border-right: 1px solid #d4d0c8; border-bottom: 1px solid #d4d0c8; padding: 1px 4px; height: 14px; }
+.dialog-box .grid-lines td { border: 1px solid silver; }
+.dialog-box .table-title { background: #d4d0c8; font-weight: bold; text-align: center !important; border-top: 1px solid #dfdfdf; border-left: 1px solid #dfdfdf; border-right: 1px solid #808080; border-bottom: 1px solid #808080; padding: 4px !important; }
+.dialog-box fieldset { border-top: 1px solid #808080; border-left: 1px solid #808080; border-bottom: 1px solid #ffffff; border-right: 1px solid #ffffff; padding: 10px 8px; margin: 0 0 12px 0; }
+.dialog-box legend { padding: 0 4px; margin-left: 4px; }
+.dialog-box .win-btn { padding: 3px 12px; min-width: 75px; background: #d4d0c8; color: #000000; outline: none; }
+.dialog-box .footer { display: flex; justify-content: space-between; align-items: center; padding: 10px; }
+
+/* MODERN DASHBOARD STYLES (BENTO BOX) */
+.modern-box { background-color: var(--win-bg); width: 850px; border-radius: 12px; padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.8); border: 1px solid var(--border-light); flex-direction: column; gap: 20px; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 10001;}
+.modern-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid var(--border-dark); padding-bottom: 15px; }
+.modern-title { font-size: 26px; font-weight: bold; color: var(--win-title-text); margin: 0; letter-spacing: 0.5px; }
+.modern-subtitle { font-size: 14px; color: var(--col-desc); opacity: 0.8; margin-top: 6px; }
+.modern-close { background: none; border: none; color: var(--win-text); font-size: 24px; cursor: pointer; padding: 5px; opacity: 0.6; } .modern-close:hover { opacity: 1; color: var(--col-tfc); }
+
+.bento-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 10px; }
+.bento-card { background: var(--bg-table); border: 1px solid var(--border-light); border-top-width: 4px; border-radius: 8px; padding: 14px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); display: flex; flex-direction: column; gap: 8px; }
+.b-title { font-size: 12px; text-transform: uppercase; font-weight: 800; letter-spacing: 0.05em; margin-bottom: 4px; border-bottom: 1px solid var(--border-dark); padding-bottom: 6px; }
+.b-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+.b-row span { opacity: 0.7; }
+.b-row b { font-weight: bold; color: var(--text-main); }
+
+.modern-grids { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.modern-table-wrap { background: var(--bg-table); border-radius: 8px; border: 1px solid var(--border-dark); overflow: hidden; }
+.modern-table-wrap table { width: 100%; border-collapse: collapse; }
+.modern-table-wrap th { padding: 8px 12px; font-size: 13px; color: var(--bg-main) !important; text-align: center; font-weight: bold; text-transform: uppercase; }
+.modern-table-wrap td { padding: 8px 12px; border-bottom: 1px solid var(--border-dark); font-size: 15px; text-align: center; }
+.modern-table-wrap tr:last-child td { border-bottom: none; }
+"""
+        with open(os.path.join(HTML_DATA_DIR, 'styles.css'), 'w', encoding='utf-8') as f:
+            f.write(css_content.strip())
+            
+        # ----- DIRECT JS WRITE ----- #
+        js_content = r"""
+async function calculateHash(ascii) {
+    const msgBuffer = new TextEncoder().encode(ascii);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function formatPower(val) {
+    if (isNaN(val)) return '';
+    if (Math.abs(val) === 0) return 'PL'; 
+    return (val > 0 ? '+' : '') + val.toFixed(2);
+}
+
+function getRangeString(arr, isCyl) {
+    if (arr.length === 0) return `<span class="empty-bullet">•</span>`;
+    let minSph = Math.min(...arr.map(a => a.sph)); let maxSph = Math.max(...arr.map(a => a.sph));
+    let isMinus = maxSph <= 0; let sphStr;
+    if (minSph === maxSph) sphStr = formatPower(minSph);
+    else sphStr = isMinus ? `${formatPower(maxSph)} to ${formatPower(minSph)}` : `${formatPower(minSph)} to ${formatPower(maxSph)}`;
+    if (!isCyl) return sphStr;
+    let minCyl = Math.min(...arr.map(a => a.cyl));
+    return `${sphStr} to <span class="highlight-cyl">${minCyl.toFixed(2)} cyl</span>`;
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    
+    const layoutSelect = document.getElementById('layout-select');
+    const fontSizeSelect = document.getElementById('fontsize-select');
+
+    if (layoutSelect) {
+        let savedLayout = localStorage.getItem('ui-layout') || 'modern';
+        document.documentElement.setAttribute('data-modal-layout', savedLayout);
+        layoutSelect.value = savedLayout;
+        layoutSelect.addEventListener('change', (e) => {
+            document.documentElement.setAttribute('data-modal-layout', e.target.value);
+            localStorage.setItem('ui-layout', e.target.value);
+        });
+    }
+    
+    if (fontSizeSelect) {
+        let savedFs = localStorage.getItem('ui-fontsize') || '15';
+        document.documentElement.style.setProperty('--table-fs', savedFs + 'px');
+        document.documentElement.style.setProperty('--table-th-fs', (parseInt(savedFs) - 3) + 'px');
+        fontSizeSelect.value = savedFs;
+        fontSizeSelect.addEventListener('change', (e) => {
+            let val = e.target.value;
+            document.documentElement.style.setProperty('--table-fs', val + 'px');
+            document.documentElement.style.setProperty('--table-th-fs', (parseInt(val) - 3) + 'px');
+            localStorage.setItem('ui-fontsize', val);
+        });
+    }
+
+    window.lensDatabase = [];
+    let tamperDetected = false;
+
+    if (typeof securityManifest !== 'undefined' && typeof window.dbPayload !== 'undefined') {
+        const calculatedHash = await calculateHash(window.dbPayload);
+        if (calculatedHash !== securityManifest.dbHash) {
+            tamperDetected = true;
+        } else {
+            const binaryString = atob(window.dbPayload);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+            const jsonString = new TextDecoder('utf-8').decode(bytes);
+            window.lensDatabase = JSON.parse(jsonString);
+        }
+    }
+
+    if (tamperDetected) {
+        document.body.innerHTML = `
+            <div style="display:flex; flex-direction:column; justify-content:center; align-items:center; height:100vh; background-color:var(--bg-main); color:var(--col-sag); text-align:center;">
+                <h1 style="font-size:48px; border-bottom:2px solid var(--col-sag); padding-bottom:10px; letter-spacing: 2px;">CRYPTOGRAPHIC MISMATCH</h1>
+                <p style="font-size:20px; max-width:600px; color:var(--text-main); margin-top: 20px;">The signature for the Database Payload does not match the securely signed manifest.</p>
+                <p style="font-size:16px; max-width:600px; color:var(--col-filt); margin-top:20px;">Please return to the VCA2HTML-TUI console and run the <b>(G)eneration Sequence</b> to completely rebuild the Vault.</p>
+            </div>
+        `;
+        return;
+    }
+
+    buildPillFilters(window.lensDatabase);
+    renderTable(window.lensDatabase);
+
+    window.hoverGrp = function(gid) { document.querySelectorAll('.' + gid).forEach(el => el.classList.add('group-hover')); };
+    window.leaveGrp = function(gid) { document.querySelectorAll('.' + gid).forEach(el => el.classList.remove('group-hover')); };
+
+    function buildPillFilters(data) {
+        let mfgSet = new Set();
+        let colorSet = new Set();
+        
+        data.forEach(lens => { 
+            if (lens.MFG) mfgSet.add(lens.MFG); 
+            if (lens.Colors) lens.Colors.forEach(c => colorSet.add(c));
+        });
+        
+        const mfgRow = document.getElementById('pill-row-mfg');
+        if (mfgRow) {
+            let mfgHtml = '';
+            Array.from(mfgSet).sort().forEach(m => {
+                mfgHtml += `<a href="#" class="mfg-pill" data-group="mfg" data-val="${m}">${m}</a>`;
+            });
+            mfgRow.innerHTML = mfgHtml;
+        }
+
+        const genPills = (id, label, arr, groupName) => {
+            const row = document.getElementById(id);
+            if (!row) return;
+            let html = `<span class="pill-label">${label}:</span>`;
+            html += `<a href="#" class="stat-badge tag-pill active" data-group="${groupName}" data-tag="all">All</a>`;
+            
+            arr.forEach(tag => {
+                html += `<a href="#" class="stat-badge tag-pill" data-group="${groupName}" data-tag="${tag}">${tag}</a>`;
+            });
+            row.innerHTML = html;
+        };
+
+        genPills('pill-row-type', 'Type', ['FSV', 'SFSV', 'PAL', 'FT', 'TRI', 'Round', 'Exec', 'Occupational', 'Blend'], 'type');
+        genPills('pill-row-mat', 'Material', ['CR-39', 'Polycarbonate', 'Trivex', '1.60', '1.67', '1.74'], 'mat');
+        genPills('pill-row-tech', 'Tech', ['Blue Filter', 'Photochromic', 'Polarized', 'Short', 'Extra Thick'], 'tech');
+        genPills('pill-row-coat', 'Coating', ['Hardcoated', 'Uncoated', 'A/R'], 'coat');
+        
+        // Smart Color Pills dynamically built from database
+        genPills('pill-row-color', 'Color', Array.from(colorSet).sort(), 'color');
+    }
+
+    function renderTable(data) {
+        const container = document.getElementById('table-container');
+        window.activeViewData = data; 
+        
+        let categories = {
+            'fsv': { title: 'Finished Single Vision', lenses: [] },
+            'sfsv': { title: 'Semi-Finished Single Vision', lenses: [] },
+            'pal': { title: 'Progressive Addition Lenses', lenses: [] },
+            'ft': { title: 'Multi-Focal Lenses', lenses: [] },
+            'other': { title: 'Other Lenses', lenses: [] }
+        };
+
+        data.forEach((lens, index) => {
+            lens.originalIndex = index;
+            let isFin = !!(lens.Specifications && lens.Specifications.FIN);
+            let style = parseInt(lens.Style);
+            if (isFin && style === 1) categories.fsv.lenses.push(lens);
+            else if (!isFin && style === 1) categories.sfsv.lenses.push(lens);
+            else if (style === 6) categories.pal.lenses.push(lens);
+            else if ([2,3,4,5,8,9,10,11,12,15,16,17].includes(style)) categories.ft.lenses.push(lens);
+            else categories.other.lenses.push(lens);
+        });
+
+        let html = '';
+        for (const [catId, catData] of Object.entries(categories)) {
+            if (catData.lenses.length === 0) continue;
+            
+            html += `<div class="category-section" data-cat="${catId}">`;
+            html += `<h2 class="cat-title">${catData.title}</h2>`;
+            html += `<div class="table-container"><table class="data-grid"><thead><tr>
+                <th class="bg-desc">Description</th>
+                <th class="bg-filt">Filter</th>
+                <th class="bg-coat">Coating</th>
+                <th class="bg-mat">Material</th>
+                <th class="bg-idx">Index</th>
+                <th class="bg-diam">Diameter</th>
+                <th class="bg-p1">${catId === 'fsv' ? 'Minus Sph<hr class="header-divider">Base Curves' : 'Marked<hr class="header-divider">Base'}</th>
+                <th class="bg-p2">${catId === 'fsv' ? 'Minus with Cylinder<hr class="header-divider">True Front Curve' : 'True Curve<hr class="header-divider">Front TC'}</th>
+                <th class="bg-p3">${catId === 'fsv' ? 'Plus Sph<hr class="header-divider">True Back Curve' : 'True Curve<hr class="header-divider">Back TC'}</th>
+                <th class="bg-p4">${catId === 'fsv' ? 'Plus with Cylinder<hr class="header-divider">SAG at 50mm' : 'SAG<hr class="header-divider">50mm'}</th>
+            </tr></thead><tbody>`;
+            
+            catData.lenses.forEach((lens) => {
+                let isFin = !!(lens.Specifications && lens.Specifications.FIN);
+                let specArray = isFin ? lens.Specifications.FIN : lens.Specifications.SF;
+                
+                let rowData = [];
+                if (isFin) {
+                    let diamMap = {};
+                    specArray.forEach(s => {
+                        let diams = (s.Diameters && s.Diameters.length > 0) ? s.Diameters : ['N/A'];
+                        diams.forEach(d => {
+                            if (!diamMap[d]) diamMap[d] = [];
+                            diamMap[d].push({ sph: parseFloat(s.SPH)||0, cyl: parseFloat(s.CYL)||0 });
+                        });
+                    });
+                    
+                    let sortedDiams = Object.keys(diamMap).sort((a,b) => parseFloat(a) - parseFloat(b));
+                    sortedDiams.forEach(d => {
+                        let pArr = diamMap[d];
+                        let minSph = pArr.filter(p => p.sph <= 0 && p.cyl === 0);
+                        let minCyl = pArr.filter(p => p.sph <= 0 && p.cyl < 0);
+                        let pluSph = pArr.filter(p => p.sph > 0 && p.cyl === 0);
+                        let pluCyl = pArr.filter(p => p.sph > 0 && p.cyl < 0);
+                        rowData.push({
+                            col1: d === 'N/A' ? '<span class="empty-bullet">•</span>' : d,
+                            col2: getRangeString(minSph, false),
+                            col3: getRangeString(minCyl, true),
+                            col4: getRangeString(pluSph, false),
+                            col5: getRangeString(pluCyl, true)
+                        });
+                    });
+                } else {
+                    let baseMap = {};
+                    specArray.forEach(s => {
+                        let b = parseFloat(s.BASE);
+                        if(isNaN(b)) return;
+                        let bStr = b.toFixed(2);
+                        if (!baseMap[bStr]) {
+                            baseMap[bStr] = { 
+                                ftc: parseFloat(s.TRUE_FRONT || s['Front TC'])||0, 
+                                btc: parseFloat(s.TRUE_BACK || s['Back TC'])||0, 
+                                sag: parseFloat(s.SAG || s['SAG'])||0,
+                                diams: new Set()
+                            };
+                        }
+                        (s.Diameters || []).forEach(dia => baseMap[bStr].diams.add(dia));
+                    });
+                    let sortedBases = Object.keys(baseMap).sort((a,b) => parseFloat(a) - parseFloat(b));
+                    sortedBases.forEach(bStr => {
+                        let m = baseMap[bStr];
+                        let dStr = Array.from(m.diams).sort((a,b)=>parseFloat(a)-parseFloat(b)).join(' / ') || '<span class="empty-bullet">•</span>';
+                        rowData.push({
+                            col1: dStr,
+                            col2: parseFloat(bStr) > 0 ? `+${bStr}` : bStr,
+                            col3: m.ftc === 0 ? '<span class="empty-bullet">•</span>' : m.ftc.toFixed(2),
+                            col4: m.btc === 0 ? '<span class="empty-bullet">•</span>' : m.btc.toFixed(2),
+                            col5: m.sag === 0 ? '<span class="empty-bullet">•</span>' : m.sag.toFixed(3)
+                        });
+                    });
+                }
+                
+                if (rowData.length === 0) {
+                    rowData.push({ col1: '<span class="empty-bullet">•</span>', col2: '<span class="empty-bullet">•</span>', col3: '<span class="empty-bullet">•</span>', col4: '<span class="empty-bullet">•</span>', col5: '<span class="empty-bullet">•</span>' });
+                }
+
+                let rowspan = rowData.length;
+                let grpId = `grp-${lens.originalIndex}`;
+                let rowClass = lens.originalIndex % 2 === 0 ? 'row-even' : 'row-odd';
+                
+                let desc = lens.Description || '';
+                let colorHtml = '';
+                if (lens.Colors && lens.Colors.length > 0) {
+                    let visibleColors = lens.Colors.filter(c => c !== 'Clear');
+                    if (visibleColors.length > 0) {
+                        colorHtml = `<br><span style="color:var(--col-coat); font-style:italic; font-size:smaller;">(${visibleColors.join(', ')})</span>`;
+                    }
+                }
+                desc = `${desc}${colorHtml}`;
+                
+                let filt = lens.Filter || '<span style="opacity:0.5;">None</span>';
+                let coat = (lens.Coatings || []).join('<br>');
+                if(!coat) coat = 'Uncoated';
+                
+                let searchIndex = [
+                    lens.Id || "", 
+                    lens.MFG || "", 
+                    lens.Material || "", 
+                    lens["Brief Description"] || "", 
+                    lens["Long Description"] || "", 
+                    lens.Description || "", 
+                    catId
+                ];
+                if (lens.FilterTags) lens.FilterTags.forEach(t => searchIndex.push(t));
+                let safeSearch = JSON.stringify(searchIndex.map(s => String(s))).replace(/'/g, "&#39;");
+                
+                html += `<tr class="${rowClass} ${grpId} lens-row" data-cat="${catId}" data-mfg="${lens.MFG}" data-search='${safeSearch}' onmouseenter="hoverGrp('${grpId}')" onmouseleave="leaveGrp('${grpId}')" onclick='openModal(${lens.originalIndex})'>`;
+                html += `<td class="col-desc" rowspan="${rowspan}"><b>${desc}</b></td>`;
+                html += `<td class="col-filt" rowspan="${rowspan}">${filt}</td>`;
+                html += `<td class="col-coat" rowspan="${rowspan}">${coat}</td>`;
+                html += `<td class="col-mat" rowspan="${rowspan}">${lens.Material || ''}</td>`;
+                html += `<td class="col-idx" rowspan="${rowspan}">${lens.Index || ''}</td>`;
+                
+                html += `<td class="col-diam">${rowData[0].col1}</td>`;
+                html += `<td class="col-base">${rowData[0].col2}</td>`;
+                html += `<td class="col-tfc">${rowData[0].col3}</td>`;
+                html += `<td class="col-tbc">${rowData[0].col4}</td>`;
+                html += `<td class="col-sag">${rowData[0].col5}</td>`;
+                html += `</tr>`;
+                
+                for(let i=1; i<rowspan; i++) {
+                    html += `<tr class="${rowClass} ${grpId} lens-row" data-cat="${catId}" data-mfg="${lens.MFG}" data-search='${safeSearch}' onmouseenter="hoverGrp('${grpId}')" onmouseleave="leaveGrp('${grpId}')" onclick='openModal(${lens.originalIndex})'>`;
+                    html += `<td class="col-diam">${rowData[i].col1}</td>`;
+                    html += `<td class="col-base">${rowData[i].col2}</td>`;
+                    html += `<td class="col-tfc">${rowData[i].col3}</td>`;
+                    html += `<td class="col-tbc">${rowData[i].col4}</td>`;
+                    html += `<td class="col-sag">${rowData[i].col5}</td>`;
+                    html += `</tr>`;
+                }
+            });
+            
+            html += `</tbody></table></div></div>`;
+        }
+        
+        container.innerHTML = html;
+        applyFilters();
+    }
+
+    function applyFilters() {
+        const btnAllLenses = document.getElementById('btn-all-lenses');
+        const mfgBadges = document.querySelectorAll('.mfg-pill');
+        const tagBadges = document.querySelectorAll('.tag-pill');
+        const searchInput = document.getElementById('text-search-box');
+        
+        let activeMfg = 'all';
+        let activeFilters = { type: 'all', mat: 'all', tech: 'all', coat: 'all', color: 'all' };
+        
+        function updateDOM() {
+            let textQuery = searchInput ? searchInput.value.toLowerCase().trim() : '';
+            let qFlat = textQuery.replace(/[^a-z0-9]/gi, '');
+            const sections = document.querySelectorAll('.category-section');
+            const rows = document.querySelectorAll('tr.lens-row');
+            
+            sections.forEach(sec => { sec.style.display = 'block'; });
+            
+            rows.forEach(r => {
+                let searchData = [];
+                try { searchData = JSON.parse(r.getAttribute('data-search') || "[]"); } catch(e) {}
+                
+                const mfgMatch = (activeMfg === 'all') || (r.getAttribute('data-mfg') === activeMfg);
+                
+                let textMatch = false;
+                if (textQuery === '') {
+                    textMatch = true;
+                } else {
+                    const idVal = searchData[0] ? searchData[0].toLowerCase() : '';
+                    const mfg = searchData[1] ? searchData[1].toLowerCase() : '';
+                    const desc = searchData[5] ? searchData[5].toLowerCase() : '';
+                    
+                    if (desc.includes(textQuery) || mfg.includes(textQuery) || idVal.includes(textQuery)) {
+                        textMatch = true;
+                    } else {
+                        for (let t of searchData) {
+                            let tLow = t.toLowerCase();
+                            if (tLow === textQuery || tLow.replace(/[^a-z0-9]/gi, '') === qFlat) { textMatch = true; break; }
+                            try {
+                                let regex = new RegExp('\\b' + textQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b');
+                                if (regex.test(tLow)) { textMatch = true; break; }
+                            } catch(e) {}
+                        }
+                    }
+                }
+                
+                let tagsMatch = true;
+                for (const group in activeFilters) {
+                    if (activeFilters[group] !== 'all') {
+                        let targetFlat = activeFilters[group].replace(/[^a-z0-9]/gi, '').toLowerCase();
+                        if (group === 'mat') {
+                            if (!searchData.some(s => s.toLowerCase().includes(activeFilters[group].toLowerCase()))) tagsMatch = false;
+                        } else {
+                            if (!searchData.some(s => s.replace(/[^a-z0-9]/gi, '').toLowerCase() === targetFlat)) tagsMatch = false;
+                        }
+                    }
+                }
+                
+                if (mfgMatch && textMatch && tagsMatch) {
+                    r.style.display = '';
+                } else {
+                    r.style.display = 'none';
+                }
+            });
+            
+            sections.forEach(sec => {
+                if (sec.style.display === 'block') {
+                    const visibleRows = sec.querySelectorAll('tr.lens-row:not([style*="display: none"])');
+                    if (visibleRows.length === 0) sec.style.display = 'none';
+                }
+            });
+        }
+
+        if(searchInput) searchInput.addEventListener('input', updateDOM);
+
+        if(btnAllLenses) {
+            btnAllLenses.addEventListener('click', (e) => {
+                e.preventDefault();
+                mfgBadges.forEach(b => b.classList.remove('active'));
+                btnAllLenses.classList.add('active');
+                activeMfg = 'all';
+                
+                tagBadges.forEach(tb => {
+                    if (tb.getAttribute('data-tag') === 'all') tb.classList.add('active');
+                    else tb.classList.remove('active');
+                });
+                for (let g in activeFilters) activeFilters[g] = 'all';
+                if(searchInput) searchInput.value = '';
+                updateDOM();
+            });
+        }
+
+        mfgBadges.forEach(badge => {
+            badge.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (badge.classList.contains('active')) {
+                    badge.classList.remove('active');
+                    activeMfg = 'all';
+                    if(btnAllLenses) btnAllLenses.classList.add('active');
+                } else {
+                    mfgBadges.forEach(b => b.classList.remove('active'));
+                    if(btnAllLenses) btnAllLenses.classList.remove('active');
+                    badge.classList.add('active');
+                    activeMfg = badge.getAttribute('data-val');
+                }
+                updateDOM();
+            });
+        });
+        
+        tagBadges.forEach(badge => {
+            badge.addEventListener('click', (e) => {
+                e.preventDefault();
+                const tag = badge.getAttribute('data-tag');
+                const group = badge.getAttribute('data-group');
+                
+                if (tag === 'all') {
+                    document.querySelectorAll(`.tag-pill[data-group="${group}"]`).forEach(b => b.classList.remove('active'));
+                    badge.classList.add('active');
+                    activeFilters[group] = 'all';
+                } else {
+                    if (badge.classList.contains('active')) {
+                        badge.classList.remove('active');
+                        activeFilters[group] = 'all';
+                        document.querySelector(`.tag-pill[data-group="${group}"][data-tag="all"]`).classList.add('active');
+                    } else {
+                        document.querySelectorAll(`.tag-pill[data-group="${group}"]`).forEach(b => b.classList.remove('active'));
+                        badge.classList.add('active');
+                        activeFilters[group] = tag;
+                    }
+                }
+                updateDOM();
+            });
+        });
+        
+        updateDOM();
+    }
+
+    window.switchTab = function(tabIndex) {
+        for (let i = 1; i <= 3; i++) {
+            let btn = document.getElementById('tab-btn-' + i); if(btn) btn.className = 'tab inactive';
+            let content = document.getElementById('tab-content-' + i); if(content) content.classList.remove('active');
+        }
+        let selectedBtn = document.getElementById('tab-btn-' + tabIndex); if(selectedBtn) selectedBtn.className = 'tab active';
+        let selectedContent = document.getElementById('tab-content-' + tabIndex); if(selectedContent) selectedContent.classList.add('active');
+    };
+
+    window.toggleProgressive = function() {
+        const lensTypeCode = document.getElementById('lens-type-code');
+        const progressiveTypeRow = document.getElementById('progressive-type-row');
+        if (lensTypeCode && progressiveTypeRow) progressiveTypeRow.style.display = (lensTypeCode.value.includes('6.')) ? 'flex' : 'none';
+    };
+
+    window.openModal = function(dataIndex) {
+        const lens = window.activeViewData[dataIndex];
+        if (!lens) return;
+        
+        let isFin = !!(lens.Specifications && lens.Specifications.FIN);
+        let specArray = isFin ? lens.Specifications.FIN : lens.Specifications.SF;
+        let isProg = parseInt(lens.Style) === 6;
+
+        let idDisplay = lens.Id || '00000';
+        let webDesc = isFin ? '*' + lens.Description : lens.Description;
+        let lensTypeStr = "Single Vision";
+        if(isProg) lensTypeStr = "Progressive";
+        else if([2,3,4,5,8,9,10,11,12,15,16].includes(parseInt(lens.Style))) lensTypeStr = "Multi-Focal";
+        
+        let rep = specArray[0] || {};
+        
+        let opcs = Object.values(rep['OPC'] || {});
+        let opcRange = "N/A";
+        let opcMin = ""; let opcMax = "";
+        if(opcs.length > 0) {
+            let sortedOpc = opcs.sort();
+            opcMin = sortedOpc[0];
+            opcMax = sortedOpc[sortedOpc.length - 1];
+            opcRange = opcMin + " to " + opcMax;
+        }
+
+        let modTitle = document.getElementById('mod-modern-title'); if(modTitle) modTitle.innerText = webDesc;
+        let modSub = document.getElementById('mod-modern-sub'); if(modSub) modSub.innerText = `${lens.MFG || 'Unknown'} | ID: ${idDisplay}`;
+        
+        let mBentoMfg = document.getElementById('mod-bento-mfg'); if(mBentoMfg) mBentoMfg.innerText = lens.MFG || 'Unknown';
+        let mBentoMat = document.getElementById('mod-bento-mat'); if(mBentoMat) mBentoMat.innerText = lens.Material;
+        let mBentoIdx = document.getElementById('mod-bento-idx'); if(mBentoIdx) mBentoIdx.innerText = lens.Index;
+        let mBentoType = document.getElementById('mod-bento-type'); if(mBentoType) mBentoType.innerText = lensTypeStr;
+        let mBentoSeg = document.getElementById('mod-bento-seg'); if(mBentoSeg) mBentoSeg.innerText = rep.SEGW || rep['Seg Width'] || 'N/A';
+        let mBentoInset = document.getElementById('mod-bento-inset'); if(mBentoInset) mBentoInset.innerText = `${rep.INSET || rep['Inset'] || '0.0'} / ${rep.DROP || rep['Drop'] || '0.0'}`;
+        let mBentoPrp = document.getElementById('mod-bento-prp'); if(mBentoPrp) mBentoPrp.innerText = `${rep.PRPOUT || rep['PRP Out'] || '0.0'} / ${rep.PRPUP || rep['PRP Up'] || '0.0'}`;
+        let mBentoOpc = document.getElementById('mod-bento-opc'); if(mBentoOpc) mBentoOpc.innerText = opcRange;
+        
+        let mid = document.getElementById('mod-id'); if(mid) mid.value = idDisplay;
+        let mmfg = document.getElementById('mod-mfg'); if(mmfg) mmfg.value = lens.MFG || '';
+        let mbrief = document.getElementById('mod-brief'); if(mbrief) mbrief.value = lens['Brief Description'] || '';
+        let mlong = document.getElementById('mod-long'); if(mlong) mlong.value = lens['Long Description'] || '';
+        
+        let selStyle = parseInt(lens.Style);
+        let elType = document.getElementById('lens-type-code');
+        if(elType && !isNaN(selStyle)) { 
+            elType.selectedIndex = selStyle; 
+            const progRow = document.getElementById('progressive-type-row');
+            if(progRow) progRow.style.display = selStyle === 6 ? 'flex' : 'none';
+        }
+        
+        let mseg = document.getElementById('mod-seg-width'); if(mseg) mseg.value = rep.SEGW || rep['Seg Width'] || '';
+        let mmatn = document.getElementById('mod-mat-name'); if(mmatn) mmatn.value = lens.Material || '';
+        let mmatc = document.getElementById('mod-mat-cat'); if(mmatc) mmatc.innerHTML = `<option>${lens.Material}</option>`;
+        let midx = document.getElementById('mod-idx'); if(midx) midx.value = lens.Index || '';
+        
+        let mopcr = document.getElementById('mod-opc-right'); if(mopcr) mopcr.value = opcMin;
+        let mopcl = document.getElementById('mod-opc-left'); if(mopcl) mopcl.value = opcMax;
+        
+        let mbowl = document.getElementById('mod-bowl-dia'); if(mbowl) mbowl.value = rep.BOWLD || rep['Bowl Dia'] || '0';
+        
+        const ctcDict = {
+            'Plastic (CR-39)': '2.2', 'Polycarbonate': '1.5', 'Trivex': '1.5',
+            'High-Index 1.60': '1.4', 'High-Index 1.60 (MR-8)': '1.4', 'High-Index 1.60 (MR-8+)': '1.4',
+            'High-Index 1.67': '1.4', 'High-Index 1.67 (MR-7)': '1.4', 'High-Index 1.67 (MR-10)': '1.4',
+            'High-Index 1.74': '1.4'
+        };
+        let mminct = document.getElementById('mod-min-ct'); 
+        if(mminct) mminct.value = ctcDict[lens.Material] || '';
+
+        let mSurfHead = document.getElementById('mod-modern-surf-thead');
+        let mThickHead = document.getElementById('mod-modern-thick-thead');
+        if(mSurfHead && mThickHead) {
+            if(isFin) {
+                mSurfHead.innerHTML = `<tr><th style="background:var(--col-base);">Minus Sph</th><th style="background:var(--col-tfc);">Minus Cyl</th><th style="background:var(--win-highlight);">Plus Sph</th><th style="background:var(--col-tbc);">Plus Cyl</th></tr>`;
+                mThickHead.innerHTML = `<tr><th style="background:var(--col-diam);">Diameter</th><th style="background:var(--col-idx);">CT</th></tr>`;
+            } else {
+                mSurfHead.innerHTML = `<tr><th style="background:var(--col-base);">Base</th><th style="background:var(--col-tfc);">Front TC</th><th style="background:var(--win-highlight);">Asph</th><th style="background:var(--col-tbc);">Back TC</th></tr>`;
+                mThickHead.innerHTML = `<tr><th style="background:var(--col-diam);">Diameter</th><th style="background:var(--col-base);">Base</th><th style="background:var(--col-idx);">CT</th></tr>`;
+            }
+        }
+
+        let surfHtml = '', thickHtml = '', blankHtml = '', modernSurf = '', modernThick = '';
+
+        if (isFin) {
+            let diamMap = {};
+            specArray.forEach(s => {
+                let diams = (s.Diameters && s.Diameters.length > 0) ? s.Diameters : ['N/A'];
+                diams.forEach(d => {
+                    if (!diamMap[d]) diamMap[d] = [];
+                    diamMap[d].push({ sph: parseFloat(s.SPH)||0, cyl: parseFloat(s.CYL)||0 });
+                });
+            });
+            
+            let sortedDiams = Object.keys(diamMap).sort((a,b) => parseFloat(a) - parseFloat(b));
+            let dCount = 0;
+            sortedDiams.forEach(d => {
+                let pArr = diamMap[d];
+                let minSph = getRangeString(pArr.filter(p => p.sph <= 0 && p.cyl === 0), false);
+                let minCyl = getRangeString(pArr.filter(p => p.sph <= 0 && p.cyl < 0), true);
+                let pluSph = getRangeString(pArr.filter(p => p.sph > 0 && p.cyl === 0), false);
+                let pluCyl = getRangeString(pArr.filter(p => p.sph > 0 && p.cyl < 0), true);
+                
+                modernSurf += `<tr><td>${minSph}</td><td>${minCyl}</td><td>${pluSph}</td><td>${pluCyl}</td></tr>`;
+                modernThick += `<tr><td>${d}</td><td>-</td></tr>`;
+                
+                if(dCount < 12) {
+                    surfHtml += `<tr><td>&nbsp;</td><td></td><td></td><td></td></tr>`;
+                    thickHtml += `<tr><td><span class="arrow-indicator" style="color: #cc0000; font-size: 9px;">&#9654;</span> ${d}</td><td>-</td><td>-</td></tr>`;
+                    dCount++;
+                }
+            });
+            
+            for(let j=dCount; j<12; j++) {
+                surfHtml += `<tr><td>&nbsp;</td><td></td><td></td><td></td></tr>`;
+                thickHtml += `<tr><td>&nbsp;</td><td></td><td></td></tr>`;
+            }
+            
+        } else {
+            let uniqueCurves = new Map(); let uniqueDiams = new Map();
+            let asphFactor = isProg ? '-0.50' : '.50';
+
+            specArray.forEach(r => {
+                let bRaw = parseFloat(r['BASE']);
+                let b = isNaN(bRaw) ? '' : bRaw.toFixed(2);
+                let ftc = parseFloat(r.TRUE_FRONT || r['Front TC']); ftc = isNaN(ftc) ? '' : ftc.toFixed(2);
+                let btc = parseFloat(r.TRUE_BACK || r['Back TC']); btc = isNaN(btc) ? '' : btc.toFixed(2);
+                let ct = parseFloat(r.CT || r['Center Thick']); ct = isNaN(ct) ? '' : ct.toFixed(2);
+                
+                if (b) {
+                    if (!uniqueCurves.has(b)) uniqueCurves.set(b, {b, ftc, btc, asphFactor});
+                    (r.Diameters || []).forEach(dia => {
+                        let diamKey = `${dia}-${b}`;
+                        if (!uniqueDiams.has(diamKey)) uniqueDiams.set(diamKey, {dia, b, ct, inset: r.INSET || r.Inset || '', drop: r.DROP || r.Drop || ''});
+                    });
+                }
+            });
+
+            let sortedCurves = Array.from(uniqueCurves.values()).sort((x,y) => parseFloat(x.b) - parseFloat(y.b));
+            let sortedDiams = Array.from(uniqueDiams.values()).sort((x,y) => {
+                if(parseFloat(x.dia) === parseFloat(y.dia)) return parseFloat(x.b) - parseFloat(y.b);
+                return parseFloat(x.dia) - parseFloat(y.dia);
+            });
+
+            for(let j=0; j<12; j++) {
+                if (j < sortedCurves.length) {
+                    let c = sortedCurves[j];
+                    surfHtml += `<tr><td>${c.b}</td><td>${c.ftc}</td><td>${c.asphFactor}</td><td>${c.btc}</td></tr>`;
+                    modernSurf += `<tr><td>${c.b}</td><td>${c.ftc}</td><td>${c.asphFactor}</td><td>${c.btc}</td></tr>`;
+                } else { surfHtml += `<tr><td>&nbsp;</td><td></td><td></td><td></td></tr>`; }
+            }
+
+            for(let j=0; j<12; j++) {
+                if(j < sortedDiams.length) {
+                    let d = sortedDiams[j];
+                    thickHtml += `<tr><td><span class="arrow-indicator" style="color: #cc0000; font-size: 9px;">&#9654;</span> ${d.dia}</td><td>${d.b}</td><td>${d.ct !== 'NaN' ? d.ct : ''}</td></tr>`;
+                    modernThick += `<tr><td>${d.dia}</td><td>${d.b}</td><td>${d.ct !== 'NaN' ? d.ct : ''}</td></tr>`;
+                } else { thickHtml += `<tr><td>&nbsp;</td><td></td><td></td></tr>`; }
+            }
+
+            let printedDiamsForBlank = new Set(); let bCount = 0;
+            sortedDiams.forEach(d => {
+                if(!printedDiamsForBlank.has(d.dia) && bCount < 5) {
+                    blankHtml += `<tr><td>${d.dia}</td><td>${d.inset !== 'NaN' ? parseFloat(d.inset).toFixed(2) : ''}</td><td>${d.drop !== 'NaN' ? parseFloat(d.drop).toFixed(2) : ''}</td><td>17.00</td></tr>`;
+                    printedDiamsForBlank.add(d.dia); bCount++;
+                }
+            });
+            for(let j=bCount; j<7; j++) blankHtml += `<tr><td>&nbsp;</td><td></td><td></td><td></td></tr>`;
+        }
+        
+        let modSurfBody = document.getElementById('mod-surf-tbody'); if(modSurfBody) modSurfBody.innerHTML = surfHtml;
+        let modThickBody = document.getElementById('mod-thick-tbody'); if(modThickBody) modThickBody.innerHTML = thickHtml;
+        let modBlankBody = document.getElementById('mod-blank-tbody'); if(modBlankBody && !isFin) modBlankBody.innerHTML = blankHtml;
+        let mModSurf = document.getElementById('mod-modern-surf'); if(mModSurf) mModSurf.innerHTML = modernSurf;
+        let mModThick = document.getElementById('mod-modern-thick'); if(mModThick) mModThick.innerHTML = modernThick;
+
+        let tabColorArr = Array.from(lens.Colors || []);
+        if(tabColorArr.length === 0) tabColorArr.push('CLEAR');
+        
+        let rawCoatArr = Array.from(lens.Coatings || []);
+        if(rawCoatArr.length === 0) rawCoatArr.push('UNCOATED');
+        let modalCoats = [];
+        rawCoatArr.forEach(c => {
+            if(c.includes('/')) { modalCoats.push(...c.split('/').map(x => x.trim())); }
+            else { modalCoats.push(c); }
+        });
+        modalCoats = Array.from(new Set(modalCoats));
+        
+        let colorsHtml = '', coatsHtml = '';
+        
+        for(let j=0; j<16; j++) {
+            let cText = j < tabColorArr.length ? tabColorArr[j].toUpperCase() : '&nbsp;';
+            colorsHtml += `<tr><td>${cText}</td><td>&nbsp;</td></tr>`;
+            let coatText = j < modalCoats.length ? modalCoats[j].toUpperCase() : '&nbsp;';
+            coatsHtml += `<tr><td>${coatText}</td><td>&nbsp;</td></tr>`;
+        }
+        let modColBody = document.getElementById('mod-col-tbody'); if(modColBody) modColBody.innerHTML = colorsHtml;
+        let modCoatBody = document.getElementById('mod-coat-tbody'); if(modCoatBody) modCoatBody.innerHTML = coatsHtml;
+
+        switchTab(1); 
+        let modalOverlay = document.getElementById('tech-modal');
+        if(modalOverlay) modalOverlay.classList.remove('hidden');
+    };
+
+    window.closeModal = function() { 
+        const m = document.getElementById('tech-modal');
+        if(m) m.classList.add('hidden'); 
+    };
+
+    const modalOverlay = document.getElementById('tech-modal');
+    if(modalOverlay) {
+        modalOverlay.addEventListener('click', (e) => {
+            if(e.target === modalOverlay) closeModal();
+        });
+    }
+
+});
+"""
+        with open(os.path.join(HTML_DATA_DIR, 'app.js'), 'w', encoding='utf-8') as f:
+            f.write(js_content.strip())
+
+        # ----- DIRECT HTML WRITE ----- #
+        html_content = """
+<!DOCTYPE html>
+<html lang="en" data-modal-layout="modern">
+<head>
+    <meta charset="UTF-8">
+    <title>VCA Vault Hub</title>
+    <link rel="stylesheet" href="data/styles.css">
+</head>
+<body>
+    <header class="top-bar">
+        <div class="top-bar-left">
+            <span class="brand-title">VCA2HTML-TUI</span>
+            <span class="brand-sub">ENGINE v{{VERSION}}</span>
+        </div>
+        <div class="top-bar-center">
+            MASTER LENS DATABASE
+        </div>
+        <div class="top-bar-right">
+            <div class="dropdown-row">
+                <span class="dd-icon" title="Font Size">󰚺</span>
+                <select id="fontsize-select" class="header-dropdown" style="width: 100px;">
+                    <option value="12">12px</option><option value="13">13px</option><option value="14">14px</option>
+                    <option value="15">15px</option><option value="16">16px</option><option value="18">18px</option>
+                    <option value="20">20px</option>
+                </select>
+                <span class="dd-icon" title="Modal Layout">󰒓</span>
+                <select id="layout-select" class="header-dropdown" style="width: 120px;">
+                    <option value="legacy">LMS Layout</option>
+                    <option value="modern">Grid Layout</option>
+                </select>
+            </div>
+        </div>
+    </header>
+    
+    <div class="stats-bar" id="stats-container">
+        <div style="display: flex; width: 100%; align-items: center; justify-content: flex-start; margin-bottom: 5px;">
+            <a href="#" class="mfg-pill active" id="btn-all-lenses" style="padding: 10px 28px; font-size: 16px;" data-group="mfg" data-val="all">ALL LENSES</a>
+        </div>
+        <div class="filter-row" id="pill-row-mfg" style="justify-content: center; margin-bottom: 15px; border-bottom: 1px solid var(--border-dark); padding-bottom: 15px;"></div>
+        <div class="filter-row row-type" id="pill-row-type"></div>
+        <div class="filter-row row-mat" id="pill-row-mat"></div>
+        <div class="filter-row row-tech" id="pill-row-tech"></div>
+        <div class="filter-row row-color" id="pill-row-color"></div>
+        <div class="filter-row row-coat" id="pill-row-coat"></div>
+        
+        <div class="search-container">
+            <input type="text" id="text-search-box" class="search-box" placeholder="Search Tags, Description, ID...">
+        </div>
+    </div>
+    
+    <main id="table-container"></main>
+    
+    <div class="modal-overlay hidden" id="tech-modal">
+        <div class="dialog-box outset-border">
+            <div class="title-bar">
+                <div class="title-bar-left"><div class="faux-icon">VLP</div><span class="title-text">Lens Blank Specifications</span></div>
+                <div class="title-bar-right"><span class="version-text">v{{VERSION}}</span><button class="title-bar-close" onclick="closeModal()">X</button></div>
+            </div>
+            <div class="tabs-container">
+                <div class="tab-buttons">
+                    <div class="tab active" id="tab-btn-1" onclick="switchTab(1)">Surfacing Specs</div>
+                    <div class="tab inactive" id="tab-btn-2" onclick="switchTab(2)">Colors and Coatings</div>
+                    <div class="tab inactive" id="tab-btn-3" onclick="switchTab(3)">Thickness Chart</div>
+                </div>
+            </div>
+            <div class="dialog-content-wrapper">
+                <div id="tab-content-1" class="tab-pane active">
+                    <div class="grid-3-col">
+                        <div style="margin-top: 5px;">
+                            <div class="form-row"><label>Unique ID Code</label><input type="text" id="mod-id" class="inset-border" readonly></div>
+                            <div class="form-row"><label>Manufacturer</label><input type="text" id="mod-mfg" class="inset-border fixed-width" style="width: 100px;"></div>
+                            <div class="form-row"><label>Brief Description</label><input type="text" id="mod-brief" class="inset-border fixed-width" style="width: 150px;"></div>
+                            <div class="form-row"><label>Long Description</label><div style="position: relative; flex-grow: 1; height: 19px;"><input type="text" id="mod-long" class="inset-border" style="position: absolute; left: 0; top: 0; width: 275px; z-index: 10;"></div></div>
+                            <div class="form-row"><label>Lens Type Code</label><select class="inset-border" id="lens-type-code" onchange="toggleProgressive()">
+                                <option>0. None</option><option>1. Single Vision</option><option>2. Flat Top Bif</option><option>3. Round Bif</option><option>4. Exec Bif</option><option>5. Exec Bif</option><option>6. Progressive</option><option>7. Blend Seg</option><option>8. FT Dble Seg</option><option>9. Exec Dble Seg</option><option>10. FT Trif</option><option>11. Exec Trif</option><option>12. ED Trif</option><option>13. Other SV</option><option>14. Asph SV</option><option>15. Asph FT</option><option>16. Asph Rnd</option><option>17. Asph Ultex</option><option>18. Other Multi-focal</option>
+                            </select></div>
+                            <div class="form-row" id="progressive-type-row" style="display:none;"><label>Progressive Type</label><select class="inset-border"><option>Generic</option><option selected>Type 2</option></select></div>
+                            <div class="form-row"><label>Seg Width</label><input type="text" id="mod-seg-width" class="inset-border fixed-width" style="width: 25px;"></div>
+                            <div class="form-row"><label>Material Name</label><input type="text" id="mod-mat-name" class="inset-border"></div>
+                            <div class="form-row"><label>Material Category</label><select class="inset-border" id="mod-mat-cat"></select></div>
+                            <div class="form-row"><label>Material Index</label><input type="text" id="mod-idx" class="inset-border fixed-width" style="width: 65px;"></div>
+                            <div class="form-row"><label>Rights and Lefts?</label><select class="inset-border fixed-width" id="mod-rl-sel" style="width: 65px;"></select></div>
+                            <div class="form-row"><label>Vertical OC Position</label><select class="inset-border"><option selected>Automatic</option><option>MM Above</option><option>MM Below</option><option>Even with GC</option></select></div>
+                            <div class="form-row"><label>Lenticular Field Size</label><input type="text" id="mod-bowl-dia" class="inset-border fixed-width" style="width: 25px;"></div>
+                            <div class="form-row" style="margin-top: 36px;"><label>Minus Center Thick</label><input type="text" id="mod-min-ct" class="inset-border fixed-width" style="width: 65px;"></div>
+                            <div class="form-row" style="margin-top: 14px;"><label style="line-height: 1.2; width: 110px;">True Curve<br>Reference Index if<br>not standard 1.530</label><input type="text" class="inset-border fixed-width" value="1.530" style="width: 65px;"></div>
+                        </div>
+                        <div>
+                            <div style="display: flex; justify-content: flex-end; margin-bottom: 24px;">
+                                <table style="border-collapse: collapse;"><tr><td style="text-align: left; padding-bottom: 4px; padding-right: 5px;">Preferred Supplier?</td><td style="padding-bottom: 4px;"><select class="inset-border" style="width: 45px;"><option selected>No</option><option>Yes</option></select></td></tr><tr><td style="text-align: left; padding-bottom: 4px; padding-right: 5px;">On-Line Locally?</td><td style="padding-bottom: 4px;"><select class="inset-border" style="width: 45px;"><option selected>No</option><option>Yes</option></select></td></tr><tr><td style="text-align: left; padding-bottom: 4px; padding-right: 5px;">On-Line Remotely?</td><td style="padding-bottom: 4px;"><select class="inset-border" style="width: 45px;"><option selected>No</option><option>Yes</option></select></td></tr></table>
+                            </div>
+                            <table class="classic-table grid-lines" style="width: 195px; margin: 22px auto 4px auto;"><thead><tr><th>Marked<br>Base</th><th>True<br>Curve</th><th>Asph<br>Factor</th><th>Minus<br>Back</th></tr></thead><tbody id="mod-surf-tbody"></tbody></table>
+                            <div style="text-align: center; margin-top: 13px;"><div style="margin-bottom: 3px;">Product OPC Range</div><input type="text" id="mod-opc-right" class="inset-border fixed-width" style="width: 80px;"><span style="margin: 0 4px;">To</span><input type="text" id="mod-opc-left" class="inset-border fixed-width" style="width: 80px;"></div>
+                        </div>
+                        <div>
+                            <table class="classic-table grid-lines" style="width: calc(100% - 40px); margin: 0 auto 12px auto;"><thead><tr><th>Blank<br>Size</th><th>Inset</th><th>Drop</th><th>Reading<br>Level</th></tr></thead><tbody id="mod-blank-tbody"></tbody></table>
+                            <fieldset><legend>Custom Settings</legend><table style="width: 100%; border-collapse: collapse; margin-bottom: 8px;"><tr><td style="width: 135px; padding-bottom: 4px; text-align: left;">Fining Allowance:</td><td style="width: 35px; padding-bottom: 4px;"><input type="text" class="inset-border fixed-width" style="width: 30px;"></td><td style="padding-bottom: 4px; text-align: left;">&nbsp;&nbsp;mm</td></tr><tr><td style="padding-bottom: 4px; text-align: left;">Global Power Adjust</td><td style="padding-bottom: 4px;"><input type="text" class="inset-border fixed-width" style="width: 30px;"></td><td style="padding-bottom: 4px; text-align: left;">&nbsp;&nbsp;diopters</td></tr><tr><td style="padding-bottom: 4px; text-align: left;">Lens Flex Power Adjust</td><td style="padding-bottom: 4px;"><input type="text" class="inset-border fixed-width" style="width: 30px;"></td><td style="padding-bottom: 4px; text-align: left;">&nbsp;&nbsp;diopters</td></tr></table><div class="inset-border" style="background: #ece9d8; padding: 4px; margin-top: 4px; font-size: 10px; line-height: 1.3;">Note: Enter a special fining allowance only if this lens requires a different value than the .300 mm allowance currently specified for CR-39 in the Lab Setup Menu.</div></fieldset>
+                            <div style="text-align: center; margin-top: 26px;"><button class="win-btn outset-border" style="width: 150px; padding: 4px 0;">Click Here to Set Prices</button></div>
+                        </div>
+                    </div>
+                </div>
+                <div id="tab-content-2" class="tab-pane"><div class="grid-2-col" style="height: calc(100% - 10px);"><div><table class="classic-table grid-lines" style="width: 100%; height: 100%;"><thead><tr><th style="width: 60%;">Factory Colors</th><th style="width: 40%;">Pair Price</th></tr></thead><tbody id="mod-col-tbody"></tbody></table></div><div><table class="classic-table grid-lines" style="width: 100%; height: 100%;"><thead><tr><th style="width: 60%;">Factory Coatings</th><th style="width: 40%;">Pair Price</th></tr></thead><tbody id="mod-coat-tbody"></tbody></table></div></div></div>
+                <div id="tab-content-3" class="tab-pane"><div class="center-col" style="height: calc(100% - 10px);"><div style="width: 500px;"><table class="classic-table grid-lines" style="width: 100%;"><thead><tr><td colspan="3" class="table-title">Blank Thickness Table</td></tr><tr><th style="width: 30%;">Diameter</th><th style="width: 35%;">Base</th><th style="width: 35%;">Center Thickness</th></tr></thead><tbody id="mod-thick-tbody"></tbody></table><div style="text-align: center; margin-top: 15px; font-size: 11px; color: #808080;">Left click any center thickness value you want to change.</div></div></div></div>
+            </div>
+            <div class="footer"><button class="win-btn outset-border">Print This Form</button><div style="font-weight: bold;">Warning: Incorrect data in this form will cause calculations errors!</div><div><button class="win-btn outset-border" onclick="closeModal()">Cancel</button><button class="win-btn outset-border" onclick="closeModal()">Save</button></div></div>
+        </div>
+
+        <div class="modern-box">
+            <div class="modern-header">
+                <div>
+                    <h2 class="modern-title" id="mod-modern-title">Lens Description</h2>
+                    <div class="modern-subtitle" id="mod-modern-sub">MFG / ID</div>
+                </div>
+                <button class="modern-close" onclick="closeModal()">✖</button>
+            </div>
+            <div class="bento-grid">
+                <div class="bento-card" style="border-top-color: var(--col-mat);">
+                    <div class="b-title" style="color:var(--col-mat)">Identity</div>
+                    <div class="b-row"><span>MFG:</span> <b id="mod-bento-mfg"></b></div>
+                    <div class="b-row"><span>Material:</span> <b id="mod-bento-mat"></b></div>
+                    <div class="b-row"><span>Index:</span> <b id="mod-bento-idx"></b></div>
+                </div>
+                <div class="bento-card" style="border-top-color: var(--col-idx);">
+                    <div class="b-title" style="color:var(--col-idx)">Geometry</div>
+                    <div class="b-row"><span>Type:</span> <b id="mod-bento-type"></b></div>
+                    <div class="b-row"><span>Seg Width:</span> <b id="mod-bento-seg"></b></div>
+                    <div class="b-row"><span>Inset / Drop:</span> <b id="mod-bento-inset"></b></div>
+                </div>
+                <div class="bento-card" style="border-top-color: var(--col-coat);">
+                    <div class="b-title" style="color:var(--col-coat)">Lab Settings</div>
+                    <div class="b-row"><span>True Curve Ref:</span> <b>1.530</b></div>
+                    <div class="b-row"><span>PRP (Out/Up):</span> <b id="mod-bento-prp"></b></div>
+                    <div class="b-row"><span>Fining Allowance:</span> <b>-</b></div>
+                </div>
+                <div class="bento-card" style="border-top-color: var(--col-filt);">
+                    <div class="b-title" style="color:var(--col-filt)">OPC Codes</div>
+                    <div class="b-row"><span>Range:</span> <b id="mod-bento-opc"></b></div>
+                </div>
+            </div>
+            <div class="modern-grids">
+                <div class="modern-table-wrap">
+                    <table id="mod-modern-surf-table"><thead id="mod-modern-surf-thead"><tr><th style="background:var(--col-base);">Base</th><th style="background:var(--col-tfc);">Front TC</th><th style="background:var(--win-highlight);">Asph</th><th style="background:var(--col-tbc);">Back TC</th></tr></thead><tbody id="mod-modern-surf"></tbody></table>
+                </div>
+                <div class="modern-table-wrap">
+                    <table id="mod-modern-thick-table"><thead id="mod-modern-thick-thead"><tr><th style="background:var(--col-diam);">Diameter</th><th style="background:var(--col-base);">Base</th><th style="background:var(--col-idx);">CT</th></tr></thead><tbody id="mod-modern-thick"></tbody></table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="data/db/manifest.js"></script>
+    <script src="data/db/database.js"></script>
+    <script src="data/app.js"></script>
+</body></html>
+"""
+        html_content = html_content.replace('{{VERSION}}', global_version)
+        with open(os.path.join(HTML_DIR, 'index.html'), 'w', encoding='utf-8') as f:
+            f.write(html_content.strip())
+            
+        ctx['log_lines'].append("  -> Output written successfully. Templates completely bypassed.")
+
+        # ----- PAYLOAD GENERATION & FILTER TAG SCRUB ----- #
+        with open(DB_FILE, 'r', encoding='utf-8') as f:
+            db_data = json.load(f)
+        
+        lenses = db_data.get('lenses', {})
+        if not lenses: return
+            
+        web_lenses = list(lenses.values())
+        
+        blue_terms = {"blue filter", "blueguard", "blue-guard", "blue protect", "clear blue filter", "cbf", "blue capture", "blue uv capture", "hev", "uv420"}
+        tech_whitelist = {"photochromic", "photofusion", "q-change", "transitions", "liferx", "polarized", "nupolar", "uv", "uvri", "uv protect", "drivesafe"}
+
+        ctx['log_lines'].append(f"[~] Formatting {len(web_lenses)} lenses for Web Delivery...")
+        
+        for lens_obj in web_lenses:
+            raw_tags = lens_obj.get("FilterTags", [])
+            pure_filters = []
+            
+            # Identify Blue variations and push them strictly to FilterTags (not pills)
+            has_blue = any(b in tag.lower() for tag in raw_tags for b in blue_terms)
+            if has_blue and "Blue Filter" not in lens_obj["FilterTags"]:
+                lens_obj["FilterTags"].append("Blue Filter")
+                
+            for tag in raw_tags:
+                t_low = tag.lower()
+                if t_low in tech_whitelist:
+                    pure_filters.append(tag)
+            
+            if has_blue:
+                pure_filters.append("Blue Filter")
+            
+            if pure_filters:
+                lens_obj["Filter"] = "<br>".join(sorted(list(set(pure_filters))))
+            else:
+                lens_obj["Filter"] = '<span style="opacity:0.5;">None</span>'
+                
+            # Safely handle the "NONE" edge case inside colors
+            lens_colors = lens_obj.get("Colors", [])
+            if "NONE" in lens_colors:
+                lens_colors.remove("NONE")
+                if "Clear" not in lens_colors: lens_colors.append("Clear")
+            lens_obj["Colors"] = lens_colors
+            
+            # Inject empty ID safeguard
+            if "Id" not in lens_obj:
+                lens_obj["Id"] = "00000"
+
+        # The Single Payload Engine
+        ctx['log_lines'].append("[+] Base64 Encoding master database payload...")
+        draw_throttle(term_w, term_h, ctx, 50.0, "Encoding Payload...", 1, 2)
+        
+        json_string = json.dumps(web_lenses, separators=(',', ':'))
+        b64_bytes = base64.b64encode(json_string.encode('utf-8'))
+        b64_string = b64_bytes.decode('utf-8')
+        
+        db_hash = hashlib.sha256(b64_bytes).hexdigest()
+        
+        db_filename = "database.js"
+        db_path = os.path.join(HTML_DB_DIR, db_filename)
+        with open(db_path, 'w', encoding='utf-8') as f:
+            f.write(f'window.dbPayload = "{b64_string}";\n')
+            
+        ctx['log_lines'].append(f"  -> Payload [ {db_filename} ] written ({os.path.getsize(db_path) / (1024*1024):.2f} MB)")
+        
+        master_sig = "UNSIGNED"
+        if os.path.exists(SIG_FILE):
+            with open(SIG_FILE, 'r') as sf: master_sig = sf.read().strip()
+                
+        manifest_data = {
+            "masterSignature": master_sig, 
+            "compiled_at": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+            "dbHash": db_hash
+        }
+        
+        ctx['log_lines'].append("[!] Injecting HTML security manifest directly into Master Vault...")
+        db_data['manifest'] = manifest_data
+        
+        if 'shards' in db_data: db_data.pop('shards', None)
+        if '__security_manifest__' in db_data: db_data.pop('__security_manifest__', None)
+        
+        try: os.chmod(DB_FILE, stat.S_IWRITE)
+        except: pass
+        with open(DB_FILE, 'w', encoding='utf-8') as f: json.dump(db_data, f, indent=4)
+        try: os.chmod(DB_FILE, stat.S_IREAD | stat.S_IRGRP | stat.S_IROTH)
+        except: pass
+        
+        manifest_path = os.path.join(HTML_DB_DIR, 'manifest.js')
+        with open(manifest_path, 'w', encoding='utf-8') as f:
+            f.write(f"const securityManifest = {json.dumps(manifest_data, indent=4)};\n")
+            
+        ctx['log_lines'].append("[✓] SSG Payload cryptographically sealed.")
+        
+        draw_throttle(term_w, term_h, ctx, 100.0, "Deployment Complete", 2, 2, is_done=True)
+        
+        ctx['log_lines'].append("")
+        ctx['log_lines'].append("=" * 50)
+        ctx['log_lines'].append("[ PROCESS COMPLETE ] Press [RETURN] to Continue...")
+        ctx['log_lines'].append("=" * 50)
+        
+    except Exception as e:
+        ctx['log_lines'].append(f"[!] FATAL DEPLOYMENT ERROR: {e}")
+        draw_throttle(term_w, term_h, ctx, 100.0, "ERROR", 2, 2, is_done=True)
 
 # ----- Master Loop. Master Sword. ----- #
 
@@ -2524,7 +3657,8 @@ def main_menu(term_w, term_h):
     sys.stdout.write("\033[4;5H(C)onvert Files")
     sys.stdout.write("\033[5;5H(A)dd to Vault")
     sys.stdout.write("\033[6;5H(G)enerate Database")
-    sys.stdout.write("\033[7;5H(Q)uit Application")
+    sys.stdout.write("\033[7;5H(B)uild Web Application")
+    sys.stdout.write("\033[8;5H(Q)uit Application")
 
 def init_env():
     os.makedirs(IMPORT_DIR, exist_ok=True)
@@ -2632,8 +3766,17 @@ def master_loop():
                     sys.stdout.write("\033[?25l")
                     vca_generate_db(ctx, term_w, term_h)
                     current_state = "PLAYBACK"
+                elif ch.lower() == 'b':
+                    ctx = {
+                        'pb_title': "STATIC SITE GENERATOR",
+                        'pb_frame': "HTML DEPLOYMENT",
+                        'log_lines': []
+                    }
+                    sys.stdout.write("\033[?25l")
+                    vca_generate_html(ctx, term_w, term_h)
+                    current_state = "PLAYBACK"
                 elif ch.lower() == 'q' or ch == 'ESC':
-                    return
+                    return 
                     
             elif current_state == "FILE_MGR":
                 update_file_mgr_data(term_h, ctx)
